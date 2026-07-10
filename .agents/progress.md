@@ -4,7 +4,7 @@ Last updated: 2026-07-10
 
 ## Current Status
 
-Mira has entered implementation. Phase 1, Phase 2, and Phase 3 are complete.
+Mira has entered implementation. Phase 1 through Phase 4 are complete.
 
 Completed:
 
@@ -15,39 +15,33 @@ Completed:
 - Phase 2.3: Thread Store.
 - Phase 2.4: Memory Store and Search.
 - Phase 3: Working Memory and Context.
+- Phase 4: CLI Commands and Export.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
-npm run test -- tests/workingMemory/workingMemoryStore.test.ts
-# Test Files 1 passed; Tests 4 passed
-
-npm run test -- tests/distill/distillThread.test.ts
+npm run test -- tests/cli/phase4-cli.test.ts
 # Test Files 1 passed; Tests 2 passed
 
-npm run test -- tests/context/contextBundle.test.ts
-# Test Files 1 passed; Tests 2 passed
+npm run test -- tests/export/exportProject.test.ts
+# Test Files 1 passed; Tests 1 passed
 
 npm test
-# Test Files 9 passed; Tests 24 passed
+# Test Files 11 passed; Tests 27 passed
 
 npm run build
 # tsc completed successfully
 ```
 
-TDD evidence for Phase 3:
+TDD evidence for Phase 4:
 
 ```text
-Working Memory RED: Cannot find module '../../src/workingMemory/workingMemoryStore.js'
-Working Memory GREEN: tests/workingMemory/workingMemoryStore.test.ts passed, 4 tests
+CLI RED: error: unknown option '--db'
+CLI GREEN: tests/cli/phase4-cli.test.ts passed, 2 tests
 
-Distill RED: Cannot find module '../../src/distill/distillThread.js'
-Distill GREEN: tests/distill/distillThread.test.ts passed, 2 tests
-
-Context Bundle RED: Cannot find module '../../src/context/contextBundle.js'
-Context Bundle GREEN: tests/context/contextBundle.test.ts passed, 2 tests
+Export behavior was covered by the CLI red/green loop and reinforced by tests/export/exportProject.test.ts.
 ```
 
 ## Current Files Of Interest
@@ -63,7 +57,9 @@ src/memory/memoryStore.ts
 src/workingMemory/workingMemoryStore.ts
 src/distill/distillThread.ts
 src/context/contextBundle.ts
+src/export/exportProject.ts
 tests/cli-smoke.test.ts
+tests/cli/phase4-cli.test.ts
 tests/db/schema.test.ts
 tests/projects/projectRoot.test.ts
 tests/projects/projectStore.test.ts
@@ -72,6 +68,7 @@ tests/memory/memoryStore.test.ts
 tests/workingMemory/workingMemoryStore.test.ts
 tests/distill/distillThread.test.ts
 tests/context/contextBundle.test.ts
+tests/export/exportProject.test.ts
 specs/001-mira-mvp/spec.md
 specs/001-mira-mvp/plan.md
 specs/001-mira-mvp/tasks.md
@@ -79,14 +76,15 @@ specs/001-mira-mvp/tasks.md
 
 ## Next Step
 
-Start Phase 4: CLI commands and export.
+Start Phase 5: MCP Agent Interface.
 
 Expected next TDD loop:
 
-1. Add CLI tests for `mira init`, `project`, `thread`, `memory`, `working`, `context`, and `export` commands.
-2. Wire CLI commands to existing Store, distill, and bundle modules.
-3. Keep CLI output script-friendly.
-4. Run `npm test` and `npm run build`.
+1. Add MCP tool integration tests.
+2. Implement MCP server factory.
+3. Implement stdio transport.
+4. Add `get_context_bundle`, `search_memory`, `set_working_memory`, `list_working_memory`, `clear_working_memory`, `add_memory`, and `save_thread`.
+5. Run `npm test` and `npm run build`.
 
 ## Notes For Next Agent
 

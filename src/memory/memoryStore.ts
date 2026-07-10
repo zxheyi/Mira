@@ -82,6 +82,10 @@ function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function toFtsQuery(query: string): string {
+  return `"${query.replace(/"/g, '""')}"`;
+}
+
 function findDuplicateMemory(
   db: Database.Database,
   projectId: string,
@@ -207,6 +211,6 @@ export function searchMemories(db: Database.Database, projectId: string, query: 
        where memory_fts match ? and memories.project_id = ?
        order by memories.importance desc, memories.confidence desc, memories.created_at desc, score desc`
     )
-    .all(trimmedQuery, projectId)
+    .all(toFtsQuery(trimmedQuery), projectId)
     .map((row) => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));
 }

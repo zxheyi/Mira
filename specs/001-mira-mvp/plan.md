@@ -79,6 +79,8 @@ Completed.
 
 ### Phase 4: CLI Commands and Export
 
+Completed.
+
 - Init, project, thread, memory, working, context, export commands.
 - Script-friendly output.
 
@@ -128,5 +130,5 @@ npm run dev -- health
 
 ## Open Items
 
-- Phase 4 is the next implementation step.
+- Phase 5 is the next implementation step.
 - MCP and export behavior remain planned, not implemented.

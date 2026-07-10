@@ -153,9 +153,10 @@ Completed:
 - Phase 2.3: Thread Store.
 - Phase 2.4: Memory Store and Search.
 - Phase 3: Working Memory and Context.
+- Phase 4: CLI Commands and Export.
 
 Next:
 
-- Phase 4: CLI Commands and Export.
+- Phase 5: MCP Agent Interface.
 
 Progress pointer: `.agents/progress.md`.

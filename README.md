@@ -96,6 +96,30 @@ Agent 使用 Mira 的基本习惯：
 - 做出重要决策后调用 `add_memory` 或更新 Working Memory。
 - 会话结束前通过 `save_thread` 保存本轮摘要；完整 transcript 自动捕获放到 post-MVP。
 
+## CLI 快速使用
+
+Phase 4 已提供本地 CLI 闭环。常用命令示例：
+
+```bash
+mira init
+mira project list
+mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
+mira memory distill --thread thread_1
+mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
+mira memory search --query "script-friendly"
+mira working set --kind current_task --content "Continue Phase 4."
+mira working list
+mira context bundle --query "Mira"
+mira export --format json --out ./export
+mira export --format markdown --out ./export
+```
+
+默认数据库为当前项目的 `.mira/mira.sqlite`。脚本和测试也可以显式传入：
+
+```bash
+mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
+```
+
 ## 项目文档
 
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)

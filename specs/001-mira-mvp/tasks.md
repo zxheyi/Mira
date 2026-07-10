@@ -63,13 +63,13 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Phase 4: CLI Commands and Export
 
-- [ ] Implement `mira init`.
-- [ ] Implement project commands.
-- [ ] Implement thread commands.
-- [ ] Implement memory commands.
-- [ ] Implement working memory commands.
-- [ ] Implement context bundle command.
-- [ ] Implement Markdown / JSON export.
+- [x] Implement `mira init`.
+- [x] Implement project commands.
+- [x] Implement thread commands.
+- [x] Implement memory commands.
+- [x] Implement working memory commands.
+- [x] Implement context bundle command.
+- [x] Implement Markdown / JSON export.
 
 ## Phase 5: MCP Agent Interface
 
@@ -93,4 +93,4 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Current Next Task
 
-Start Phase 4: CLI commands and export.
+Start Phase 5: MCP Agent Interface.
