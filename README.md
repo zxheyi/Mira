@@ -85,15 +85,16 @@ MVP 采用每项目一个 Mira 实例的模型：
 - 数据库默认位于项目内 `.mira/mira.sqlite`。
 - `mira mcp serve` 启动时绑定一个 `--project-root` 和一个 `--db`。
 - MCP 工具入参仍可携带 `projectRoot`，但未传时使用启动时绑定的项目。
+- 如果命令或工具探测到项目根目录，但数据库里没有 Project 记录，Mira 自动创建 Project，名称使用目录名。
 - Claude Code、Cursor 等 Agent 配置示例必须使用绝对路径，避免 MCP client 从用户 home 目录启动时找错数据库。
 - 全局多项目数据库和跨项目记忆放到 post-MVP。
 
 Agent 使用 Mira 的基本习惯：
 
 - 会话开始先读取 `get_context_bundle`。
-- 涉及历史决策、踩坑或约定时调用 `search_memory`。
+- 涉及历史决策、踩坑或约定时调用 `search_memory`，结果包含 Memory 和匹配分数。
 - 做出重要决策后调用 `add_memory` 或更新 Working Memory。
-- 会话结束前通过 `save_thread` 保存关键会话记录。
+- 会话结束前通过 `save_thread` 保存本轮摘要；完整 transcript 自动捕获放到 post-MVP。
 
 ## 项目文档
 
