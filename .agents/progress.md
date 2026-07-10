@@ -7,6 +7,7 @@ Last updated: 2026-07-10
 Mira MVP implementation phases are complete. Phase 1 through Phase 6 have local commits.
 Post-MVP P0 Agent Session Import is implemented and locally verified.
 Post-MVP P1 LLM Distill and Agent Guidance is implemented and locally verified.
+Post-MVP P2 Transcript JSONL Import is implemented and locally verified.
 
 Completed:
 
@@ -26,6 +27,9 @@ Completed:
 - Phase 10: LLM Distill Candidate Flow.
 - Phase 11: CLI Review Loop.
 - Phase 12: Agent Guidance Templates.
+- Phase 13: JSONL Importer.
+- Phase 14: Import CLI Format Option.
+- Phase 15: Docs and Progress.
 
 ## Verification Evidence
 
@@ -58,11 +62,22 @@ npm test
 
 npm run build
 # tsc completed successfully
+
+npm test
+# Test Files 18 passed; Tests 48 passed
+
+npm run build
+# tsc completed successfully
 ```
 
 TDD evidence for Phase 5/6:
 
 ```text
+JSONL import RED: normalizeJsonlSession is not a function
+JSONL import CLI RED: unknown option '--format'
+JSONL import GREEN: tests/importers/agentSessionImporter.test.ts passed, 7 tests
+JSONL import CLI GREEN: tests/cli/import-cli.test.ts passed, 3 tests
+
 LLM distill RED: Cannot find module '../../src/distill/llmDistill.js'
 LLM distill CLI RED: unknown command 'llm-prompt' / 'apply-candidates'
 LLM distill GREEN: tests/distill/llmDistill.test.ts passed, 5 tests
@@ -127,21 +142,25 @@ specs/002-agent-session-import/tasks.md
 specs/003-llm-distill-agent-guidance/spec.md
 specs/003-llm-distill-agent-guidance/plan.md
 specs/003-llm-distill-agent-guidance/tasks.md
+specs/004-transcript-jsonl-import/spec.md
+specs/004-transcript-jsonl-import/plan.md
+specs/004-transcript-jsonl-import/tasks.md
 ```
 
 ## Next Step
 
 Post-MVP hardening:
 
-1. Try `mira memory llm-prompt --thread <thread_id>` on a real imported Codex summary.
-2. Review LLM JSON and apply it with `mira memory apply-candidates --thread <thread_id> --path <candidates.json>`.
-3. Try `mira import --source claude-code --path <summary.md>` with a real Claude Code summary.
-4. Improve distill adapters for real transcripts beyond Markdown summaries.
+1. Try `mira import --source claude-code --format jsonl --path <transcript.jsonl>` with a real Claude Code transcript.
+2. Try `mira import --source codex --format jsonl --path <transcript.jsonl>` with a real Codex transcript.
+3. Run `mira memory llm-prompt --thread <thread_id>` on an imported JSONL Thread.
+4. Improve distill adapters for real transcript edge cases.
 
 ## Notes For Next Agent
 
 - All MVP phases are implemented locally.
 - P0 Agent Session Import currently supports Markdown files for `codex`, `claude-code`, and `markdown`.
 - P1 LLM Distill currently uses a provider-neutral prompt + reviewed candidate JSON workflow.
+- P2 JSONL import normalizes transcript records into Markdown Thread text while preserving `rawFormat=jsonl`.
 - Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

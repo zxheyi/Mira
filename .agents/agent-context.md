@@ -22,6 +22,8 @@ npm run dev -- init
 npm run dev -- project list
 npm run dev -- import --source codex --path ./codex-session.md
 npm run dev -- import --source claude-code --path ./claude-session.md
+npm run dev -- import --source claude-code --format jsonl --path ./claude-transcript.jsonl
+npm run dev -- import --source codex --format jsonl --path ./codex-transcript.jsonl
 npm run dev -- memory llm-prompt --thread thread_1
 npm run dev -- memory apply-candidates --thread thread_1 --path ./candidates.json
 npm run dev -- memory search "SQLite FTS"
@@ -79,18 +81,20 @@ The TypeScript project now exists. `.mira/` is still runtime data and must remai
 
 Read these first, in order:
 
-1. `specs/003-llm-distill-agent-guidance/spec.md` — current post-MVP P1 LLM distill and guidance requirements.
-2. `specs/003-llm-distill-agent-guidance/tasks.md` — current post-MVP P1 execution checklist.
-3. `specs/002-agent-session-import/spec.md` — completed post-MVP P0 import requirements.
-4. `specs/002-agent-session-import/tasks.md` — completed post-MVP P0 execution checklist.
-5. `specs/001-mira-mvp/spec.md` — completed MVP what/why requirements.
-6. `specs/001-mira-mvp/tasks.md` — completed MVP checklist.
-7. `.agents/progress.md` — current progress pointer and latest verification evidence.
-8. `README.md` — positioning, scope, and design principles.
-9. `.agents/agent-context.md` — quick project map and Agent entry context.
-10. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
-11. `docs/superpowers/plans/2026-07-09-mira-mvp.md` — detailed historical MVP plan and acceptance gates.
-12. `docs/agent-config/AGENTS-template.md` — target behavior for agents using Mira.
+1. `specs/004-transcript-jsonl-import/spec.md` — current post-MVP P2 JSONL transcript import requirements.
+2. `specs/004-transcript-jsonl-import/tasks.md` — current post-MVP P2 execution checklist.
+3. `specs/003-llm-distill-agent-guidance/spec.md` — completed post-MVP P1 LLM distill and guidance requirements.
+4. `specs/003-llm-distill-agent-guidance/tasks.md` — completed post-MVP P1 execution checklist.
+5. `specs/002-agent-session-import/spec.md` — completed post-MVP P0 import requirements.
+6. `specs/002-agent-session-import/tasks.md` — completed post-MVP P0 execution checklist.
+7. `specs/001-mira-mvp/spec.md` — completed MVP what/why requirements.
+8. `specs/001-mira-mvp/tasks.md` — completed MVP checklist.
+9. `.agents/progress.md` — current progress pointer and latest verification evidence.
+10. `README.md` — positioning, scope, and design principles.
+11. `.agents/agent-context.md` — quick project map and Agent entry context.
+12. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
+13. `docs/superpowers/plans/2026-07-09-mira-mvp.md` — detailed historical MVP plan and acceptance gates.
+14. `docs/agent-config/AGENTS-template.md` — target behavior for agents using Mira.
 
 If these files disagree, treat `spec.md` and `tasks.md` as the implementation contract, then update the other docs to match.
 

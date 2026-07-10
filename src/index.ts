@@ -351,13 +351,15 @@ program
   .description("Import an agent session into the current project")
   .requiredOption("--source <source>", "Session source: codex, claude-code, or markdown")
   .requiredOption("--path <path>", "Markdown session file path")
+  .option("--format <format>", "Session file format: auto, markdown, or jsonl", "auto")
   .option("--id <id>", "Thread id")
   .option("--title <title>", "Thread title")
-  .action(async (options: { source: string; path: string; id?: string; title?: string }) => {
+  .action(async (options: { source: string; path: string; format: string; id?: string; title?: string }) => {
     await withProject(program.opts<GlobalOptions>(), async (session) => {
       const imported = await importAgentSessionFromFile({
         source: options.source,
         inputPath: options.path,
+        format: options.format,
         id: options.id,
         title: options.title
       });

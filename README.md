@@ -105,6 +105,8 @@ mira init
 mira project list
 mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
+mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
+mira import --source codex --format jsonl --path ./codex-transcript.jsonl
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira memory distill --thread thread_1
 mira memory llm-prompt --thread thread_1
@@ -124,7 +126,7 @@ mira export --format markdown --out ./export
 mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 ```
 
-`mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要。导入后会保存为 Thread；如果没有传 `--title`，Mira 会优先使用 Markdown 的第一个 H1，没有 H1 时使用文件名。
+`mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要，也支持 Codex / Claude Code 的 JSONL transcript。导入后会保存为 Thread；Markdown 未传 `--title` 时优先使用第一个 H1，没有 H1 时使用文件名。JSONL 会被 normalize 成可读 Markdown 后保存，`rawFormat` 保留为 `jsonl`。
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
 
@@ -158,6 +160,7 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Agent Session Import Spec](specs/002-agent-session-import/spec.md)
 - [Agent Session Import Tasks](specs/002-agent-session-import/tasks.md)
 - [LLM Distill Spec](specs/003-llm-distill-agent-guidance/spec.md)
+- [Transcript JSONL Import Spec](specs/004-transcript-jsonl-import/spec.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)

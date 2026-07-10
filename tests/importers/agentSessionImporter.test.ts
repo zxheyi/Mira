@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   importAgentSessionFromFile,
+  normalizeJsonlSession,
   normalizeMarkdownSession
 } from "../../src/importers/agentSessionImporter.js";
 
@@ -66,5 +67,85 @@ describe("agent session importer", () => {
       metadata: { inputPath }
     });
     expect(session.id).toContain(basename(inputPath, ".md").split("-")[0]);
+  });
+
+  test("normalizes a Claude Code JSONL transcript into Markdown thread text", () => {
+    const rawText = [
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-07-10T10:00:00.000Z",
+        message: { role: "user", content: "Please add JSONL import." }
+      }),
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-07-10T10:01:00.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I'll add a transcript importer." },
+            { type: "tool_use", name: "Edit", input: { file_path: "src/importers/agentSessionImporter.ts" } }
+          ]
+        }
+      })
+    ].join("\n");
+
+    const session = normalizeJsonlSession({
+      source: "claude-code",
+      inputPath: "/workspace/mira/claude-transcript.jsonl",
+      rawText
+    });
+
+    expect(session).toMatchObject({
+      source: "claude-code",
+      title: "claude-transcript",
+      rawFormat: "jsonl",
+      metadata: { inputPath: "/workspace/mira/claude-transcript.jsonl" }
+    });
+    expect(session.rawText).toContain("# claude-transcript");
+    expect(session.rawText).toContain("## user");
+    expect(session.rawText).toContain("Time: 2026-07-10T10:00:00.000Z");
+    expect(session.rawText).toContain("Please add JSONL import.");
+    expect(session.rawText).toContain("I'll add a transcript importer.");
+    expect(session.rawText).toContain("Tool: Edit");
+  });
+
+  test("normalizes a Codex JSONL transcript with direct role/content messages", () => {
+    const rawText = [
+      JSON.stringify({ role: "user", content: "Use SDD and TDD." }),
+      JSON.stringify({
+        role: "assistant",
+        content: [
+          { type: "text", text: "I will write tests first." },
+          { type: "tool_call", name: "shell", input: { cmd: "npm test" } }
+        ]
+      })
+    ].join("\n");
+
+    const session = normalizeJsonlSession({
+      source: "codex",
+      inputPath: "/workspace/mira/codex-transcript.jsonl",
+      title: "Codex Transcript",
+      rawText
+    });
+
+    expect(session).toMatchObject({
+      source: "codex",
+      title: "Codex Transcript",
+      rawFormat: "jsonl"
+    });
+    expect(session.rawText).toContain("# Codex Transcript");
+    expect(session.rawText).toContain("Use SDD and TDD.");
+    expect(session.rawText).toContain("I will write tests first.");
+    expect(session.rawText).toContain("Tool: shell");
+  });
+
+  test("reports invalid JSONL line numbers", () => {
+    expect(() =>
+      normalizeJsonlSession({
+        source: "codex",
+        inputPath: "/workspace/mira/bad.jsonl",
+        rawText: `${JSON.stringify({ role: "user", content: "ok" })}\nnot-json`
+      })
+    ).toThrow("Invalid JSONL on line 2");
   });
 });

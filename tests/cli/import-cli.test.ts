@@ -82,4 +82,50 @@ describe("import CLI", () => {
       score: expect.any(Number)
     });
   });
+
+  test("imports a Claude Code JSONL transcript and keeps it usable for distill and search", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-claude-jsonl-import-"));
+    await mkdir(join(tempRoot, ".git"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+    const sessionPath = join(tempRoot, "claude-transcript.jsonl");
+    await writeFile(
+      sessionPath,
+      [
+        JSON.stringify({ role: "user", content: "Capture this transcript." }),
+        JSON.stringify({
+          role: "assistant",
+          content: "## Key Decisions\n- JSONL transcript import should normalize to Markdown."
+        })
+      ].join("\n"),
+      "utf8"
+    );
+
+    const imported = parseJson<{ id: string; source: string; rawFormat: string; rawText: string }>(
+      (
+        await runMira(
+          ["import", "--source", "claude-code", "--format", "jsonl", "--path", sessionPath, "--id", "claude_jsonl_1"],
+          tempRoot,
+          dbPath
+        )
+      ).stdout
+    );
+    expect(imported).toMatchObject({ id: "claude_jsonl_1", source: "claude-code", rawFormat: "jsonl" });
+    expect(imported.rawText).toContain("## assistant");
+    expect(imported.rawText).toContain("JSONL transcript import should normalize to Markdown.");
+
+    const distilled = parseJson<Array<{ kind: string; content: string }>>(
+      (await runMira(["memory", "distill", "--thread", "claude_jsonl_1"], tempRoot, dbPath)).stdout
+    );
+    expect(distilled).toEqual([
+      expect.objectContaining({ kind: "decision", content: "JSONL transcript import should normalize to Markdown." })
+    ]);
+
+    const search = parseJson<Array<{ memory: { content: string }; score: number }>>(
+      (await runMira(["memory", "search", "--query", "normalize"], tempRoot, dbPath)).stdout
+    );
+    expect(search[0]).toMatchObject({
+      memory: { content: "JSONL transcript import should normalize to Markdown." },
+      score: expect.any(Number)
+    });
+  });
 });
