@@ -4,23 +4,20 @@ This file is the project entry card for coding agents working on Mira. It is ins
 
 ## Quick Reference
 
-Current documentation-only commands:
+Current commands:
 
 ```bash
 git -C /Users/limaolin/Desktop/Mira status --short
-git -C /Users/limaolin/Desktop/Mira log --oneline -5
-sed -n '1,220p' README.md
+npm run dev -- health
+npm test
+npm run build
 sed -n '1,260p' docs/superpowers/plans/2026-07-09-mira-mvp.md
 sed -n '1,220p' .agents/development-rhythm.md
 ```
 
-Planned MVP commands after implementation:
+Planned MVP commands after later phases:
 
 ```bash
-npm install
-npm run dev -- health
-npm test
-npm run build
 npm run dev -- init
 npm run dev -- project list
 npm run dev -- memory search "SQLite FTS"
@@ -30,13 +27,26 @@ npm run dev -- mcp serve --project-root /Users/limaolin/Desktop/Mira --db /Users
 
 ## Current Repository State
 
-Mira is currently in the planning/specification stage. The repository mostly contains product positioning, MVP planning, research notes, and Agent guidance.
+Mira has started MVP implementation. Phase 1.1 and 1.2 are complete: the TypeScript CLI skeleton, health command, SQLite connection, schema migration, and first tests exist.
 
 Current tracked areas:
 
 ```text
 Mira/
   README.md
+  package.json
+  package-lock.json
+  tsconfig.json
+  .gitignore
+  src/
+    index.ts
+    db/
+      client.ts
+      schema.ts
+  tests/
+    cli-smoke.test.ts
+    db/
+      schema.test.ts
   .agents/
     agent-context.md
     development-rhythm.md
@@ -53,7 +63,7 @@ Mira/
       2026-07-09-mira-mvp.md
 ```
 
-Do not assume a TypeScript project exists yet. `package.json`, `src/`, `tests/`, `.gitignore`, and `.mira/` are planned MVP artifacts, not current files until phase 1 begins.
+The TypeScript project now exists. `.mira/` is still runtime data and must remain ignored. Later MVP phases will add more `src/` modules and tests.
 
 ## Source Of Truth
 
