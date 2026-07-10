@@ -1,7 +1,7 @@
 # Mira MVP Spec
 
 Feature ID: `001-mira-mvp`
-Status: In Progress
+Status: Complete
 Last updated: 2026-07-10
 Primary user: the local developer and coding agents working in the same project
 
@@ -154,9 +154,11 @@ Completed:
 - Phase 2.4: Memory Store and Search.
 - Phase 3: Working Memory and Context.
 - Phase 4: CLI Commands and Export.
+- Phase 5: MCP Agent Interface.
+- Phase 6: End-to-End Validation.
 
 Next:
 
-- Phase 5: MCP Agent Interface.
+- Post-MVP hardening and external usage feedback.
 
 Progress pointer: `.agents/progress.md`.

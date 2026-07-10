@@ -1,7 +1,7 @@
 # Mira MVP Plan
 
 Feature ID: `001-mira-mvp`
-Status: In Progress
+Status: Complete
 Source spec: `specs/001-mira-mvp/spec.md`
 
 ## Technical Context
@@ -86,12 +86,16 @@ Completed.
 
 ### Phase 5: MCP Agent Interface
 
+Completed.
+
 - MCP server factory.
 - stdio transport.
 - Agent-facing tools.
 - Agent config examples.
 
 ### Phase 6: End-to-End Loop
+
+Completed.
 
 - Import first real planning session.
 - Run complete local loop.
@@ -130,5 +134,5 @@ npm run dev -- health
 
 ## Open Items
 
-- Phase 5 is the next implementation step.
-- MCP and export behavior remain planned, not implemented.
+- MVP phases are complete.
+- Post-MVP work should focus on hardening, adapters, and real-agent usage feedback.

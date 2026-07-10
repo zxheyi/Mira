@@ -4,7 +4,7 @@ Last updated: 2026-07-10
 
 ## Current Status
 
-Mira has entered implementation. Phase 1 through Phase 4 are complete.
+Mira MVP implementation phases are complete. Phase 1 through Phase 6 have local commits.
 
 Completed:
 
@@ -16,32 +16,40 @@ Completed:
 - Phase 2.4: Memory Store and Search.
 - Phase 3: Working Memory and Context.
 - Phase 4: CLI Commands and Export.
+- Phase 5: MCP Agent Interface.
+- Phase 6: End-to-End Validation.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
-npm run test -- tests/cli/phase4-cli.test.ts
+npm run test -- tests/mcp/tools.integration.test.ts
 # Test Files 1 passed; Tests 2 passed
 
-npm run test -- tests/export/exportProject.test.ts
+npm run test -- tests/cli/mcp-serve.test.ts
+# Test Files 1 passed; Tests 1 passed
+
+npm run test -- tests/integration/localLoop.test.ts
 # Test Files 1 passed; Tests 1 passed
 
 npm test
-# Test Files 11 passed; Tests 27 passed
+# Test Files 14 passed; Tests 31 passed
 
 npm run build
 # tsc completed successfully
 ```
 
-TDD evidence for Phase 4:
+TDD evidence for Phase 5/6:
 
 ```text
-CLI RED: error: unknown option '--db'
-CLI GREEN: tests/cli/phase4-cli.test.ts passed, 2 tests
+MCP tools RED: Cannot find module '../../src/mcp/server.js'
+MCP tools GREEN: tests/mcp/tools.integration.test.ts passed, 2 tests
 
-Export behavior was covered by the CLI red/green loop and reinforced by tests/export/exportProject.test.ts.
+MCP stdio CLI RED: mcp serve command missing
+MCP stdio CLI GREEN: tests/cli/mcp-serve.test.ts passed, 1 test
+
+Phase 6 local loop: tests/integration/localLoop.test.ts passed with real session 019f45f0-40bf-7261-8685-d5e0a6a8bf13
 ```
 
 ## Current Files Of Interest
@@ -58,8 +66,11 @@ src/workingMemory/workingMemoryStore.ts
 src/distill/distillThread.ts
 src/context/contextBundle.ts
 src/export/exportProject.ts
+src/mcp/server.ts
+src/mcp/transport.ts
 tests/cli-smoke.test.ts
 tests/cli/phase4-cli.test.ts
+tests/cli/mcp-serve.test.ts
 tests/db/schema.test.ts
 tests/projects/projectRoot.test.ts
 tests/projects/projectStore.test.ts
@@ -69,6 +80,8 @@ tests/workingMemory/workingMemoryStore.test.ts
 tests/distill/distillThread.test.ts
 tests/context/contextBundle.test.ts
 tests/export/exportProject.test.ts
+tests/mcp/tools.integration.test.ts
+tests/integration/localLoop.test.ts
 specs/001-mira-mvp/spec.md
 specs/001-mira-mvp/plan.md
 specs/001-mira-mvp/tasks.md
@@ -76,20 +89,15 @@ specs/001-mira-mvp/tasks.md
 
 ## Next Step
 
-Start Phase 5: MCP Agent Interface.
+Post-MVP hardening:
 
-Expected next TDD loop:
-
-1. Add MCP tool integration tests.
-2. Implement MCP server factory.
-3. Implement stdio transport.
-4. Add `get_context_bundle`, `search_memory`, `set_working_memory`, `list_working_memory`, `clear_working_memory`, `add_memory`, and `save_thread`.
-5. Run `npm test` and `npm run build`.
+1. Try Mira from a real Codex/Claude/Cursor MCP client.
+2. Improve distill adapters for real transcripts beyond Markdown summaries.
+3. Add stronger validation for CLI/MCP enum inputs.
+4. Add automated transcript capture hooks if the host agent exposes them.
 
 ## Notes For Next Agent
 
-- Use SDD to change requirements or contracts before implementation.
-- Use TDD for every behavior change.
-- Keep `specs/001-mira-mvp/tasks.md` updated after verified progress.
-- Keep this progress file updated after each completed phase or meaningful checkpoint.
+- All MVP phases are implemented locally.
+- Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

@@ -13,7 +13,7 @@
 - 当前任务、阶段、阻塞点、下一步发生变化时，调用 `set_working_memory` 更新 Working Memory。
 - blocker 或 next_step 解决后，调用 `clear_working_memory`，或写入更新后的 Markdown 列表。
 - 不要把临时思考、噪音日志、未确认猜测、密钥、token、私人凭据写入 Memory。
-- 失败尝试要记录为 `failed_attempt`，避免后续 Agent 重复踩坑。
+- 失败尝试要记录为 `lesson` 或 `constraint`，避免后续 Agent 重复踩坑。
 
 ## 会话结束前
 
@@ -27,6 +27,7 @@
 - `architecture`：架构结构、模块边界、数据流。
 - `convention`：编码约定、命名约定、工程习惯。
 - `preference`：用户偏好。
-- `task`：后续任务或待办。
-- `fact`：稳定项目事实。
-- `failed_attempt`：失败尝试、不要重复的方案。
+- `lesson`：经验、失败尝试、不要重复的方案。
+- `constraint`：限制、边界、不可做事项。
+- `todo`：后续任务或待办。
+- `note`：稳定项目事实或补充说明。

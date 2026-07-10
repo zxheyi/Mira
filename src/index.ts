@@ -16,6 +16,7 @@ import {
   listProjects,
   type Project
 } from "./projects/projectStore.js";
+import { serveMiraMcpStdio } from "./mcp/transport.js";
 import { saveThread } from "./threads/threadStore.js";
 import {
   clearWorkingMemory,
@@ -277,6 +278,21 @@ context
         })
       );
     });
+  });
+
+
+const mcp = program.command("mcp").description("Run the Mira MCP server");
+
+mcp
+  .command("serve")
+  .description("Start the Mira MCP stdio server")
+  .option("--db <path>", "SQLite database path")
+  .option("--project-root <path>", "Project root path")
+  .action(async (options: GlobalOptions) => {
+    const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
+    const projectRoot = await resolveProjectRoot(mergedOptions);
+    const dbPath = resolveDbPath(projectRoot, mergedOptions);
+    await serveMiraMcpStdio({ projectRoot, dbPath });
   });
 
 program

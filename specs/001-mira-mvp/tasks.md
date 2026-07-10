@@ -1,7 +1,7 @@
 # Mira MVP Tasks
 
 Feature ID: `001-mira-mvp`
-Status: In Progress
+Status: Complete
 
 This is the SDD task source for implementation. The older MVP plan remains useful background, but this file is the compact execution checklist.
 
@@ -73,24 +73,24 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Phase 5: MCP Agent Interface
 
-- [ ] Implement MCP server factory.
-- [ ] Implement stdio transport.
-- [ ] Add `get_context_bundle`.
-- [ ] Add `search_memory`.
-- [ ] Add `set_working_memory`.
-- [ ] Add `list_working_memory`.
-- [ ] Add `clear_working_memory`.
-- [ ] Add `add_memory`.
-- [ ] Add `save_thread`.
-- [ ] Add MCP tool integration tests.
+- [x] Implement MCP server factory.
+- [x] Implement stdio transport.
+- [x] Add `get_context_bundle`.
+- [x] Add `search_memory`.
+- [x] Add `set_working_memory`.
+- [x] Add `list_working_memory`.
+- [x] Add `clear_working_memory`.
+- [x] Add `add_memory`.
+- [x] Add `save_thread`.
+- [x] Add MCP tool integration tests.
 
 ## Phase 6: End-to-End Validation
 
-- [ ] Import session `019f45f0-40bf-7261-8685-d5e0a6a8bf13`.
-- [ ] Run save -> distill -> search -> working memory -> bundle -> export loop.
-- [ ] Add `tests/integration/localLoop.test.ts`.
-- [ ] Verify `npm test` and `npm run build`.
+- [x] Import session `019f45f0-40bf-7261-8685-d5e0a6a8bf13`.
+- [x] Run save -> distill -> search -> working memory -> bundle -> export loop.
+- [x] Add `tests/integration/localLoop.test.ts`.
+- [x] Verify `npm test` and `npm run build`.
 
 ## Current Next Task
 
-Start Phase 5: MCP Agent Interface.
+MVP phases complete.

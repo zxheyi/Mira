@@ -120,6 +120,28 @@ mira export --format markdown --out ./export
 mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 ```
 
+## MCP 快速配置
+
+Mira MVP 提供每项目一个 stdio MCP server。推荐使用绝对路径绑定项目和数据库：
+
+```bash
+mira mcp serve --project-root /path/to/project --db /path/to/project/.mira/mira.sqlite
+```
+
+Agent 可用工具：
+
+```text
+get_context_bundle
+search_memory
+set_working_memory
+list_working_memory
+clear_working_memory
+add_memory
+save_thread
+```
+
+MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
+
 ## 项目文档
 
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)
@@ -129,6 +151,8 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)
 - [AGENTS.md 行为引导模板](docs/agent-config/AGENTS-template.md)
+- [Claude Code MCP 配置示例](docs/agent-config/claude-code.md)
+- [Cursor MCP 配置示例](docs/agent-config/cursor.md)
 - [Session 019f45f0-40bf-7261-8685-d5e0a6a8bf13](docs/sessions/019f45f0-40bf-7261-8685-d5e0a6a8bf13.md)
 
 ## 研究笔记
