@@ -11,3 +11,4 @@ Mira is intended to let Codex, Claude Code, Cursor, OpenClaw, and other coding a
 ## Research Notes
 
 - [Nowledge Mem 多角度分析](docs/research/nowledge-mem-analysis.md)
+- [Nowledge Mem 逆向分析报告](docs/research/nowledge-mem-reverse-engineering.md)
