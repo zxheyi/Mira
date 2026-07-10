@@ -22,11 +22,11 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ### Phase 2.1: Project Root Detection
 
-- [ ] Write failing `tests/projects/projectRoot.test.ts`.
-- [ ] Implement `detectProjectRoot(startDir)`.
-- [ ] Cover nearest `.git` parent lookup.
-- [ ] Cover fallback to `startDir` when `.git` is absent.
-- [ ] Verify `npm test -- tests/projects/projectRoot.test.ts`.
+- [x] Write failing `tests/projects/projectRoot.test.ts`.
+- [x] Implement `detectProjectRoot(startDir)`.
+- [x] Cover nearest `.git` parent lookup.
+- [x] Cover fallback to `startDir` when `.git` is absent.
+- [x] Verify `npm test -- tests/projects/projectRoot.test.ts`.
 
 ### Phase 2.2: Project Store
 
@@ -93,4 +93,4 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Current Next Task
 
-Start Phase 2.1: project root detection.
+Start Phase 2.2: project store.
