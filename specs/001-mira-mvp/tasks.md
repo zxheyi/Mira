@@ -56,10 +56,10 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Phase 3: Working Memory and Context
 
-- [ ] Implement Working Memory set/list/clear.
-- [ ] Implement deterministic distill rules.
-- [ ] Implement clear-before-write distill orchestration.
-- [ ] Implement Context Bundle generation with Working Memory first.
+- [x] Implement Working Memory set/list/clear.
+- [x] Implement deterministic distill rules.
+- [x] Implement clear-before-write distill orchestration.
+- [x] Implement Context Bundle generation with Working Memory first.
 
 ## Phase 4: CLI Commands and Export
 
@@ -93,4 +93,4 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Current Next Task
 
-Start Phase 3: working memory and context.
+Start Phase 4: CLI commands and export.

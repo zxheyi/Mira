@@ -70,6 +70,8 @@ Completed.
 
 ### Phase 3: Working Memory and Context
 
+Completed.
+
 - Working Memory set/list/clear.
 - Deterministic distillation rules.
 - Clear-before-write distill orchestration.
@@ -126,5 +128,5 @@ npm run dev -- health
 
 ## Open Items
 
-- Phase 3 is the next implementation step.
+- Phase 4 is the next implementation step.
 - MCP and export behavior remain planned, not implemented.

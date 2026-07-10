@@ -152,9 +152,10 @@ Completed:
 - Phase 2.2: Project Store.
 - Phase 2.3: Thread Store.
 - Phase 2.4: Memory Store and Search.
+- Phase 3: Working Memory and Context.
 
 Next:
 
-- Phase 3: Working Memory and Context.
+- Phase 4: CLI Commands and Export.
 
 Progress pointer: `.agents/progress.md`.
