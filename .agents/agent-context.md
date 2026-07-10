@@ -50,6 +50,12 @@ Mira/
   .agents/
     agent-context.md
     development-rhythm.md
+    progress.md
+  specs/
+    001-mira-mvp/
+      spec.md
+      plan.md
+      tasks.md
   docs/
     agent-config/
       AGENTS-template.md
@@ -69,13 +75,16 @@ The TypeScript project now exists. `.mira/` is still runtime data and must remai
 
 Read these first, in order:
 
-1. `README.md` — positioning, scope, and design principles.
-2. `.agents/agent-context.md` — quick project map and Agent entry context.
-3. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
-4. `docs/superpowers/plans/2026-07-09-mira-mvp.md` — MVP implementation plan and acceptance gates.
-5. `docs/agent-config/AGENTS-template.md` — target behavior for agents using Mira.
+1. `specs/001-mira-mvp/spec.md` — official what/why requirements.
+2. `specs/001-mira-mvp/tasks.md` — compact execution checklist.
+3. `.agents/progress.md` — current progress pointer and latest verification evidence.
+4. `README.md` — positioning, scope, and design principles.
+5. `.agents/agent-context.md` — quick project map and Agent entry context.
+6. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
+7. `docs/superpowers/plans/2026-07-09-mira-mvp.md` — detailed historical MVP plan and acceptance gates.
+8. `docs/agent-config/AGENTS-template.md` — target behavior for agents using Mira.
 
-If these files disagree, treat the MVP plan as the implementation contract and update the other docs to match.
+If these files disagree, treat `spec.md` and `tasks.md` as the implementation contract, then update the other docs to match.
 
 ## Product Focus
 

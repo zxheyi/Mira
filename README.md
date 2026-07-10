@@ -99,6 +99,9 @@ Agent 使用 Mira 的基本习惯：
 ## 项目文档
 
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)
+- [Mira MVP Spec](specs/001-mira-mvp/spec.md)
+- [Mira MVP Tasks](specs/001-mira-mvp/tasks.md)
+- [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)
 - [AGENTS.md 行为引导模板](docs/agent-config/AGENTS-template.md)
