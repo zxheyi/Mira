@@ -52,3 +52,7 @@ mira memory apply-candidates --thread <thread_id> --path ./candidates.json
 ```
 
 `apply-candidates` 会替换该 Thread 已有的提炼记忆。应用前确认候选内容稳定、可追溯、无敏感信息。
+
+Memory kind 可使用：`decision`、`convention`、`architecture`、`preference`、`task`、`fact`、`failed_attempt`、`lesson`、`constraint`、`todo`、`note`。
+
+Working Memory kind 可使用：`current_task`、`current_phase`、`recent_decision`、`blocker`、`next_step`、`preference`、`decision`、`note`。

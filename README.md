@@ -108,11 +108,13 @@ mira import --source claude-code --path ./claude-session.md --id claude_session_
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
+mira thread save --id thread_2 --title "Session File" --source codex --raw-format markdown --file ./session.md
 mira memory distill --thread thread_1
 mira memory llm-prompt --thread thread_1
 mira memory apply-candidates --thread thread_1 --path ./candidates.json
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
 mira memory search --query "script-friendly"
+mira memory search "script-friendly"
 mira working set --kind current_task --content "Continue Phase 4."
 mira working list
 mira context bundle --query "Mira"
@@ -129,6 +131,8 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 `mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要，也支持 Codex / Claude Code 的 JSONL transcript。导入后会保存为 Thread；Markdown 未传 `--title` 时优先使用第一个 H1，没有 H1 时使用文件名。JSONL 会被 normalize 成可读 Markdown 后保存，`rawFormat` 保留为 `jsonl`。
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
+
+MVP Memory kind 是兼容性超集：`decision`、`convention`、`architecture`、`preference`、`task`、`fact`、`failed_attempt`、`lesson`、`constraint`、`todo`、`note`。Working Memory kind 是：`current_task`、`current_phase`、`recent_decision`、`blocker`、`next_step`、`preference`、`decision`、`note`。
 
 ## MCP 快速配置
 

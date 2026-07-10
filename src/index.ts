@@ -150,9 +150,29 @@ thread
   .requiredOption("--id <id>", "Thread id")
   .requiredOption("--title <title>", "Thread title")
   .requiredOption("--source <source>", "Thread source")
-  .requiredOption("--format <format>", "Raw format")
-  .requiredOption("--text <text>", "Raw text or summary")
-  .action(async (options: { id: string; title: string; source: string; format: string; text: string }) => {
+  .option("--format <format>", "Raw format")
+  .option("--raw-format <format>", "Raw format")
+  .option("--text <text>", "Raw text or summary")
+  .option("--file <path>", "Read raw text from a file")
+  .action(async (options: {
+    id: string;
+    title: string;
+    source: string;
+    format?: string;
+    rawFormat?: string;
+    text?: string;
+    file?: string;
+  }) => {
+    const rawFormat = options.format ?? options.rawFormat;
+    if (!rawFormat) {
+      throw new Error("Thread raw format is required via --format or --raw-format");
+    }
+
+    const rawText = options.text ?? (options.file ? await readFile(resolve(options.file), "utf8") : undefined);
+    if (rawText === undefined) {
+      throw new Error("Thread raw text is required via --text or --file");
+    }
+
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(
         saveThread(session.db, {
@@ -160,8 +180,8 @@ thread
           projectId: session.project.id,
           title: options.title,
           source: options.source,
-          rawFormat: options.format,
-          rawText: options.text
+          rawFormat,
+          rawText
         })
       );
     });
@@ -211,10 +231,16 @@ memory
 memory
   .command("search")
   .description("Search memories")
-  .requiredOption("--query <query>", "Search query")
-  .action(async (options: { query: string }) => {
+  .argument("[query]", "Search query")
+  .option("--query <query>", "Search query")
+  .action(async (query: string | undefined, options: { query?: string }) => {
+    const resolvedQuery = options.query ?? query;
+    if (!resolvedQuery) {
+      throw new Error("Search query is required as an argument or --query");
+    }
+
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(searchMemories(session.db, session.project.id, options.query));
+      printJson(searchMemories(session.db, session.project.id, resolvedQuery));
     });
   });
 

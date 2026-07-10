@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 
 export const WORKING_MEMORY_KINDS = [
   "current_task",
+  "current_phase",
+  "recent_decision",
   "blocker",
   "next_step",
   "preference",

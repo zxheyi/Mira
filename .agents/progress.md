@@ -8,6 +8,8 @@ Mira MVP implementation phases are complete. Phase 1 through Phase 6 have local 
 Post-MVP P0 Agent Session Import is implemented and locally verified.
 Post-MVP P1 LLM Distill and Agent Guidance is implemented and locally verified.
 Post-MVP P2 Transcript JSONL Import is implemented and locally verified.
+Audit Alignment P1 is implemented and locally verified.
+MCP Agent Usability hardening is implemented and locally verified.
 
 Completed:
 
@@ -30,6 +32,13 @@ Completed:
 - Phase 13: JSONL Importer.
 - Phase 14: Import CLI Format Option.
 - Phase 15: Docs and Progress.
+- Phase 16: Audit kind alignment.
+- Phase 17: Audit distill and search alignment.
+- Phase 18: Audit CLI compatibility.
+- Phase 19: Audit docs and verification.
+- Phase 20: MCP tool description quality.
+- Phase 21: MCP kind runtime validation.
+- Phase 22: MCP usability docs and verification.
 
 ## Verification Evidence
 
@@ -68,6 +77,24 @@ npm test
 
 npm run build
 # tsc completed successfully
+
+npm run test -- tests/memory/memoryStore.test.ts tests/workingMemory/workingMemoryStore.test.ts tests/distill/distillThread.test.ts tests/cli/phase4-cli.test.ts
+# Test Files 4 passed; Tests 16 passed
+
+npm test
+# Test Files 18 passed; Tests 51 passed
+
+npm run build
+# tsc completed successfully
+
+npm run test -- tests/mcp/tools.integration.test.ts
+# Test Files 1 passed; Tests 5 passed
+
+npm test
+# Test Files 18 passed; Tests 54 passed
+
+npm run build
+# tsc completed successfully
 ```
 
 TDD evidence for Phase 5/6:
@@ -77,6 +104,12 @@ JSONL import RED: normalizeJsonlSession is not a function
 JSONL import CLI RED: unknown option '--format'
 JSONL import GREEN: tests/importers/agentSessionImporter.test.ts passed, 7 tests
 JSONL import CLI GREEN: tests/cli/import-cli.test.ts passed, 3 tests
+
+Audit alignment RED: planned Memory / Working Memory kinds missing, planned distill headings not mapped, CLI compatibility test missing implementation, better-sqlite3 required rebuild for current Node.
+Audit alignment GREEN: targeted tests passed after adding kind supersets, distill mappings, score-before-recency search ordering, and CLI aliases.
+
+MCP usability RED: tool descriptions were not exported and MCP kind guards accepted arbitrary strings through type assertions.
+MCP usability GREEN: explicit tool descriptions are exported, invalid Memory / Working Memory kinds are rejected, and missing argument errors remain explicit.
 
 LLM distill RED: Cannot find module '../../src/distill/llmDistill.js'
 LLM distill CLI RED: unknown command 'llm-prompt' / 'apply-candidates'
@@ -145,6 +178,12 @@ specs/003-llm-distill-agent-guidance/tasks.md
 specs/004-transcript-jsonl-import/spec.md
 specs/004-transcript-jsonl-import/plan.md
 specs/004-transcript-jsonl-import/tasks.md
+specs/005-audit-alignment/spec.md
+specs/005-audit-alignment/plan.md
+specs/005-audit-alignment/tasks.md
+specs/006-mcp-agent-usability/spec.md
+specs/006-mcp-agent-usability/plan.md
+specs/006-mcp-agent-usability/tasks.md
 ```
 
 ## Next Step
@@ -162,5 +201,7 @@ Post-MVP hardening:
 - P0 Agent Session Import currently supports Markdown files for `codex`, `claude-code`, and `markdown`.
 - P1 LLM Distill currently uses a provider-neutral prompt + reviewed candidate JSON workflow.
 - P2 JSONL import normalizes transcript records into Markdown Thread text while preserving `rawFormat=jsonl`.
+- Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.
+- MCP usability hardening replaces placeholder tool descriptions and validates kind values at runtime.
 - Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

@@ -4,13 +4,14 @@ import { z } from "zod";
 import { buildContextBundle } from "../context/contextBundle.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
-import { addMemory, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
+import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { saveThread } from "../threads/threadStore.js";
 import {
   clearWorkingMemory,
   listWorkingMemory,
   setWorkingMemory,
+  WORKING_MEMORY_KINDS,
   type WorkingMemoryKind
 } from "../workingMemory/workingMemoryStore.js";
 
@@ -25,6 +26,16 @@ export const MIRA_MCP_TOOL_NAMES = [
 ] as const;
 
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
+
+export const MIRA_MCP_TOOL_DESCRIPTIONS = {
+  get_context_bundle: "Build a concise Markdown context bundle with current working memory and relevant long-term memories for this project.",
+  search_memory: "Search this project's long-term memories by text and return ranked results with score, kind, title, source, and confidence.",
+  set_working_memory: "Set the current project working-memory snapshot for a supported kind such as current_task, blocker, or next_step.",
+  list_working_memory: "List the current project working-memory entries so the agent can resume the active task state.",
+  clear_working_memory: "Clear stale working-memory entries for one supported kind, or clear all working memory when no kind is provided.",
+  add_memory: "Write a stable, reviewed long-term memory for this project with provenance, confidence, importance, and a supported kind.",
+  save_thread: "Save an agent-generated session summary as a Mira thread for later distillation, search, and provenance tracking."
+} satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
   projectRoot: string;
@@ -43,16 +54,16 @@ const TOOL_SCHEMAS = {
     query: z.string()
   },
   set_working_memory: {
-    kind: z.string(),
+    kind: z.enum(WORKING_MEMORY_KINDS),
     content: z.string()
   },
   list_working_memory: {},
   clear_working_memory: {
-    kind: z.string().optional()
+    kind: z.enum(WORKING_MEMORY_KINDS).optional()
   },
   add_memory: {
     title: z.string(),
-    kind: z.string(),
+    kind: z.enum(MEMORY_KINDS),
     content: z.string(),
     source: z.string(),
     threadId: z.string().optional(),
@@ -93,6 +104,33 @@ function numberArg(args: ToolArgs, name: string, fallback: number): number {
   return typeof value === "number" ? value : fallback;
 }
 
+function memoryKindArg(args: ToolArgs, name: string): MemoryKind {
+  const kind = stringArg(args, name);
+  if (!(MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`Unsupported Memory kind: ${kind}. Supported kinds: ${MEMORY_KINDS.join(", ")}`);
+  }
+  return kind as MemoryKind;
+}
+
+function workingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind {
+  const kind = stringArg(args, name);
+  if (!(WORKING_MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`Unsupported Working Memory kind: ${kind}. Supported kinds: ${WORKING_MEMORY_KINDS.join(", ")}`);
+  }
+  return kind as WorkingMemoryKind;
+}
+
+function optionalWorkingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind | undefined {
+  const kind = optionalStringArg(args, name);
+  if (!kind) {
+    return undefined;
+  }
+  if (!(WORKING_MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`Unsupported Working Memory kind: ${kind}. Supported kinds: ${WORKING_MEMORY_KINDS.join(", ")}`);
+  }
+  return kind as WorkingMemoryKind;
+}
+
 function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession) => T): T {
   const db = openDatabase(options.dbPath);
   migrate(db);
@@ -123,20 +161,20 @@ export function callMiraTool(
       case "set_working_memory":
         return setWorkingMemory(db, {
           projectId,
-          kind: stringArg(args, "kind") as WorkingMemoryKind,
+          kind: workingMemoryKindArg(args, "kind"),
           content: stringArg(args, "content")
         });
       case "list_working_memory":
         return listWorkingMemory(db, projectId);
       case "clear_working_memory":
-        clearWorkingMemory(db, projectId, optionalStringArg(args, "kind") as WorkingMemoryKind | undefined);
+        clearWorkingMemory(db, projectId, optionalWorkingMemoryKindArg(args, "kind"));
         return { ok: true };
       case "add_memory":
         return addMemory(db, {
           projectId,
           threadId: optionalStringArg(args, "threadId") ?? optionalStringArg(args, "thread"),
           title: stringArg(args, "title"),
-          kind: stringArg(args, "kind") as MemoryKind,
+          kind: memoryKindArg(args, "kind"),
           content: stringArg(args, "content"),
           source: stringArg(args, "source"),
           confidence: numberArg(args, "confidence", 1),
@@ -177,7 +215,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
       toolName,
       {
         title: toolName,
-        description: `Mira ${toolName} tool`,
+        description: MIRA_MCP_TOOL_DESCRIPTIONS[toolName],
         inputSchema: TOOL_SCHEMAS[toolName]
       },
       async (args: unknown) => toMcpToolResult(callMiraTool(options, toolName, args as ToolArgs))

@@ -2,7 +2,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { callMiraTool, createMiraMcpServer } from "../../src/mcp/server.js";
+import {
+  callMiraTool,
+  createMiraMcpServer,
+  MIRA_MCP_TOOL_DESCRIPTIONS
+} from "../../src/mcp/server.js";
 
 async function setupMcpOptions() {
   const projectRoot = await mkdtemp(join(tmpdir(), "mira-mcp-project-"));
@@ -27,6 +31,24 @@ describe("Mira MCP tools", () => {
       "save_thread"
     ]);
     expect(created.server).toBeDefined();
+  });
+
+  test("defines precise agent-facing descriptions for every MCP tool", () => {
+    expect(Object.keys(MIRA_MCP_TOOL_DESCRIPTIONS)).toEqual([
+      "get_context_bundle",
+      "search_memory",
+      "set_working_memory",
+      "list_working_memory",
+      "clear_working_memory",
+      "add_memory",
+      "save_thread"
+    ]);
+
+    for (const [toolName, description] of Object.entries(MIRA_MCP_TOOL_DESCRIPTIONS)) {
+      expect(description.length).toBeGreaterThan(40);
+      expect(description).not.toBe(`Mira ${toolName} tool`);
+      expect(description).not.toMatch(/placeholder/i);
+    }
   });
 
   test("runs the agent read/write loop through MCP tool handlers", async () => {
@@ -70,5 +92,38 @@ describe("Mira MCP tools", () => {
 
     expect(await callMiraTool(options, "clear_working_memory", { kind: "current_task" })).toEqual({ ok: true });
     expect(await callMiraTool(options, "list_working_memory", {})).toEqual([]);
+  });
+
+  test("rejects invalid MCP memory and working memory kinds", async () => {
+    const options = await setupMcpOptions();
+
+    expect(() =>
+      callMiraTool(options, "add_memory", {
+        title: "Invalid",
+        kind: "surprise",
+        content: "This kind should not be accepted.",
+        source: "mcp-test"
+      })
+    ).toThrow(/Unsupported Memory kind: surprise/);
+
+    expect(() =>
+      callMiraTool(options, "set_working_memory", {
+        kind: "surprise",
+        content: "This kind should not be accepted."
+      })
+    ).toThrow(/Unsupported Working Memory kind: surprise/);
+
+    expect(() => callMiraTool(options, "clear_working_memory", { kind: "surprise" })).toThrow(
+      /Unsupported Working Memory kind: surprise/
+    );
+  });
+
+  test("keeps MCP missing argument errors explicit", async () => {
+    const options = await setupMcpOptions();
+
+    expect(() => callMiraTool(options, "search_memory", {})).toThrow("Missing string argument: query");
+    expect(() => callMiraTool(options, "save_thread", { id: "thread_missing" })).toThrow(
+      "Missing string argument: title"
+    );
   });
 });

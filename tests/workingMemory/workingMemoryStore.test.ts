@@ -27,7 +27,15 @@ function setupDb(): Database.Database {
 describe("working memory store", () => {
   test("defines the MVP working memory kinds", () => {
     expect(WORKING_MEMORY_KINDS).toEqual(
-      expect.arrayContaining(["current_task", "blocker", "next_step", "preference", "note"])
+      expect.arrayContaining([
+        "current_task",
+        "current_phase",
+        "recent_decision",
+        "blocker",
+        "next_step",
+        "preference",
+        "note"
+      ])
     );
   });
 

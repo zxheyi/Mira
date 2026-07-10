@@ -29,7 +29,17 @@ function setupDb(): Database.Database {
 describe("memory store", () => {
   test("defines the MVP memory kinds", () => {
     expect(MEMORY_KINDS).toEqual(
-      expect.arrayContaining(["decision", "convention", "architecture", "preference", "lesson", "note"])
+      expect.arrayContaining([
+        "decision",
+        "convention",
+        "architecture",
+        "preference",
+        "task",
+        "fact",
+        "failed_attempt",
+        "lesson",
+        "note"
+      ])
     );
   });
 
@@ -190,5 +200,30 @@ describe("memory store", () => {
     expect(titleResults[0]?.memory.title).toBe("Agent context bundle");
     expect(contentResults.map((result) => result.memory)).toEqual([important, lessImportant]);
     expect(contentResults[0]?.score).toEqual(expect.any(Number));
+  });
+
+  test("orders equally important search results by score before recency", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    const exact = addMemory(database, {
+      projectId: project.id,
+      title: "Exact MCP",
+      kind: "fact",
+      content: "MCP",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Later broad MCP",
+      kind: "fact",
+      content: "MCP appears in a longer note with extra words.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    expect(searchMemories(database, project.id, "MCP")[0]?.memory.id).toBe(exact.id);
   });
 });

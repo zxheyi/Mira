@@ -31,6 +31,15 @@ function kindForHeading(heading: string): MemoryKind | undefined {
   if (["preferences", "user preferences"].includes(normalized)) {
     return "preference";
   }
+  if (["tasks", "task", "current tasks"].includes(normalized)) {
+    return "task";
+  }
+  if (["facts", "fact", "project facts"].includes(normalized)) {
+    return "fact";
+  }
+  if (["failed attempts", "failed attempt", "failures", "what failed"].includes(normalized)) {
+    return "failed_attempt";
+  }
   if (["what we learned", "lessons", "lessons learned", "learned"].includes(normalized)) {
     return "lesson";
   }
@@ -53,8 +62,11 @@ function importanceForKind(kind: MemoryKind): number {
     case "preference":
     case "constraint":
       return 7;
+    case "failed_attempt":
     case "lesson":
       return 6;
+    case "task":
+    case "fact":
     case "todo":
       return 5;
     case "note":

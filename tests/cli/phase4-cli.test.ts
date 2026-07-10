@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -154,5 +154,49 @@ describe("Phase 4 CLI commands", () => {
 
     expect(cleared).toEqual({ ok: true });
     expect(afterClear).toEqual([]);
+  });
+
+  test("supports compatible thread save and memory search arguments", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-compat-"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+    const sessionPath = join(tempRoot, "session.md");
+    await writeFile(sessionPath, "## Facts\n- CLI compatibility should be preserved.", "utf8");
+
+    const thread = parseJson<{ id: string; rawFormat: string; rawText: string }>(
+      (
+        await runMira(
+          [
+            "thread",
+            "save",
+            "--id",
+            "compat_thread",
+            "--title",
+            "Compat Thread",
+            "--source",
+            "codex",
+            "--raw-format",
+            "markdown",
+            "--file",
+            sessionPath
+          ],
+          tempRoot,
+          dbPath
+        )
+      ).stdout
+    );
+    expect(thread).toMatchObject({
+      id: "compat_thread",
+      rawFormat: "markdown",
+      rawText: "## Facts\n- CLI compatibility should be preserved."
+    });
+
+    await runMira(["memory", "distill", "--thread", "compat_thread"], tempRoot, dbPath);
+    const search = parseJson<Array<{ memory: { kind: string; content: string } }>>(
+      (await runMira(["memory", "search", "compatibility"], tempRoot, dbPath)).stdout
+    );
+
+    expect(search[0]).toMatchObject({
+      memory: { kind: "fact", content: "CLI compatibility should be preserved." }
+    });
   });
 });

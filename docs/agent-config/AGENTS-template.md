@@ -39,7 +39,21 @@
 - `architecture`：架构结构、模块边界、数据流。
 - `convention`：编码约定、命名约定、工程习惯。
 - `preference`：用户偏好。
+- `task`：明确的后续任务或工作项。
+- `fact`：稳定项目事实。
+- `failed_attempt`：已经尝试但失败或不应重复的方案。
 - `lesson`：经验、失败尝试、不要重复的方案。
 - `constraint`：限制、边界、不可做事项。
 - `todo`：后续任务或待办。
 - `note`：稳定项目事实或补充说明。
+
+## Working Memory kind 建议
+
+- `current_task`：当前正在推进的任务。
+- `current_phase`：当前阶段或交付门禁。
+- `recent_decision`：最近刚做出、后续任务需要知道的决策。
+- `blocker`：当前阻塞。
+- `next_step`：下一步行动。
+- `preference`：短期仍相关的偏好。
+- `decision`：当前阶段临时决策。
+- `note`：短期上下文补充。

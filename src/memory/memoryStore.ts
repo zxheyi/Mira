@@ -6,6 +6,9 @@ export const MEMORY_KINDS = [
   "convention",
   "architecture",
   "preference",
+  "task",
+  "fact",
+  "failed_attempt",
   "lesson",
   "constraint",
   "todo",
@@ -209,7 +212,7 @@ export function searchMemories(db: Database.Database, projectId: string, query: 
        from memory_fts
        join memories on memories.id = memory_fts.id
        where memory_fts match ? and memories.project_id = ?
-       order by memories.importance desc, memories.confidence desc, memories.created_at desc, score desc`
+       order by memories.importance desc, memories.confidence desc, score desc, memories.created_at desc`
     )
     .all(toFtsQuery(trimmedQuery), projectId)
     .map((row) => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));

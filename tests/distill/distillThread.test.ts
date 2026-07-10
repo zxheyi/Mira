@@ -55,6 +55,28 @@ describe("distill thread memories", () => {
     ]);
   });
 
+  test("extracts planned task, fact, and failed attempt kinds", () => {
+    const memories = distillMemoriesFromText("project_1", "thread_1", `# Session
+
+## Tasks
+- Import real Codex transcripts.
+
+## Facts
+- Mira stores memories in SQLite.
+
+## Failed Attempts
+- Reading browser auth files is not a safe import path.`);
+
+    expect(memories).toEqual([
+      expect.objectContaining({ kind: "task", content: "Import real Codex transcripts." }),
+      expect.objectContaining({ kind: "fact", content: "Mira stores memories in SQLite." }),
+      expect.objectContaining({
+        kind: "failed_attempt",
+        content: "Reading browser auth files is not a safe import path."
+      })
+    ]);
+  });
+
   test("clears old memories before writing the latest distill result", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
