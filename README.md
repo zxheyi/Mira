@@ -103,6 +103,8 @@ Phase 4 已提供本地 CLI 闭环。常用命令示例：
 ```bash
 mira init
 mira project list
+mira import --source codex --path ./codex-session.md
+mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira memory distill --thread thread_1
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
@@ -119,6 +121,8 @@ mira export --format markdown --out ./export
 ```bash
 mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 ```
+
+`mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要。导入后会保存为 Thread；如果没有传 `--title`，Mira 会优先使用 Markdown 的第一个 H1，没有 H1 时使用文件名。
 
 ## MCP 快速配置
 
@@ -147,6 +151,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)
 - [Mira MVP Spec](specs/001-mira-mvp/spec.md)
 - [Mira MVP Tasks](specs/001-mira-mvp/tasks.md)
+- [Agent Session Import Spec](specs/002-agent-session-import/spec.md)
+- [Agent Session Import Tasks](specs/002-agent-session-import/tasks.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)

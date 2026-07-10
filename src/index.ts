@@ -7,6 +7,7 @@ import { openDatabase } from "./db/client.js";
 import { migrate } from "./db/schema.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
+import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
 import { addMemory, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
 import { detectProjectRoot } from "./projects/projectRoot.js";
 import {
@@ -307,6 +308,35 @@ program
 
     await withProject(program.opts<GlobalOptions>(), async (session) => {
       printJson(await exportProject(session.db, session.project.id, options.format, options.out));
+    });
+  });
+
+program
+  .command("import")
+  .description("Import an agent session into the current project")
+  .requiredOption("--source <source>", "Session source: codex, claude-code, or markdown")
+  .requiredOption("--path <path>", "Markdown session file path")
+  .option("--id <id>", "Thread id")
+  .option("--title <title>", "Thread title")
+  .action(async (options: { source: string; path: string; id?: string; title?: string }) => {
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      const imported = await importAgentSessionFromFile({
+        source: options.source,
+        inputPath: options.path,
+        id: options.id,
+        title: options.title
+      });
+
+      printJson(
+        saveThread(session.db, {
+          id: imported.id,
+          projectId: session.project.id,
+          title: imported.title,
+          source: imported.source,
+          rawFormat: imported.rawFormat,
+          rawText: imported.rawText
+        })
+      );
     });
   });
 

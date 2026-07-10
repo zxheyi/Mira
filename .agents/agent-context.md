@@ -20,6 +20,8 @@ Planned MVP commands after later phases:
 ```bash
 npm run dev -- init
 npm run dev -- project list
+npm run dev -- import --source codex --path ./codex-session.md
+npm run dev -- import --source claude-code --path ./claude-session.md
 npm run dev -- memory search "SQLite FTS"
 npm run dev -- context bundle
 npm run dev -- mcp serve --project-root /Users/limaolin/Desktop/Mira --db /Users/limaolin/Desktop/Mira/.mira/mira.sqlite
@@ -75,9 +77,11 @@ The TypeScript project now exists. `.mira/` is still runtime data and must remai
 
 Read these first, in order:
 
-1. `specs/001-mira-mvp/spec.md` — official what/why requirements.
-2. `specs/001-mira-mvp/tasks.md` — compact execution checklist.
-3. `.agents/progress.md` — current progress pointer and latest verification evidence.
+1. `specs/002-agent-session-import/spec.md` — current post-MVP P0 import requirements.
+2. `specs/002-agent-session-import/tasks.md` — current post-MVP P0 execution checklist.
+3. `specs/001-mira-mvp/spec.md` — completed MVP what/why requirements.
+4. `specs/001-mira-mvp/tasks.md` — completed MVP checklist.
+5. `.agents/progress.md` — current progress pointer and latest verification evidence.
 4. `README.md` — positioning, scope, and design principles.
 5. `.agents/agent-context.md` — quick project map and Agent entry context.
 6. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
