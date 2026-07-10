@@ -11,7 +11,7 @@
 
 ## 推荐节奏
 
-1. 读 README、MVP 计划、AGENTS 模板和本文件。
+1. 读 README、`.agents/agent-context.md`、MVP 计划、AGENTS 模板和本文件。
 2. 从 MVP 计划中选一个最小阶段或任务，不跨阶段顺手扩张。
 3. 先把该任务的验收点翻译成测试。
 4. 先写失败测试，再写最小实现。
