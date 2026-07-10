@@ -99,6 +99,7 @@ Agent 使用 Mira 的基本习惯：
 ## 项目文档
 
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)
+- [Mira 开发节奏](.agents/development-rhythm.md)
 - [AGENTS.md 行为引导模板](docs/agent-config/AGENTS-template.md)
 - [Session 019f45f0-40bf-7261-8685-d5e0a6a8bf13](docs/sessions/019f45f0-40bf-7261-8685-d5e0a6a8bf13.md)
 
