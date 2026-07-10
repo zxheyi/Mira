@@ -30,29 +30,29 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ### Phase 2.2: Project Store
 
-- [ ] Write failing `tests/projects/projectStore.test.ts`.
-- [ ] Implement `createProject(db, { name, rootPath })`.
-- [ ] Implement `findProjectByRoot(db, rootPath)`.
-- [ ] Implement `ensureProjectForRoot(db, rootPath)`.
-- [ ] Implement `listProjects(db)`.
-- [ ] Verify `npm test -- tests/projects/projectStore.test.ts`.
+- [x] Write failing `tests/projects/projectStore.test.ts`.
+- [x] Implement `createProject(db, { name, rootPath })`.
+- [x] Implement `findProjectByRoot(db, rootPath)`.
+- [x] Implement `ensureProjectForRoot(db, rootPath)`.
+- [x] Implement `listProjects(db)`.
+- [x] Verify `npm test -- tests/projects/projectStore.test.ts`.
 
 ### Phase 2.3: Thread Store
 
-- [ ] Write failing `tests/threads/threadStore.test.ts`.
-- [ ] Implement `saveThread(db, { id, projectId, title, source, rawFormat, rawText })`.
-- [ ] Support updating an existing Thread.
-- [ ] Verify `npm test -- tests/threads/threadStore.test.ts`.
+- [x] Write failing `tests/threads/threadStore.test.ts`.
+- [x] Implement `saveThread(db, { id, projectId, title, source, rawFormat, rawText })`.
+- [x] Support updating an existing Thread.
+- [x] Verify `npm test -- tests/threads/threadStore.test.ts`.
 
 ### Phase 2.4: Memory Store and Search
 
-- [ ] Write failing `tests/memory/memoryStore.test.ts`.
-- [ ] Define Memory kinds.
-- [ ] Implement `addMemory`.
-- [ ] Implement idempotent content-hash behavior.
-- [ ] Implement `clearMemoriesForThread`.
-- [ ] Implement `searchMemories` returning `{ memory, score }`.
-- [ ] Verify `npm test -- tests/memory/memoryStore.test.ts`.
+- [x] Write failing `tests/memory/memoryStore.test.ts`.
+- [x] Define Memory kinds.
+- [x] Implement `addMemory`.
+- [x] Implement idempotent content-hash behavior.
+- [x] Implement `clearMemoriesForThread`.
+- [x] Implement `searchMemories` returning `{ memory, score }`.
+- [x] Verify `npm test -- tests/memory/memoryStore.test.ts`.
 
 ## Phase 3: Working Memory and Context
 
@@ -93,4 +93,4 @@ This is the SDD task source for implementation. The older MVP plan remains usefu
 
 ## Current Next Task
 
-Start Phase 2.2: project store.
+Start Phase 3: working memory and context.

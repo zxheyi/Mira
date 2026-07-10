@@ -148,9 +148,13 @@ Completed:
 
 - Phase 1.1: TypeScript CLI skeleton and `health` command.
 - Phase 1.2: SQLite client, schema migration, schema tests.
+- Phase 2.1: Project root detection.
+- Phase 2.2: Project Store.
+- Phase 2.3: Thread Store.
+- Phase 2.4: Memory Store and Search.
 
 Next:
 
-- Phase 2.1: project root detection.
+- Phase 3: Working Memory and Context.
 
 Progress pointer: `.agents/progress.md`.

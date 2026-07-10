@@ -61,7 +61,7 @@ Completed.
 
 ### Phase 2: Core Data Loop
 
-Next.
+Completed.
 
 - Project root detection.
 - Project Store.
@@ -126,5 +126,5 @@ npm run dev -- health
 
 ## Open Items
 
-- Phase 2.1 is the next implementation step.
+- Phase 3 is the next implementation step.
 - MCP and export behavior remain planned, not implemented.
