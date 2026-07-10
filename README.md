@@ -107,6 +107,8 @@ mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira memory distill --thread thread_1
+mira memory llm-prompt --thread thread_1
+mira memory apply-candidates --thread thread_1 --path ./candidates.json
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
 mira memory search --query "script-friendly"
 mira working set --kind current_task --content "Continue Phase 4."
@@ -123,6 +125,8 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 ```
 
 `mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要。导入后会保存为 Thread；如果没有传 `--title`，Mira 会优先使用 Markdown 的第一个 H1，没有 H1 时使用文件名。
+
+`mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
 
 ## MCP 快速配置
 
@@ -153,10 +157,12 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Mira MVP Tasks](specs/001-mira-mvp/tasks.md)
 - [Agent Session Import Spec](specs/002-agent-session-import/spec.md)
 - [Agent Session Import Tasks](specs/002-agent-session-import/tasks.md)
+- [LLM Distill Spec](specs/003-llm-distill-agent-guidance/spec.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)
 - [AGENTS.md 行为引导模板](docs/agent-config/AGENTS-template.md)
+- [CLAUDE.md 行为引导模板](docs/agent-config/CLAUDE-template.md)
 - [Claude Code MCP 配置示例](docs/agent-config/claude-code.md)
 - [Cursor MCP 配置示例](docs/agent-config/cursor.md)
 - [Session 019f45f0-40bf-7261-8685-d5e0a6a8bf13](docs/sessions/019f45f0-40bf-7261-8685-d5e0a6a8bf13.md)

@@ -6,6 +6,7 @@ Last updated: 2026-07-10
 
 Mira MVP implementation phases are complete. Phase 1 through Phase 6 have local commits.
 Post-MVP P0 Agent Session Import is implemented and locally verified.
+Post-MVP P1 LLM Distill and Agent Guidance is implemented and locally verified.
 
 Completed:
 
@@ -22,6 +23,9 @@ Completed:
 - Phase 7: Unified Agent Session Importer.
 - Phase 8: Codex Markdown Import.
 - Phase 9: Claude Code Markdown Import.
+- Phase 10: LLM Distill Candidate Flow.
+- Phase 11: CLI Review Loop.
+- Phase 12: Agent Guidance Templates.
 
 ## Verification Evidence
 
@@ -48,11 +52,22 @@ npm test
 
 npm run build
 # tsc completed successfully
+
+npm test
+# Test Files 18 passed; Tests 44 passed
+
+npm run build
+# tsc completed successfully
 ```
 
 TDD evidence for Phase 5/6:
 
 ```text
+LLM distill RED: Cannot find module '../../src/distill/llmDistill.js'
+LLM distill CLI RED: unknown command 'llm-prompt' / 'apply-candidates'
+LLM distill GREEN: tests/distill/llmDistill.test.ts passed, 5 tests
+LLM distill CLI GREEN: tests/cli/llm-distill-cli.test.ts passed, 2 tests
+
 Agent importer RED: Cannot find module '../../src/importers/agentSessionImporter.js'
 Import CLI RED: unknown command 'import'
 Agent importer GREEN: tests/importers/agentSessionImporter.test.ts passed, 4 tests
@@ -79,6 +94,7 @@ src/threads/threadStore.ts
 src/memory/memoryStore.ts
 src/workingMemory/workingMemoryStore.ts
 src/distill/distillThread.ts
+src/distill/llmDistill.ts
 src/context/contextBundle.ts
 src/export/exportProject.ts
 src/importers/agentSessionImporter.ts
@@ -96,9 +112,11 @@ tests/threads/threadStore.test.ts
 tests/memory/memoryStore.test.ts
 tests/workingMemory/workingMemoryStore.test.ts
 tests/distill/distillThread.test.ts
+tests/distill/llmDistill.test.ts
 tests/context/contextBundle.test.ts
 tests/export/exportProject.test.ts
 tests/mcp/tools.integration.test.ts
+tests/cli/llm-distill-cli.test.ts
 tests/integration/localLoop.test.ts
 specs/001-mira-mvp/spec.md
 specs/001-mira-mvp/plan.md
@@ -106,20 +124,24 @@ specs/001-mira-mvp/tasks.md
 specs/002-agent-session-import/spec.md
 specs/002-agent-session-import/plan.md
 specs/002-agent-session-import/tasks.md
+specs/003-llm-distill-agent-guidance/spec.md
+specs/003-llm-distill-agent-guidance/plan.md
+specs/003-llm-distill-agent-guidance/tasks.md
 ```
 
 ## Next Step
 
 Post-MVP hardening:
 
-1. Try `mira import --source codex --path <summary.md>` with a real Codex summary.
-2. Try `mira import --source claude-code --path <summary.md>` with a real Claude Code summary.
-3. Improve distill adapters for real transcripts beyond Markdown summaries.
-4. Add automated transcript capture hooks if the host agent exposes them.
+1. Try `mira memory llm-prompt --thread <thread_id>` on a real imported Codex summary.
+2. Review LLM JSON and apply it with `mira memory apply-candidates --thread <thread_id> --path <candidates.json>`.
+3. Try `mira import --source claude-code --path <summary.md>` with a real Claude Code summary.
+4. Improve distill adapters for real transcripts beyond Markdown summaries.
 
 ## Notes For Next Agent
 
 - All MVP phases are implemented locally.
 - P0 Agent Session Import currently supports Markdown files for `codex`, `claude-code`, and `markdown`.
+- P1 LLM Distill currently uses a provider-neutral prompt + reviewed candidate JSON workflow.
 - Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

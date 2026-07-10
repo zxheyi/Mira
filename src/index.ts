@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import type Database from "better-sqlite3";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { buildContextBundle } from "./context/contextBundle.js";
 import { openDatabase } from "./db/client.js";
 import { migrate } from "./db/schema.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
+import {
+  applyLlmDistillCandidates,
+  buildLlmDistillPromptForThread,
+  parseLlmMemoryCandidates
+} from "./distill/llmDistill.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
 import { addMemory, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
@@ -219,6 +225,35 @@ memory
   .action(async (options: { thread: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(distillThreadMemories(session.db, session.project.id, options.thread));
+    });
+  });
+
+memory
+  .command("llm-prompt")
+  .description("Print a reviewable LLM distill prompt for a saved thread")
+  .requiredOption("--thread <id>", "Thread id")
+  .action(async (options: { thread: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      process.stdout.write(buildLlmDistillPromptForThread(session.db, session.project.id, options.thread));
+    });
+  });
+
+memory
+  .command("apply-candidates")
+  .description("Apply reviewed LLM memory candidates from JSON")
+  .requiredOption("--thread <id>", "Thread id")
+  .requiredOption("--path <path>", "Candidate JSON file path")
+  .action(async (options: { thread: string; path: string }) => {
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      const rawCandidates = await readFile(resolve(options.path), "utf8");
+      printJson(
+        applyLlmDistillCandidates(
+          session.db,
+          session.project.id,
+          options.thread,
+          parseLlmMemoryCandidates(rawCandidates)
+        )
+      );
     });
   });
 

@@ -22,3 +22,5 @@ Use absolute paths so the MCP client does not depend on its startup cwd.
 ```
 
 During local development, replace `node .../dist/src/index.js` with `npm run dev --` from the Mira repo only when your MCP client supports a working directory.
+
+For project behavior guidance, copy or adapt [CLAUDE-template.md](CLAUDE-template.md) into the target project's `CLAUDE.md`.

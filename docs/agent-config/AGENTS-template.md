@@ -21,6 +21,18 @@
 2. 用 `add_memory` 保存本轮产生的稳定决策或经验。
 3. 用 `save_thread` 保存本轮会话摘要或关键原文。MVP 中保存的是你生成的摘要，不是假设你能访问完整 transcript。
 
+## LLM 提炼工作流
+
+当需要从较长 Thread 中提炼结构化记忆时：
+
+1. 先运行 `mira memory llm-prompt --thread <thread_id>` 生成提炼提示词。
+2. 把提示词交给 LLM，要求它只返回 JSON。
+3. 人类或 Agent 审查 JSON，删除不稳定、重复、敏感或推测性的候选记忆。
+4. 将审查后的 JSON 保存为文件。
+5. 运行 `mira memory apply-candidates --thread <thread_id> --path <candidates.json>` 写入 Memory。
+
+不要把未经审查的 LLM 输出直接当成事实写入长期 Memory。
+
 ## Memory kind 建议
 
 - `decision`：已经确认的项目决策。
