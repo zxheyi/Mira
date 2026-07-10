@@ -50,12 +50,14 @@ MVP 包含：
 - 自动探测当前 Git 项目根目录。
 - 保存 Agent 会话为项目关联 Thread。
 - 从会话中提炼确定性 Memory。
+- 支持 Agent 通过 MCP 主动保存 Thread 和写入 Memory。
 - 维护 Working Memory。
 - 使用 SQLite FTS5 搜索项目记忆。
 - 生成短小的 Markdown Context Bundle。
+- 支持 Markdown / JSON 导出，保证本地可审计。
 - 提供 CLI 命令给人类使用。
 - 提供 MCP stdio server 给 Agent 使用。
-- 提供 Claude Code、Cursor 等接入示例。
+- 提供 Claude Code、Cursor 等接入示例，以及 AGENTS.md 行为引导模板。
 
 MVP 暂不做：
 
@@ -76,9 +78,27 @@ MVP 暂不做：
 - **可审计**：原始 Thread 保留，Memory 可以追溯来源。
 - **可注入**：输出必须是 Agent 易消费的短 Markdown，而不是只给人看的长文档。
 
+## MVP 架构决策
+
+MVP 采用每项目一个 Mira 实例的模型：
+
+- 数据库默认位于项目内 `.mira/mira.sqlite`。
+- `mira mcp serve` 启动时绑定一个 `--project-root` 和一个 `--db`。
+- MCP 工具入参仍可携带 `projectRoot`，但未传时使用启动时绑定的项目。
+- Claude Code、Cursor 等 Agent 配置示例必须使用绝对路径，避免 MCP client 从用户 home 目录启动时找错数据库。
+- 全局多项目数据库和跨项目记忆放到 post-MVP。
+
+Agent 使用 Mira 的基本习惯：
+
+- 会话开始先读取 `get_context_bundle`。
+- 涉及历史决策、踩坑或约定时调用 `search_memory`。
+- 做出重要决策后调用 `add_memory` 或更新 Working Memory。
+- 会话结束前通过 `save_thread` 保存关键会话记录。
+
 ## 项目文档
 
 - [Mira MVP 实施计划](docs/superpowers/plans/2026-07-09-mira-mvp.md)
+- [AGENTS.md 行为引导模板](docs/agent-config/AGENTS-template.md)
 - [Session 019f45f0-40bf-7261-8685-d5e0a6a8bf13](docs/sessions/019f45f0-40bf-7261-8685-d5e0a6a8bf13.md)
 
 ## 研究笔记
