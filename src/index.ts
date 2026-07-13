@@ -14,17 +14,18 @@ import {
 } from "./distill/llmDistill.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
-import { addMemory, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
-import { detectProjectRoot } from "./projects/projectRoot.js";
+import { addMemory, clearMemoriesForThread, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
+import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
 import {
   createProject,
+  deleteProject,
   ensureProjectForRoot,
   findProjectByRoot,
   listProjects,
   type Project
 } from "./projects/projectStore.js";
 import { serveMiraMcpStdio } from "./mcp/transport.js";
-import { saveThread } from "./threads/threadStore.js";
+import { deleteThread, saveThread } from "./threads/threadStore.js";
 import {
   clearWorkingMemory,
   listWorkingMemory,
@@ -56,7 +57,11 @@ async function resolveProjectRoot(options: GlobalOptions): Promise<string> {
     return resolve(options.projectRoot);
   }
 
-  return detectProjectRoot(process.cwd());
+  const detection = await detectProjectRootWithFallback(process.cwd());
+  if (detection.fellBack) {
+    console.error(`No .git root found from ${process.cwd()}; using current directory as project root.`);
+  }
+  return detection.rootPath;
 }
 
 function resolveDbPath(projectRoot: string, options: GlobalOptions): string {
@@ -71,14 +76,14 @@ function openMigratedDatabase(dbPath: string): Database.Database {
 
 async function withDatabase<T>(
   options: GlobalOptions,
-  run: (db: Database.Database, dbPath: string) => Promise<T> | T
+  run: (db: Database.Database, dbPath: string, projectRoot: string) => Promise<T> | T
 ): Promise<T> {
   const projectRoot = await resolveProjectRoot(options);
   const dbPath = resolveDbPath(projectRoot, options);
   const db = openMigratedDatabase(dbPath);
 
   try {
-    return await run(db, dbPath);
+    return await run(db, dbPath, projectRoot);
   } finally {
     db.close();
   }
@@ -88,11 +93,41 @@ async function withProject<T>(
   options: GlobalOptions,
   run: (session: ProjectSession) => Promise<T> | T
 ): Promise<T> {
-  return withDatabase(options, async (db, dbPath) => {
-    const projectRoot = await resolveProjectRoot(options);
+  return withDatabase(options, async (db, dbPath, projectRoot) => {
     const project = ensureProjectForRoot(db, projectRoot);
     return run({ db, dbPath, projectRoot, project });
   });
+}
+
+function requireNonEmpty(value: string | undefined, label: string): string {
+  if (value === undefined || !value.trim()) {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+
+function numberInRange(value: string, min: number, max: number, label: string): number {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < min || numberValue > max) {
+    throw new Error(`${label} must be a number from ${min} to ${max}`);
+  }
+  return numberValue;
+}
+
+function commandPathFromArgs(args: string[]): string {
+  const positional: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith("-")) {
+      if (!arg.includes("=") && args[index + 1] && !args[index + 1].startsWith("-")) {
+        index += 1;
+      }
+      continue;
+    }
+    positional.push(arg);
+  }
+  const path = positional.slice(0, 2).join(" ");
+  return path || "help";
 }
 
 program
@@ -142,6 +177,17 @@ project
     });
   });
 
+project
+  .command("delete")
+  .description("Delete a project record and its local Mira data")
+  .requiredOption("--id <id>", "Project id")
+  .action(async (options: { id: string }) => {
+    await withDatabase(program.opts<GlobalOptions>(), (db) => {
+      deleteProject(db, options.id);
+      printJson({ ok: true });
+    });
+  });
+
 const thread = program.command("thread").description("Manage saved threads");
 
 thread
@@ -151,7 +197,7 @@ thread
   .requiredOption("--title <title>", "Thread title")
   .requiredOption("--source <source>", "Thread source")
   .option("--format <format>", "Raw format")
-  .option("--raw-format <format>", "Raw format")
+  .option("--raw-format <format>", "Alias for --format")
   .option("--text <text>", "Raw text or summary")
   .option("--file <path>", "Read raw text from a file")
   .action(async (options: {
@@ -168,10 +214,10 @@ thread
       throw new Error("Thread raw format is required via --format or --raw-format");
     }
 
-    const rawText = options.text ?? (options.file ? await readFile(resolve(options.file), "utf8") : undefined);
-    if (rawText === undefined) {
-      throw new Error("Thread raw text is required via --text or --file");
-    }
+    const rawText = requireNonEmpty(
+      options.text ?? (options.file ? await readFile(resolve(options.file), "utf8") : undefined),
+      "Thread raw text"
+    );
 
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(
@@ -184,6 +230,17 @@ thread
           rawText
         })
       );
+    });
+  });
+
+thread
+  .command("delete")
+  .description("Delete a thread and memories distilled from it")
+  .requiredOption("--id <id>", "Thread id")
+  .action(async (options: { id: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      deleteThread(session.db, session.project.id, options.id);
+      printJson({ ok: true });
     });
   });
 
@@ -211,6 +268,10 @@ memory
       confidence: string;
       importance: string;
     }) => {
+      const content = requireNonEmpty(options.content, "Memory content");
+      const confidence = numberInRange(options.confidence, 0, 1, "confidence");
+      const importance = numberInRange(options.importance, 1, 10, "importance");
+
       await withProject(program.opts<GlobalOptions>(), (session) => {
         printJson(
           addMemory(session.db, {
@@ -218,10 +279,10 @@ memory
             threadId: options.threadId ?? options.thread,
             title: options.title,
             kind: options.kind,
-            content: options.content,
+            content,
             source: options.source,
-            confidence: Number(options.confidence),
-            importance: Number(options.importance)
+            confidence,
+            importance
           })
         );
       });
@@ -255,6 +316,17 @@ memory
   });
 
 memory
+  .command("clear")
+  .description("Clear memories distilled from a thread")
+  .requiredOption("--thread <id>", "Thread id")
+  .action(async (options: { thread: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      clearMemoriesForThread(session.db, session.project.id, options.thread);
+      printJson({ ok: true });
+    });
+  });
+
+memory
   .command("llm-prompt")
   .description("Print a reviewable LLM distill prompt for a saved thread")
   .requiredOption("--thread <id>", "Thread id")
@@ -283,9 +355,8 @@ memory
     });
   });
 
-const working = program.command("working").description("Manage working memory");
-
-working
+function registerWorkingCommands(parent: Command): void {
+  parent
   .command("set")
   .description("Set working memory")
   .requiredOption("--kind <kind>", "Working memory kind")
@@ -302,7 +373,7 @@ working
     });
   });
 
-working
+  parent
   .command("list")
   .description("List working memory")
   .action(async () => {
@@ -311,7 +382,7 @@ working
     });
   });
 
-working
+  parent
   .command("clear")
   .description("Clear working memory")
   .option("--kind <kind>", "Working memory kind")
@@ -321,6 +392,13 @@ working
       printJson({ ok: true });
     });
   });
+}
+
+const working = program.command("working").description("Manage working memory");
+registerWorkingCommands(working);
+
+const wm = program.command("wm").description("Alias for working memory commands");
+registerWorkingCommands(wm);
 
 const context = program.command("context").description("Generate agent context");
 
@@ -411,6 +489,7 @@ try {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.includes("commander")) {
     console.error(message);
+    console.error(`Run 'mira ${commandPathFromArgs(process.argv.slice(2))} --help' for usage.`);
   }
   process.exitCode = 1;
 }

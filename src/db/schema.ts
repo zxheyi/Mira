@@ -62,18 +62,39 @@ export function migrate(db: Database.Database): void {
       on memories(project_id, kind, content_hash)
       where thread_id is null;
 
+    create index if not exists idx_memories_project
+      on memories(project_id);
+
+    create index if not exists idx_memories_project_thread
+      on memories(project_id, thread_id);
+
+    create index if not exists idx_threads_project
+      on threads(project_id);
+
     create virtual table if not exists memory_fts using fts5(
       id unindexed,
       project_id unindexed,
       title,
       content
     );
+
+    create trigger if not exists memories_after_delete_cleanup_fts
+    after delete on memories
+    begin
+      delete from memory_fts where id = old.id;
+    end;
   `);
 
   const existingVersion = db
     .prepare("select version from schema_version order by version desc limit 1")
     .pluck()
     .get() as number | undefined;
+
+  if (existingVersion !== undefined && existingVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported Mira schema version ${existingVersion}; this Mira supports schema version ${CURRENT_SCHEMA_VERSION}`
+    );
+  }
 
   if (existingVersion === undefined) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(

@@ -21,6 +21,14 @@
 - 更新 Working Memory，明确当前状态和下一步。
 - 对长会话，优先生成 Thread 摘要；完整 transcript 自动捕获不是 Mira 当前默认能力。
 
+
+## MCP 参数要求
+
+- `add_memory` 必填：`title`、`kind`、`content`、`source`；可选：`threadId`、`confidence`、`importance`。
+- `save_thread` 必填：`title`、`source`、`rawFormat`、`rawText`；可选：`id`。MVP 中 `rawText` 通常是 Agent 生成的会话摘要。
+- `search_memory` 必填：`query`；可选：`kind`。
+- `set_working_memory` 必填：`kind`、`content`。
+
 ## LLM Distill
 
 当需要批量提炼长 Thread：

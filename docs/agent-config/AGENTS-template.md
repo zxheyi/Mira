@@ -13,13 +13,21 @@
 - 当前任务、阶段、阻塞点、下一步发生变化时，调用 `set_working_memory` 更新 Working Memory。
 - blocker 或 next_step 解决后，调用 `clear_working_memory`，或写入更新后的 Markdown 列表。
 - 不要把临时思考、噪音日志、未确认猜测、密钥、token、私人凭据写入 Memory。
-- 失败尝试要记录为 `lesson` 或 `constraint`，避免后续 Agent 重复踩坑。
+- 失败尝试优先记录为 `failed_attempt`；通用经验用 `lesson`，硬性限制或不可做事项用 `constraint`。
 
 ## 会话结束前
 
 1. 用 `set_working_memory` 更新：当前任务状态、阻塞点、下一步。
 2. 用 `add_memory` 保存本轮产生的稳定决策或经验。
 3. 用 `save_thread` 保存本轮会话摘要或关键原文。MVP 中保存的是你生成的摘要，不是假设你能访问完整 transcript。
+
+
+## MCP 参数要求
+
+- `add_memory` 必填：`title`、`kind`、`content`、`source`；可选：`threadId`、`confidence`、`importance`。
+- `save_thread` 必填：`title`、`source`、`rawFormat`、`rawText`；可选：`id`。MVP 中 `rawText` 通常是 Agent 生成的会话摘要。
+- `search_memory` 必填：`query`；可选：`kind`。
+- `set_working_memory` 必填：`kind`、`content`。
 
 ## LLM 提炼工作流
 

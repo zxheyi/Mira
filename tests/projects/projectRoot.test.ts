@@ -2,7 +2,7 @@ import { mkdtemp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
-import { detectProjectRoot } from "../../src/projects/projectRoot.js";
+import { detectProjectRoot, detectProjectRootWithFallback } from "../../src/projects/projectRoot.js";
 
 async function makeTempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "mira-project-root-"));
@@ -26,5 +26,16 @@ describe("detectProjectRoot", () => {
     await mkdir(nested, { recursive: true });
 
     expect(await detectProjectRoot(nested)).toBe(nested);
+  });
+
+  test("reports whether project root detection fell back to the start directory", async () => {
+    const root = await makeTempDir();
+    const nested = join(root, "notes", "drafts");
+    await mkdir(nested, { recursive: true });
+
+    expect(await detectProjectRootWithFallback(nested)).toEqual({
+      rootPath: nested,
+      fellBack: true
+    });
   });
 });

@@ -7,7 +7,9 @@ import { saveThread } from "../../src/threads/threadStore.js";
 import {
   addMemory,
   clearMemoriesForThread,
+  deleteMemoriesForProject,
   listMemoriesForProject,
+  listTopMemoriesForProject,
   MEMORY_KINDS,
   searchMemories
 } from "../../src/memory/memoryStore.js";
@@ -225,5 +227,78 @@ describe("memory store", () => {
     });
 
     expect(searchMemories(database, project.id, "MCP")[0]?.memory.id).toBe(exact.id);
+  });
+
+  test("filters search results by memory kind", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    addMemory(database, {
+      projectId: project.id,
+      title: "MCP decision",
+      kind: "decision",
+      content: "MCP search supports optional kind filtering.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+    const failedAttempt = addMemory(database, {
+      projectId: project.id,
+      title: "MCP failed attempt",
+      kind: "failed_attempt",
+      content: "MCP search supports optional kind filtering.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    expect(searchMemories(database, project.id, "MCP", { kind: "failed_attempt" }).map((result) => result.memory)).toEqual([
+      failedAttempt
+    ]);
+  });
+
+  test("limits search results and lists top memories without loading all rows", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    const high = addMemory(database, {
+      projectId: project.id,
+      title: "High MCP",
+      kind: "decision",
+      content: "MCP bounded search memory.",
+      source: "manual",
+      confidence: 1,
+      importance: 9
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Low MCP",
+      kind: "note",
+      content: "MCP bounded search memory.",
+      source: "manual",
+      confidence: 1,
+      importance: 1
+    });
+
+    expect(searchMemories(database, project.id, "MCP", { limit: 1 })).toHaveLength(1);
+    expect(listTopMemoriesForProject(database, project.id, 1)).toEqual([high]);
+  });
+
+
+  test("cleans FTS records when project memories are deleted", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Ghost prevention",
+      kind: "decision",
+      content: "Deleted memories must not remain searchable.",
+      source: "manual",
+      confidence: 1,
+      importance: 8
+    });
+
+    deleteMemoriesForProject(database, project.id);
+
+    expect(listMemoriesForProject(database, project.id)).toEqual([]);
+    expect(searchMemories(database, project.id, "Ghost")).toEqual([]);
   });
 });

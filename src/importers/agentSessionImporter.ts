@@ -52,9 +52,7 @@ function inferTitle(inputPath: string, rawText: string): string {
     return h1;
   }
 
-  const fileName = basename(inputPath);
-  const extension = extname(fileName);
-  return extension ? fileName.slice(0, -extension.length) : fileName;
+  return inferFileTitle(inputPath);
 }
 
 function inferFileTitle(inputPath: string): string {
@@ -65,8 +63,9 @@ function inferFileTitle(inputPath: string): string {
 
 function slug(value: string): string {
   return value
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
 }

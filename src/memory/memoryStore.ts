@@ -47,6 +47,12 @@ export type SearchResult = {
   score: number;
 };
 
+export type SearchMemoriesOptions = {
+  kind?: MemoryKind;
+  limit?: number;
+  queryMode?: "phrase" | "orTerms";
+};
+
 type MemoryRow = {
   id: string;
   project_id: string;
@@ -85,8 +91,17 @@ function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function toFtsQuery(query: string): string {
-  return `"${query.replace(/"/g, '""')}"`;
+function quoteFtsTerm(term: string): string {
+  return `"${term.replace(/"/g, '""')}"`;
+}
+
+function toFtsQuery(query: string, mode: SearchMemoriesOptions["queryMode"] = "phrase"): string {
+  if (mode === "orTerms") {
+    const terms = query.split(/\s+/).map((term) => term.trim()).filter(Boolean);
+    return terms.map(quoteFtsTerm).join(" OR ");
+  }
+
+  return quoteFtsTerm(query);
 }
 
 function findDuplicateMemory(
@@ -137,22 +152,30 @@ export function addMemory(db: Database.Database, input: AddMemoryInput): Memory 
     createdAt: new Date().toISOString()
   };
 
-  db.transaction(() => {
-    db.prepare(
-      `insert into memories (
-        id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at
-      ) values (
-        @id, @projectId, @threadId, @title, @kind, @content, @source, @confidence, @contentHash, @importance, @createdAt
-      )`
-    ).run({ ...memory, threadId: memory.threadId ?? null });
+  try {
+    db.transaction(() => {
+      db.prepare(
+        `insert into memories (
+          id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at
+        ) values (
+          @id, @projectId, @threadId, @title, @kind, @content, @source, @confidence, @contentHash, @importance, @createdAt
+        )`
+      ).run({ ...memory, threadId: memory.threadId ?? null });
 
-    db.prepare("insert into memory_fts (id, project_id, title, content) values (?, ?, ?, ?)").run(
-      memory.id,
-      memory.projectId,
-      memory.title,
-      memory.content
-    );
-  })();
+      db.prepare("insert into memory_fts (id, project_id, title, content) values (?, ?, ?, ?)").run(
+        memory.id,
+        memory.projectId,
+        memory.title,
+        memory.content
+      );
+    })();
+  } catch (error) {
+    const duplicate = findDuplicateMemory(db, input.projectId, input.threadId, input.kind, contentHash);
+    if (duplicate) {
+      return duplicate;
+    }
+    throw error;
+  }
 
   return memory;
 }
@@ -162,17 +185,11 @@ export function clearMemoriesForThread(
   projectId: string,
   threadId: string
 ): void {
-  db.transaction(() => {
-    const rows = db
-      .prepare("select id from memories where project_id = ? and thread_id = ?")
-      .all(projectId, threadId) as Array<{ id: string }>;
+  db.prepare("delete from memories where project_id = ? and thread_id = ?").run(projectId, threadId);
+}
 
-    for (const row of rows) {
-      db.prepare("delete from memory_fts where id = ?").run(row.id);
-    }
-
-    db.prepare("delete from memories where project_id = ? and thread_id = ?").run(projectId, threadId);
-  })();
+export function deleteMemoriesForProject(db: Database.Database, projectId: string): void {
+  db.prepare("delete from memories where project_id = ?").run(projectId);
 }
 
 export function listMemoriesForProject(db: Database.Database, projectId: string): Memory[] {
@@ -187,12 +204,40 @@ export function listMemoriesForProject(db: Database.Database, projectId: string)
     .map((row) => toMemory(row as MemoryRow));
 }
 
-export function searchMemories(db: Database.Database, projectId: string, query: string): SearchResult[] {
+export function listTopMemoriesForProject(
+  db: Database.Database,
+  projectId: string,
+  limit: number
+): Memory[] {
+  return db
+    .prepare(
+      `select id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at
+       from memories
+       where project_id = ?
+       order by importance desc, confidence desc, created_at desc, rowid desc
+       limit ?`
+    )
+    .all(projectId, limit)
+    .map((row) => toMemory(row as MemoryRow));
+}
+
+export function searchMemories(
+  db: Database.Database,
+  projectId: string,
+  query: string,
+  options: SearchMemoriesOptions = {}
+): SearchResult[] {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
     return [];
   }
+
+  const kindClause = options.kind ? "and memories.kind = ?" : "";
+  const limit = options.limit ?? 50;
+  const params = options.kind
+    ? [toFtsQuery(trimmedQuery, options.queryMode), projectId, options.kind, limit]
+    : [toFtsQuery(trimmedQuery, options.queryMode), projectId, limit];
 
   return db
     .prepare(
@@ -212,8 +257,10 @@ export function searchMemories(db: Database.Database, projectId: string, query: 
        from memory_fts
        join memories on memories.id = memory_fts.id
        where memory_fts match ? and memories.project_id = ?
-       order by memories.importance desc, memories.confidence desc, score desc, memories.created_at desc`
+       ${kindClause}
+       order by memories.importance desc, memories.confidence desc, score desc, memories.created_at desc
+       limit ?`
     )
-    .all(toFtsQuery(trimmedQuery), projectId)
+    .all(...params)
     .map((row) => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));
 }

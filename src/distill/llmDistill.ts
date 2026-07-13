@@ -33,6 +33,10 @@ type RawCandidate = {
   importance?: unknown;
 };
 
+const MAX_LLM_MEMORY_CANDIDATES = 50;
+const MAX_LLM_MEMORY_TITLE_LENGTH = 200;
+const MAX_LLM_MEMORY_CONTENT_LENGTH = 10000;
+
 function getThreadRawText(db: Database.Database, projectId: string, threadId: string): string {
   const row = db
     .prepare("select raw_text from threads where project_id = ? and id = ?")
@@ -69,17 +73,25 @@ function normalizeCandidate(candidate: RawCandidate): LlmMemoryCandidate {
   if (typeof candidate.title !== "string" || !candidate.title.trim()) {
     throw new Error("Candidate title is required");
   }
+  const title = candidate.title.trim();
+  if (title.length > MAX_LLM_MEMORY_TITLE_LENGTH) {
+    throw new Error(`Candidate title must be at most ${MAX_LLM_MEMORY_TITLE_LENGTH} characters`);
+  }
   if (!isMemoryKind(candidate.kind)) {
     throw new Error(`Unsupported memory kind: ${String(candidate.kind)}`);
   }
   if (typeof candidate.content !== "string" || !candidate.content.trim()) {
     throw new Error("Candidate content is required");
   }
+  const content = candidate.content.trim();
+  if (content.length > MAX_LLM_MEMORY_CONTENT_LENGTH) {
+    throw new Error(`Candidate content must be at most ${MAX_LLM_MEMORY_CONTENT_LENGTH} characters`);
+  }
 
   return {
-    title: candidate.title.trim(),
+    title,
     kind: candidate.kind,
-    content: candidate.content.trim(),
+    content,
     confidence: numberOrDefault(candidate.confidence, 0.8, 0, 1, "confidence"),
     importance: numberOrDefault(candidate.importance, 5, 1, 10, "importance")
   };
@@ -144,6 +156,9 @@ export function parseLlmMemoryCandidates(rawText: string): LlmMemoryCandidate[] 
   if (!rawCandidates) {
     throw new Error("LLM distill output must be an array or an object with a memories array");
   }
+  if (rawCandidates.length > MAX_LLM_MEMORY_CANDIDATES) {
+    throw new Error(`LLM distill output must contain at most ${MAX_LLM_MEMORY_CANDIDATES} memories`);
+  }
 
   return rawCandidates.map((candidate) => normalizeCandidate(candidate as RawCandidate));
 }
@@ -155,19 +170,25 @@ export function applyLlmDistillCandidates(
   candidates: LlmMemoryCandidate[]
 ): Memory[] {
   getThreadRawText(db, projectId, threadId);
-  clearMemoriesForThread(db, projectId, threadId);
+  if (candidates.length === 0) {
+    return [];
+  }
 
-  return candidates.map((candidate) => {
-    const input: AddMemoryInput = {
-      projectId,
-      threadId,
-      title: candidate.title,
-      kind: candidate.kind,
-      content: candidate.content,
-      source: `llm-distill:${threadId}`,
-      confidence: candidate.confidence,
-      importance: candidate.importance
-    };
-    return addMemory(db, input);
-  });
+  return db.transaction(() => {
+    clearMemoriesForThread(db, projectId, threadId);
+
+    return candidates.map((candidate) => {
+      const input: AddMemoryInput = {
+        projectId,
+        threadId,
+        title: candidate.title,
+        kind: candidate.kind,
+        content: candidate.content,
+        source: `llm-distill:${threadId}`,
+        confidence: candidate.confidence,
+        importance: candidate.importance
+      };
+      return addMemory(db, input);
+    });
+  })();
 }

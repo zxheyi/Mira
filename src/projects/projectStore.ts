@@ -31,7 +31,8 @@ function toProject(row: ProjectRow): Project {
 }
 
 function normalizeRootPath(rootPath: string): string {
-  return resolve(rootPath);
+  const resolved = resolve(rootPath);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function defaultProjectName(rootPath: string): string {
@@ -70,10 +71,23 @@ export function ensureProjectForRoot(db: Database.Database, rootPath: string): P
     return existing;
   }
 
-  return createProject(db, {
+  const project: Project = {
+    id: `project_${randomUUID()}`,
     name: defaultProjectName(normalizedRootPath),
-    rootPath: normalizedRootPath
-  });
+    rootPath: normalizedRootPath,
+    createdAt: new Date().toISOString()
+  };
+
+  db.prepare(
+    `insert or ignore into projects (id, name, root_path, created_at)
+     values (@id, @name, @rootPath, @createdAt)`
+  ).run(project);
+
+  const ensured = findProjectByRoot(db, normalizedRootPath);
+  if (!ensured) {
+    throw new Error(`Failed to ensure project for root: ${normalizedRootPath}`);
+  }
+  return ensured;
 }
 
 export function listProjects(db: Database.Database): Project[] {
@@ -81,4 +95,8 @@ export function listProjects(db: Database.Database): Project[] {
     .prepare("select id, name, root_path, created_at from projects order by created_at asc, rowid asc")
     .all()
     .map((row) => toProject(row as ProjectRow));
+}
+
+export function deleteProject(db: Database.Database, projectId: string): void {
+  db.prepare("delete from projects where id = ?").run(projectId);
 }

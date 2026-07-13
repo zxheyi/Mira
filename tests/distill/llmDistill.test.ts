@@ -97,6 +97,49 @@ describe("LLM distill", () => {
     ).toThrow("Unsupported memory kind");
   });
 
+  test("rejects too many LLM memory candidates", () => {
+    const memories = Array.from({ length: 51 }, (_, index) => ({
+      title: `Candidate ${index}`,
+      kind: "note",
+      content: `Candidate ${index}`
+    }));
+
+    expect(() => parseLlmMemoryCandidates(JSON.stringify({ memories }))).toThrow(
+      "LLM distill output must contain at most 50 memories"
+    );
+  });
+
+  test("rejects oversized LLM memory candidate fields", () => {
+    expect(() =>
+      parseLlmMemoryCandidates(
+        JSON.stringify({
+          memories: [
+            {
+              title: "x".repeat(201),
+              kind: "note",
+              content: "Valid content"
+            }
+          ]
+        })
+      )
+    ).toThrow("Candidate title must be at most 200 characters");
+
+    expect(() =>
+      parseLlmMemoryCandidates(
+        JSON.stringify({
+          memories: [
+            {
+              title: "Valid title",
+              kind: "note",
+              content: "x".repeat(10001)
+            }
+          ]
+        })
+      )
+    ).toThrow("Candidate content must be at most 10000 characters");
+  });
+
+
   test("applies candidates as the replacement distill output for a thread", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
@@ -140,4 +183,31 @@ describe("LLM distill", () => {
     expect(searchMemories(database, project.id, "stale")).toEqual([]);
     expect(searchMemories(database, project.id, "SQLite")[0]?.memory.title).toBe("Use local SQLite");
   });
+
+  test("keeps old memories when applying an empty candidate list", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_1",
+      projectId: project.id,
+      title: "LLM Distill",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "# Session"
+    });
+    addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_1",
+      title: "Old memory",
+      kind: "note",
+      content: "This memory should remain.",
+      source: "llm-distill:thread_1",
+      confidence: 1,
+      importance: 4
+    });
+
+    expect(applyLlmDistillCandidates(database, project.id, "thread_1", [])).toEqual([]);
+    expect(searchMemories(database, project.id, "remain")[0]?.memory.content).toBe("This memory should remain.");
+  });
+
 });

@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
+import { addMemory, searchMemories } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
-import { saveThread } from "../../src/threads/threadStore.js";
+import { deleteThread, saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
 
@@ -76,5 +77,32 @@ describe("thread store", () => {
       createdAt: first.createdAt
     });
     expect(database.prepare("select count(*) from threads").pluck().get()).toBe(1);
+  });
+
+  test("deletes a thread and its indexed memories", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_delete",
+      projectId: project.id,
+      title: "Delete Me",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "## Key Decisions\n- Delete indexed memories."
+    });
+    addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_delete",
+      title: "Delete indexed memories",
+      kind: "decision",
+      content: "Delete indexed memories.",
+      source: "distill:thread_delete",
+      confidence: 1,
+      importance: 8
+    });
+
+    deleteThread(database, project.id, "thread_delete");
+
+    expect(searchMemories(database, project.id, "indexed")).toEqual([]);
   });
 });

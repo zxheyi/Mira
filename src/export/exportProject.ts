@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { listMemoriesForProject } from "../memory/memoryStore.js";
+import { listThreadsForProject } from "../threads/threadStore.js";
 import { listWorkingMemory } from "../workingMemory/workingMemoryStore.js";
 
 type ProjectRow = {
@@ -33,6 +34,7 @@ function projectForId(db: Database.Database, projectId: string): ProjectRow {
 function renderMarkdown(db: Database.Database, projectId: string): string {
   const project = projectForId(db, projectId);
   const workingMemory = listWorkingMemory(db, projectId);
+  const threads = listThreadsForProject(db, projectId);
   const memories = listMemoriesForProject(db, projectId);
   const lines = [
     "# Mira Export",
@@ -48,6 +50,20 @@ function renderMarkdown(db: Database.Database, projectId: string): string {
   } else {
     for (const item of workingMemory) {
       lines.push(`### ${item.kind}`, item.content, "");
+    }
+  }
+
+  lines.push("## Threads");
+  if (threads.length === 0) {
+    lines.push("No threads recorded.", "");
+  } else {
+    for (const thread of threads) {
+      lines.push(`### ${thread.title}`);
+      lines.push(`- id: ${thread.id}`);
+      lines.push(`- source: ${thread.source}`);
+      lines.push(`- rawFormat: ${thread.rawFormat}`);
+      lines.push(`- updatedAt: ${thread.updatedAt}`);
+      lines.push(thread.rawText, "");
     }
   }
 
@@ -79,6 +95,7 @@ function renderJson(db: Database.Database, projectId: string): string {
         rootPath: project.root_path,
         createdAt: project.created_at
       },
+      threads: listThreadsForProject(db, projectId),
       workingMemory: listWorkingMemory(db, projectId),
       memories: listMemoriesForProject(db, projectId)
     },

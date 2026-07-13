@@ -50,31 +50,17 @@ export function setWorkingMemory(
   db: Database.Database,
   input: SetWorkingMemoryInput
 ): WorkingMemory {
-  const existing = db
-    .prepare(
-      `select id, project_id, kind, content, updated_at
-       from working_memory
-       where project_id = ? and kind = ?`
-    )
-    .get(input.projectId, input.kind) as WorkingMemoryRow | undefined;
-  const id = existing?.id ?? `working_${randomUUID()}`;
   const updatedAt = new Date().toISOString();
-
-  db.prepare(
+  const row = db.prepare(
     `insert into working_memory (id, project_id, kind, content, updated_at)
      values (@id, @projectId, @kind, @content, @updatedAt)
      on conflict(project_id, kind) do update set
        content = excluded.content,
-       updated_at = excluded.updated_at`
-  ).run({ id, ...input, updatedAt });
+       updated_at = excluded.updated_at
+     returning id, project_id, kind, content, updated_at`
+  ).get({ id: `working_${randomUUID()}`, ...input, updatedAt }) as WorkingMemoryRow;
 
-  return {
-    id,
-    projectId: input.projectId,
-    kind: input.kind,
-    content: input.content,
-    updatedAt
-  };
+  return toWorkingMemory(row);
 }
 
 export function listWorkingMemory(db: Database.Database, projectId: string): WorkingMemory[] {

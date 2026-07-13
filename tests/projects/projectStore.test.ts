@@ -62,4 +62,16 @@ describe("project store", () => {
 
     expect(listProjects(database)).toEqual([first, second]);
   });
+
+  test("ensureProjectForRoot remains idempotent for repeated callers", () => {
+    const database = setupDb();
+    const rootPath = "/workspace/race";
+
+    const first = ensureProjectForRoot(database, rootPath);
+    const second = ensureProjectForRoot(database, rootPath);
+
+    expect(second).toEqual(first);
+    expect(listProjects(database)).toHaveLength(1);
+  });
+
 });

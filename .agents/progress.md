@@ -10,6 +10,8 @@ Post-MVP P1 LLM Distill and Agent Guidance is implemented and locally verified.
 Post-MVP P2 Transcript JSONL Import is implemented and locally verified.
 Audit Alignment P1 is implemented and locally verified.
 MCP Agent Usability hardening is implemented and locally verified.
+MCP Agent Polish and Boundary Tests are implemented and locally verified.
+Deep Audit Remediation is implemented and locally verified.
 
 Completed:
 
@@ -39,6 +41,15 @@ Completed:
 - Phase 20: MCP tool description quality.
 - Phase 21: MCP kind runtime validation.
 - Phase 22: MCP usability docs and verification.
+- Phase 23: MCP agent polish.
+- Phase 24: Boundary test coverage.
+- Phase 25: Agent config docs and verification.
+- Phase 26: Deep audit data lifecycle.
+- Phase 27: Context Bundle usability.
+- Phase 28: Distill and LLM hardening.
+- Phase 29: Export and CLI UX.
+- Phase 30: MCP architecture hardening.
+- Phase 31: Deep audit docs and verification.
 
 ## Verification Evidence
 
@@ -52,6 +63,10 @@ npm run test -- tests/cli/mcp-serve.test.ts
 # Test Files 1 passed; Tests 1 passed
 
 npm run test -- tests/integration/localLoop.test.ts
+tests/infrastructure/packageMetadata.test.ts
+tests/infrastructure/docs.test.ts
+tests/infrastructure/schemaReadiness.test.ts
+vitest.config.ts
 # Test Files 1 passed; Tests 1 passed
 
 npm test
@@ -95,6 +110,24 @@ npm test
 
 npm run build
 # tsc completed successfully
+
+npm run test -- tests/mcp/tools.integration.test.ts tests/memory/memoryStore.test.ts tests/distill/distillThread.test.ts tests/context/contextBundle.test.ts tests/export/exportProject.test.ts
+# Test Files 5 passed; Tests 24 passed
+
+npm test
+# Test Files 18 passed; Tests 61 passed
+
+npm run build
+# tsc completed successfully
+
+npm run test -- tests/memory/memoryStore.test.ts tests/threads/threadStore.test.ts tests/context/contextBundle.test.ts tests/distill/distillThread.test.ts tests/distill/llmDistill.test.ts tests/export/exportProject.test.ts tests/projects/projectRoot.test.ts tests/cli/phase4-cli.test.ts tests/mcp/tools.integration.test.ts tests/importers/agentSessionImporter.test.ts
+# Test Files 10 passed; Tests 58 passed
+
+npm test
+# Test Files 18 passed; Tests 76 passed
+
+npm run build
+# tsc completed successfully
 ```
 
 TDD evidence for Phase 5/6:
@@ -110,6 +143,12 @@ Audit alignment GREEN: targeted tests passed after adding kind supersets, distil
 
 MCP usability RED: tool descriptions were not exported and MCP kind guards accepted arbitrary strings through type assertions.
 MCP usability GREEN: explicit tool descriptions are exported, invalid Memory / Working Memory kinds are rejected, and missing argument errors remain explicit.
+
+MCP polish RED: `search_memory.kind` was ignored and MCP `save_thread` still required `id`; better-sqlite3 required rebuild for current Node before database tests could run.
+MCP polish GREEN: targeted tests passed after adding kind-filtered memory search, generated MCP thread ids, agent config prerequisites, and P3 boundary coverage.
+
+Deep audit RED: missing delete APIs/FTS cleanup, context bundle mid-entry truncation, missing warnings/priority/timestamps, distill fallback gaps, uncapped LLM candidates, export without threads, CLI UX gaps, and MCP registered tools opening per call.
+Deep audit GREEN: targeted and full tests passed after data lifecycle cleanup, entry-level context budgeting, deterministic distill hardening, export thread inclusion, CLI polish, shared MCP DB sessions, and Spec 002 JSONL update.
 
 LLM distill RED: Cannot find module '../../src/distill/llmDistill.js'
 LLM distill CLI RED: unknown command 'llm-prompt' / 'apply-candidates'
@@ -129,6 +168,10 @@ MCP stdio CLI GREEN: tests/cli/mcp-serve.test.ts passed, 1 test
 
 Phase 6 local loop: tests/integration/localLoop.test.ts passed with real session 019f45f0-40bf-7261-8685-d5e0a6a8bf13
 ```
+
+Infrastructure audit RED: package metadata missing prepare/engines/files, README and agent templates missing setup/required MCP args, search unbounded, schema indexes/version checks missing, distill empty output deleted old memories, LLM candidates lacked length limits, CLI accepted empty/invalid inputs, and non-ASCII session slugs collapsed to session.
+Infrastructure audit GREEN: targeted tests passed after adding bounded FTS search, top-N context memory queries, WAL/busy_timeout, schema indexes and future-version guard, race-safer project/memory writes, atomic distill replacements with empty-result guards, LLM title/content caps, package metadata, docs updates, CLI validation, MCP handler errors, non-ASCII slug support, and stable integration-test timeout budget.
+Infrastructure audit verification: targeted 009 suite passed (9 files, 50 tests); full npm test passed (21 files, 87 tests); npm run build passed.
 
 ## Current Files Of Interest
 
@@ -166,6 +209,10 @@ tests/export/exportProject.test.ts
 tests/mcp/tools.integration.test.ts
 tests/cli/llm-distill-cli.test.ts
 tests/integration/localLoop.test.ts
+tests/infrastructure/packageMetadata.test.ts
+tests/infrastructure/docs.test.ts
+tests/infrastructure/schemaReadiness.test.ts
+vitest.config.ts
 specs/001-mira-mvp/spec.md
 specs/001-mira-mvp/plan.md
 specs/001-mira-mvp/tasks.md
@@ -184,6 +231,12 @@ specs/005-audit-alignment/tasks.md
 specs/006-mcp-agent-usability/spec.md
 specs/006-mcp-agent-usability/plan.md
 specs/006-mcp-agent-usability/tasks.md
+specs/007-mcp-agent-polish-and-boundary-tests/spec.md
+specs/007-mcp-agent-polish-and-boundary-tests/plan.md
+specs/007-mcp-agent-polish-and-boundary-tests/tasks.md
+specs/008-deep-audit-remediation/spec.md
+specs/008-deep-audit-remediation/plan.md
+specs/008-deep-audit-remediation/tasks.md
 ```
 
 ## Next Step
@@ -203,5 +256,8 @@ Post-MVP hardening:
 - P2 JSONL import normalizes transcript records into Markdown Thread text while preserving `rawFormat=jsonl`.
 - Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.
 - MCP usability hardening replaces placeholder tool descriptions and validates kind values at runtime.
+- MCP agent polish adds `search_memory.kind`, optional MCP `save_thread.id`, config prerequisites, and boundary tests.
+- Deep audit remediation adds FTS cleanup, deletion APIs, improved Context Bundle, distill fallback, export threads, CLI UX polish, shared MCP sessions, and JSONL spec alignment.
+- Infrastructure audit remediation adds bounded search, top-N bundle retrieval, WAL/busy_timeout, schema indexes/version checks, safer distill replacement, CLI validation, package readiness metadata, docs corrections, MCP error wrapping, and portability polish.
 - Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

@@ -77,6 +77,67 @@ describe("distill thread memories", () => {
     ]);
   });
 
+  test("extracts architecture, preference, note, and todo headings", () => {
+    const memories = distillMemoriesFromText("project_1", "thread_1", `# Session
+
+## Architecture
+- The MCP server is project-scoped.
+
+## Preferences
+- Keep summaries compact.
+
+## Notes
+- Mira keeps local SQLite data.
+
+## Todos
+- Add more transcript adapters.`);
+
+    expect(memories).toEqual([
+      expect.objectContaining({ kind: "architecture", content: "The MCP server is project-scoped." }),
+      expect.objectContaining({ kind: "preference", content: "Keep summaries compact." }),
+      expect.objectContaining({ kind: "note", content: "Mira keeps local SQLite data." }),
+      expect.objectContaining({ kind: "todo", content: "Add more transcript adapters." })
+    ]);
+  });
+
+  test("extracts constraint headings and preserves unmatched headings as notes", () => {
+    const memories = distillMemoriesFromText("project_1", "thread_1", `# Session
+
+## Constraints
+- Do not read browser auth databases.
+
+## MVP Shape
+- Local-first memory for coding agents.`);
+
+    expect(memories).toEqual([
+      expect.objectContaining({ kind: "constraint", content: "Do not read browser auth databases." }),
+      expect.objectContaining({ kind: "note", content: "Local-first memory for coding agents." })
+    ]);
+  });
+
+  test("merges indented bullet continuation lines into the previous entry", () => {
+    const memories = distillMemoriesFromText("project_1", "thread_1", `# Session
+
+## Key Decisions
+- Use SQLite for local storage
+  because it works without a server.
+- Keep MCP stdio-only.`);
+
+    expect(memories.map((memory) => memory.content)).toEqual([
+      "Use SQLite for local storage because it works without a server.",
+      "Keep MCP stdio-only."
+    ]);
+  });
+
+  test("throws when distilling a missing thread", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+
+    expect(() => distillThreadMemories(database, project.id, "missing_thread")).toThrow(
+      "Thread not found: missing_thread"
+    );
+  });
+
   test("clears old memories before writing the latest distill result", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
@@ -115,4 +176,30 @@ describe("distill thread memories", () => {
     ]);
     expect(searchMemories(database, project.id, "Old")).toEqual([]);
   });
+
+  test("keeps old memories when deterministic distill produces no new memories", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_1",
+      projectId: project.id,
+      title: "Planning",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "## Key Decisions\n- Keep this decision."
+    });
+    distillThreadMemories(database, project.id, "thread_1");
+    saveThread(database, {
+      id: "thread_1",
+      projectId: project.id,
+      title: "Planning",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "# Empty"
+    });
+
+    expect(distillThreadMemories(database, project.id, "thread_1")).toEqual([]);
+    expect(searchMemories(database, project.id, "decision")[0]?.memory.content).toBe("Keep this decision.");
+  });
+
 });

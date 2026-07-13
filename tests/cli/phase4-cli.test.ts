@@ -156,6 +156,101 @@ describe("Phase 4 CLI commands", () => {
     expect(afterClear).toEqual([]);
   });
 
+  test("supports wm as an alias for working memory commands", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-wm-"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+    await runMira(["init"], tempRoot, dbPath);
+
+    const working = parseJson<{ kind: string; content: string }>(
+      (await runMira(["wm", "set", "--kind", "current_task", "--content", "Use the wm alias."], tempRoot, dbPath))
+        .stdout
+    );
+
+    expect(working).toMatchObject({ kind: "current_task", content: "Use the wm alias." });
+  });
+
+  test("prints a project root fallback warning when no git root is detected", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-no-git-"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+
+    const result = await execFileAsync(
+      join(repoRoot, "node_modules", ".bin", "tsx"),
+      [join(repoRoot, "src", "index.ts"), "--db", dbPath, "init"],
+      {
+      cwd: tempRoot,
+      env: { ...process.env, NO_COLOR: "1" }
+      }
+    );
+
+    expect(result.stderr).toContain("No .git root found");
+  });
+
+  test("prints usage hints for custom CLI errors", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-error-"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+
+    await expect(runMira(["thread", "save", "--id", "bad", "--title", "Bad", "--source", "codex"], tempRoot, dbPath))
+      .rejects.toMatchObject({
+        stderr: expect.stringContaining("Run 'mira thread save --help' for usage.")
+      });
+  });
+
+  test("validates manual memory and thread inputs", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-validation-"));
+    const dbPath = join(tempRoot, ".mira", "mira.sqlite");
+
+    await expect(
+      runMira(
+        ["memory", "add", "--title", "Bad", "--kind", "note", "--content", "", "--source", "manual"],
+        tempRoot,
+        dbPath
+      )
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("Memory content is required") });
+
+    await expect(
+      runMira(
+        [
+          "memory",
+          "add",
+          "--title",
+          "Bad",
+          "--kind",
+          "note",
+          "--content",
+          "Bad confidence",
+          "--source",
+          "manual",
+          "--confidence",
+          "999"
+        ],
+        tempRoot,
+        dbPath
+      )
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("confidence must be a number from 0 to 1") });
+
+    await expect(
+      runMira(
+        [
+          "thread",
+          "save",
+          "--id",
+          "blank_thread",
+          "--title",
+          "Blank",
+          "--source",
+          "codex",
+          "--format",
+          "markdown",
+          "--text",
+          "   "
+        ],
+        tempRoot,
+        dbPath
+      )
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("Thread raw text is required") });
+  });
+
+
   test("supports compatible thread save and memory search arguments", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-compat-"));
     const dbPath = join(tempRoot, ".mira", "mira.sqlite");

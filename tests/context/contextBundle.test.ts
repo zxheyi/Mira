@@ -87,4 +87,88 @@ describe("context bundle", () => {
     expect(bundle).toContain("Important memory");
     expect(bundle).not.toContain("Second memory");
   });
+
+  test("prints empty state messages and supports tiny maxCharacters budgets", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+
+    const fullBundle = buildContextBundle(database, project.id);
+    expect(fullBundle).toContain("No working memory recorded.");
+    expect(fullBundle).toContain("No matching long-term memory.");
+    expect(buildContextBundle(database, project.id, { maxCharacters: 3 })).toBe("# M");
+  });
+
+  test("orders working memory by priority and includes updated timestamps", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, { projectId: project.id, kind: "note", content: "Background note." });
+    setWorkingMemory(database, { projectId: project.id, kind: "blocker", content: "Blocked on audit." });
+    setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Fix deep audit." });
+
+    const bundle = buildContextBundle(database, project.id);
+
+    expect(bundle.indexOf("### blocker")).toBeLessThan(bundle.indexOf("### current_task"));
+    expect(bundle.indexOf("### current_task")).toBeLessThan(bundle.indexOf("### note"));
+    expect(bundle).toMatch(/updatedAt: \d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("groups warning memories before regular long-term memories", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Failed browser import",
+      kind: "failed_attempt",
+      content: "Reading browser auth files is unsafe.",
+      source: "manual",
+      confidence: 1,
+      importance: 8
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Normal note",
+      kind: "note",
+      content: "Mira keeps local data.",
+      source: "manual",
+      confidence: 1,
+      importance: 4
+    });
+
+    const bundle = buildContextBundle(database, project.id, { query: "Mira unsafe" });
+
+    expect(bundle.indexOf("## Warnings")).toBeLessThan(bundle.indexOf("## Long-Term Memory"));
+    expect(bundle).toContain("Failed browser import");
+    expect(bundle).toContain("Normal note");
+  });
+
+  test("keeps long-term memory entries whole when applying character budgets", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Keep this working memory." });
+    addMemory(database, {
+      projectId: project.id,
+      title: "First memory",
+      kind: "decision",
+      content: "First memory should fit.",
+      source: "manual",
+      confidence: 1,
+      importance: 9
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Second memory",
+      kind: "note",
+      content: "Second memory should be skipped instead of partially cut.",
+      source: "manual",
+      confidence: 1,
+      importance: 8
+    });
+
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 240 });
+
+    expect(bundle).toContain("Keep this working memory.");
+    expect(bundle).toContain("First memory should fit.");
+    expect(bundle).not.toContain("Second memory should be skipped");
+    expect(bundle).toContain("Some long-term memories were omitted due to maxCharacters.");
+  });
 });

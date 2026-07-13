@@ -2,10 +2,13 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { openDatabase } from "../../src/db/client.js";
+import { migrate } from "../../src/db/schema.js";
 import {
   callMiraTool,
   createMiraMcpServer,
-  MIRA_MCP_TOOL_DESCRIPTIONS
+  MIRA_MCP_TOOL_DESCRIPTIONS,
+  MIRA_MCP_TOOL_SCHEMAS
 } from "../../src/mcp/server.js";
 
 async function setupMcpOptions() {
@@ -94,6 +97,50 @@ describe("Mira MCP tools", () => {
     expect(await callMiraTool(options, "list_working_memory", {})).toEqual([]);
   });
 
+  test("filters MCP memory search by kind", async () => {
+    const options = await setupMcpOptions();
+    await callMiraTool(options, "add_memory", {
+      title: "MCP decision",
+      kind: "decision",
+      content: "MCP search should support kind filters.",
+      source: "mcp-test"
+    });
+    await callMiraTool(options, "add_memory", {
+      title: "MCP failed attempt",
+      kind: "failed_attempt",
+      content: "MCP search should support kind filters.",
+      source: "mcp-test"
+    });
+
+    const results = await callMiraTool(options, "search_memory", {
+      query: "MCP",
+      kind: "failed_attempt"
+    });
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        memory: expect.objectContaining({ title: "MCP failed attempt", kind: "failed_attempt" })
+      })
+    ]);
+  });
+
+  test("generates a thread id when MCP save_thread omits id", async () => {
+    const options = await setupMcpOptions();
+
+    const saved = await callMiraTool(options, "save_thread", {
+      title: "Generated MCP Thread",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "## Notes\n- MCP can generate thread ids."
+    });
+
+    expect(saved).toMatchObject({
+      title: "Generated MCP Thread",
+      rawFormat: "markdown"
+    });
+    expect((saved as { id: string }).id).toMatch(/^thread_/);
+  });
+
   test("rejects invalid MCP memory and working memory kinds", async () => {
     const options = await setupMcpOptions();
 
@@ -116,6 +163,9 @@ describe("Mira MCP tools", () => {
     expect(() => callMiraTool(options, "clear_working_memory", { kind: "surprise" })).toThrow(
       /Unsupported Working Memory kind: surprise/
     );
+    expect(() => callMiraTool(options, "search_memory", { query: "MCP", kind: "surprise" })).toThrow(
+      /Unsupported Memory kind: surprise/
+    );
   });
 
   test("keeps MCP missing argument errors explicit", async () => {
@@ -125,5 +175,35 @@ describe("Mira MCP tools", () => {
     expect(() => callMiraTool(options, "save_thread", { id: "thread_missing" })).toThrow(
       "Missing string argument: title"
     );
+  });
+
+  test("registered MCP handlers use shared database sessions", async () => {
+    const db = openDatabase(":memory:");
+    migrate(db);
+    const created = createMiraMcpServer({
+      projectRoot: "/workspace/mira",
+      dbPath: ":memory:",
+      db
+    });
+    const tools = (created.server as unknown as {
+      _registeredTools: Record<string, { handler: (args: unknown) => Promise<unknown> }>;
+    })._registeredTools;
+
+    await tools.add_memory.handler({
+      title: "Shared DB",
+      kind: "decision",
+      content: "Registered tools should share one database session.",
+      source: "mcp-test"
+    });
+    const searchResult = (await tools.search_memory.handler({ query: "Shared" })) as {
+      content: Array<{ text: string }>;
+    };
+
+    expect(searchResult.content[0]?.text).toContain("Shared DB");
+    db.close();
+  });
+
+  test("MCP argument schemas reject invalid registered tool inputs", () => {
+    expect(MIRA_MCP_TOOL_SCHEMAS.search_memory.kind?.safeParse("surprise").success).toBe(false);
   });
 });

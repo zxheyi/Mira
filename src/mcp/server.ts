@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { buildContextBundle } from "../context/contextBundle.js";
 import { openDatabase } from "../db/client.js";
@@ -40,18 +41,20 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
 export type MiraMcpOptions = {
   projectRoot: string;
   dbPath: string;
+  db?: Database.Database;
 };
 
 type ToolArgs = Record<string, unknown>;
 
-const TOOL_SCHEMAS = {
+export const MIRA_MCP_TOOL_SCHEMAS = {
   get_context_bundle: {
     query: z.string().optional(),
     memoryLimit: z.number().optional(),
     maxCharacters: z.number().optional()
   },
   search_memory: {
-    query: z.string()
+    query: z.string(),
+    kind: z.enum(MEMORY_KINDS).optional()
   },
   set_working_memory: {
     kind: z.enum(WORKING_MEMORY_KINDS),
@@ -72,7 +75,7 @@ const TOOL_SCHEMAS = {
     importance: z.number().optional()
   },
   save_thread: {
-    id: z.string(),
+    id: z.string().optional(),
     title: z.string(),
     source: z.string(),
     rawFormat: z.string(),
@@ -112,6 +115,17 @@ function memoryKindArg(args: ToolArgs, name: string): MemoryKind {
   return kind as MemoryKind;
 }
 
+function optionalMemoryKindArg(args: ToolArgs, name: string): MemoryKind | undefined {
+  const kind = optionalStringArg(args, name);
+  if (!kind) {
+    return undefined;
+  }
+  if (!(MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`Unsupported Memory kind: ${kind}. Supported kinds: ${MEMORY_KINDS.join(", ")}`);
+  }
+  return kind as MemoryKind;
+}
+
 function workingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind {
   const kind = stringArg(args, name);
   if (!(WORKING_MEMORY_KINDS as readonly string[]).includes(kind)) {
@@ -132,23 +146,25 @@ function optionalWorkingMemoryKindArg(args: ToolArgs, name: string): WorkingMemo
 }
 
 function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession) => T): T {
-  const db = openDatabase(options.dbPath);
+  const db = options.db ?? openDatabase(options.dbPath);
   migrate(db);
 
   try {
     const project = ensureProjectForRoot(db, options.projectRoot);
     return run({ db, projectId: project.id });
   } finally {
-    db.close();
+    if (!options.db) {
+      db.close();
+    }
   }
 }
 
-export function callMiraTool(
-  options: MiraMcpOptions,
+function executeMiraTool(
+  session: ToolSession,
   name: MiraMcpToolName,
   args: ToolArgs
 ): unknown {
-  return withToolSession(options, ({ db, projectId }) => {
+  const { db, projectId } = session;
     switch (name) {
       case "get_context_bundle":
         return buildContextBundle(db, projectId, {
@@ -157,7 +173,9 @@ export function callMiraTool(
           maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined
         });
       case "search_memory":
-        return searchMemories(db, projectId, stringArg(args, "query"));
+        return searchMemories(db, projectId, stringArg(args, "query"), {
+          kind: optionalMemoryKindArg(args, "kind")
+        });
       case "set_working_memory":
         return setWorkingMemory(db, {
           projectId,
@@ -182,7 +200,7 @@ export function callMiraTool(
         });
       case "save_thread":
         return saveThread(db, {
-          id: stringArg(args, "id"),
+          id: optionalStringArg(args, "id") ?? `thread_${randomUUID()}`,
           projectId,
           title: stringArg(args, "title"),
           source: stringArg(args, "source"),
@@ -190,7 +208,18 @@ export function callMiraTool(
           rawText: stringArg(args, "rawText")
         });
     }
-  });
+}
+
+export function callMiraTool(
+  options: MiraMcpOptions,
+  name: MiraMcpToolName,
+  args: ToolArgs
+): unknown {
+  return withToolSession(options, (session) => executeMiraTool(session, name, args));
+}
+
+function parseMiraToolArgs(name: MiraMcpToolName, args: unknown): ToolArgs {
+  return z.object(MIRA_MCP_TOOL_SCHEMAS[name]).parse(args ?? {}) as ToolArgs;
 }
 
 function toMcpToolResult(value: unknown) {
@@ -204,11 +233,34 @@ function toMcpToolResult(value: unknown) {
   };
 }
 
+function toMcpErrorResult(error: unknown) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text: error instanceof Error ? error.message : String(error)
+      }
+    ]
+  };
+}
+
 export function createMiraMcpServer(options: MiraMcpOptions): {
   server: McpServer;
   toolNames: MiraMcpToolName[];
 } {
   const server = new McpServer({ name: "mira", version: "0.1.0" });
+  const db = options.db ?? openDatabase(options.dbPath);
+  migrate(db);
+  const project = ensureProjectForRoot(db, options.projectRoot);
+  const session = { db, projectId: project.id };
+  const originalClose = server.close.bind(server);
+  server.close = async () => {
+    await originalClose();
+    if (!options.db) {
+      db.close();
+    }
+  };
 
   for (const toolName of MIRA_MCP_TOOL_NAMES) {
     server.registerTool(
@@ -216,9 +268,15 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
       {
         title: toolName,
         description: MIRA_MCP_TOOL_DESCRIPTIONS[toolName],
-        inputSchema: TOOL_SCHEMAS[toolName]
+        inputSchema: MIRA_MCP_TOOL_SCHEMAS[toolName]
       },
-      async (args: unknown) => toMcpToolResult(callMiraTool(options, toolName, args as ToolArgs))
+      async (args: unknown) => {
+        try {
+          return toMcpToolResult(executeMiraTool(session, toolName, parseMiraToolArgs(toolName, args)));
+        } catch (error) {
+          return toMcpErrorResult(error);
+        }
+      }
     );
   }
 

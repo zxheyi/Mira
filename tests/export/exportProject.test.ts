@@ -8,6 +8,7 @@ import { migrate } from "../../src/db/schema.js";
 import { exportProject } from "../../src/export/exportProject.js";
 import { addMemory } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
+import { saveThread } from "../../src/threads/threadStore.js";
 import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
 
 let db: Database.Database | undefined;
@@ -42,6 +43,14 @@ describe("exportProject", () => {
       confidence: 1,
       importance: 8
     });
+    saveThread(database, {
+      id: "thread_export",
+      projectId: project.id,
+      title: "Export Thread",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "## Summary\nExport this thread."
+    });
     const outDir = await mkdtemp(join(tmpdir(), "mira-export-test-"));
 
     const json = await exportProject(database, project.id, "json", outDir);
@@ -49,7 +58,30 @@ describe("exportProject", () => {
 
     expect(json.files).toEqual([join(outDir, "mira-export.json")]);
     expect(markdown.files).toEqual([join(outDir, "mira-export.md")]);
-    expect(await readFile(join(outDir, "mira-export.json"), "utf8")).toContain("Export decision");
-    expect(await readFile(join(outDir, "mira-export.md"), "utf8")).toContain("# Mira Export");
+    const exportedJson = JSON.parse(await readFile(join(outDir, "mira-export.json"), "utf8")) as {
+      threads: Array<{ id: string; title: string }>;
+    };
+    expect(exportedJson.threads).toEqual([expect.objectContaining({ id: "thread_export", title: "Export Thread" })]);
+    expect(await readFile(join(outDir, "mira-export.md"), "utf8")).toContain("## Threads");
+  });
+
+  test("exports an empty project as valid JSON and Markdown", async () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Empty Mira", rootPath: "/workspace/empty-mira" });
+    const outDir = await mkdtemp(join(tmpdir(), "mira-empty-export-test-"));
+
+    await exportProject(database, project.id, "json", outDir);
+    await exportProject(database, project.id, "markdown", outDir);
+
+    const json = JSON.parse(await readFile(join(outDir, "mira-export.json"), "utf8")) as {
+      workingMemory: unknown[];
+      memories: unknown[];
+    };
+    const markdown = await readFile(join(outDir, "mira-export.md"), "utf8");
+
+    expect(json.workingMemory).toEqual([]);
+    expect(json.memories).toEqual([]);
+    expect(markdown).toContain("No working memory recorded.");
+    expect(markdown).toContain("No memories recorded.");
   });
 });

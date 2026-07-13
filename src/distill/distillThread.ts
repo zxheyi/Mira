@@ -16,8 +16,12 @@ type Section = {
   lines: string[];
 };
 
-function kindForHeading(heading: string): MemoryKind | undefined {
+function kindForHeading(heading: string, level: number): MemoryKind | undefined {
   const normalized = heading.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+
+  if (level === 1 || ["user", "assistant", "system", "tool", "message"].includes(normalized)) {
+    return undefined;
+  }
 
   if (["key decisions", "decisions", "decision log"].includes(normalized)) {
     return "decision";
@@ -30,6 +34,9 @@ function kindForHeading(heading: string): MemoryKind | undefined {
   }
   if (["preferences", "user preferences"].includes(normalized)) {
     return "preference";
+  }
+  if (["constraints", "constraint", "project constraints"].includes(normalized)) {
+    return "constraint";
   }
   if (["tasks", "task", "current tasks"].includes(normalized)) {
     return "task";
@@ -50,7 +57,7 @@ function kindForHeading(heading: string): MemoryKind | undefined {
     return "todo";
   }
 
-  return undefined;
+  return "note";
 }
 
 function importanceForKind(kind: MemoryKind): number {
@@ -83,11 +90,24 @@ function titleFromContent(content: string): string {
 }
 
 function entriesFromSection(lines: string[]): string[] {
-  const bulletEntries = lines
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.match(/^(?:[-*]|\d+[.)])\s+(?<content>.+)$/)?.groups?.content?.trim())
-    .filter((entry): entry is string => Boolean(entry));
+  const bulletEntries: string[] = [];
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    const bullet = line.trim().match(/^(?:[-*]|\d+[.)])\s+(?<content>.+)$/)?.groups?.content?.trim();
+    if (bullet) {
+      bulletEntries.push(bullet);
+      continue;
+    }
+
+    const continuation = line.match(/^\s{2,}(?<content>\S.*)$/)?.groups?.content?.trim();
+    if (continuation && bulletEntries.length > 0) {
+      bulletEntries[bulletEntries.length - 1] = `${bulletEntries[bulletEntries.length - 1]} ${continuation}`;
+    }
+  }
 
   if (bulletEntries.length > 0) {
     return bulletEntries;
@@ -106,10 +126,11 @@ export function distillMemoriesFromText(
   let current: Section | undefined;
 
   for (const line of rawText.split(/\r?\n/)) {
-    const heading = line.match(/^#{1,6}\s+(?<title>.+)$/)?.groups?.title;
+    const headingMatch = line.match(/^(?<marks>#{1,6})\s+(?<title>.+)$/);
+    const heading = headingMatch?.groups?.title;
 
     if (heading) {
-      const kind = kindForHeading(heading);
+      const kind = kindForHeading(heading, headingMatch?.groups?.marks.length ?? 1);
       current = kind ? { kind, lines: [] } : undefined;
       if (current) {
         sections.push(current);
@@ -147,6 +168,13 @@ export function distillThreadMemories(
     throw new Error(`Thread not found: ${threadId}`);
   }
 
-  clearMemoriesForThread(db, projectId, threadId);
-  return distillMemoriesFromText(projectId, threadId, row.raw_text).map((memory) => addMemory(db, memory));
+  const inputs = distillMemoriesFromText(projectId, threadId, row.raw_text);
+  if (inputs.length === 0) {
+    return [];
+  }
+
+  return db.transaction(() => {
+    clearMemoriesForThread(db, projectId, threadId);
+    return inputs.map((memory) => addMemory(db, memory));
+  })();
 }

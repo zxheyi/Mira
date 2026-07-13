@@ -42,6 +42,27 @@ describe("agent session importer", () => {
     expect(first.title).toBe("claude-session");
   });
 
+  test("keeps readable slugs for non-ASCII file names", () => {
+    const session = normalizeMarkdownSession({
+      source: "codex",
+      inputPath: "/workspace/mira/中文会话.md",
+      rawText: "## Summary\n中文内容"
+    });
+
+    expect(session.id).toMatch(/^codex_中文会话_/);
+  });
+
+
+  test("infers JSONL titles through the shared file title helper", () => {
+    const session = normalizeJsonlSession({
+      source: "codex",
+      inputPath: "/workspace/mira/codex.shared-title.jsonl",
+      rawText: JSON.stringify({ role: "user", content: "Hello" })
+    });
+
+    expect(session.title).toBe("codex.shared-title");
+  });
+
   test("rejects unsupported sources", () => {
     expect(() =>
       normalizeMarkdownSession({

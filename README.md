@@ -96,6 +96,17 @@ Agent 使用 Mira 的基本习惯：
 - 做出重要决策后调用 `add_memory` 或更新 Working Memory。
 - 会话结束前通过 `save_thread` 保存本轮摘要；完整 transcript 自动捕获放到 post-MVP。
 
+## 安装与首次运行
+
+从源码仓库使用时，先安装依赖并构建 CLI：
+
+```bash
+npm install
+npm run build
+```
+
+随后可以通过 `npm run dev -- <command>` 运行源码版，或在安装为 bin 后直接使用 `mira <command>`。
+
 ## CLI 快速使用
 
 Phase 4 已提供本地 CLI 闭环。常用命令示例：
@@ -103,24 +114,33 @@ Phase 4 已提供本地 CLI 闭环。常用命令示例：
 ```bash
 mira init
 mira project list
+mira project delete --id project_123
 mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira thread save --id thread_2 --title "Session File" --source codex --raw-format markdown --file ./session.md
+mira thread delete --id thread_2
 mira memory distill --thread thread_1
 mira memory llm-prompt --thread thread_1
 mira memory apply-candidates --thread thread_1 --path ./candidates.json
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
 mira memory search --query "script-friendly"
 mira memory search "script-friendly"
+mira memory clear --thread thread_1
 mira working set --kind current_task --content "Continue Phase 4."
 mira working list
+mira working clear --kind blocker
+mira wm list
 mira context bundle --query "Mira"
 mira export --format json --out ./export
 mira export --format markdown --out ./export
 ```
+
+`mira thread save` 中 `--raw-format` 是 `--format` 的别名，保留 `--raw-format` 是为了与数据模型里的 `rawFormat` 命名一致。`mira wm` 是 `mira working` 的短别名。删除类命令会移除本地记录，执行前请确认目标 id。
+
+全局选项需要放在子命令前：`--db` 与 `--project-root` 需要写在子命令前，例如 `mira --project-root /path --db /path/.mira/mira.sqlite memory search "Mira"`。
 
 默认数据库为当前项目的 `.mira/mira.sqlite`。脚本和测试也可以显式传入：
 
