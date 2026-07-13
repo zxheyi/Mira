@@ -14,7 +14,7 @@ import {
 } from "./distill/llmDistill.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
-import { addMemory, clearMemoriesForThread, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
+import { addMemory, clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
 import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
 import {
   createProject,
@@ -30,6 +30,7 @@ import {
   clearWorkingMemory,
   listWorkingMemory,
   setWorkingMemory,
+  WORKING_MEMORY_KINDS,
   type WorkingMemoryKind
 } from "./workingMemory/workingMemoryStore.js";
 
@@ -112,6 +113,29 @@ function numberInRange(value: string, min: number, max: number, label: string): 
     throw new Error(`${label} must be a number from ${min} to ${max}`);
   }
   return numberValue;
+}
+
+function requireMemoryKind(kind: string): MemoryKind {
+  if (!(MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`Memory kind is unsupported: ${kind}. Supported kinds: ${MEMORY_KINDS.join(", ")}`);
+  }
+  return kind as MemoryKind;
+}
+
+function requireWorkingMemoryKind(kind: string): WorkingMemoryKind {
+  if (!(WORKING_MEMORY_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(
+      `Working memory kind is unsupported: ${kind}. Supported kinds: ${WORKING_MEMORY_KINDS.join(", ")}`
+    );
+  }
+  return kind as WorkingMemoryKind;
+}
+
+function requireRawFormat(rawFormat: string): "markdown" | "jsonl" {
+  if (rawFormat !== "markdown" && rawFormat !== "jsonl") {
+    throw new Error("Thread raw format must be markdown or jsonl");
+  }
+  return rawFormat;
 }
 
 function commandPathFromArgs(args: string[]): string {
@@ -209,10 +233,11 @@ thread
     text?: string;
     file?: string;
   }) => {
-    const rawFormat = options.format ?? options.rawFormat;
-    if (!rawFormat) {
+    const rawFormatValue = options.format ?? options.rawFormat;
+    if (!rawFormatValue) {
       throw new Error("Thread raw format is required via --format or --raw-format");
     }
+    const rawFormat = requireRawFormat(rawFormatValue);
 
     const rawText = requireNonEmpty(
       options.text ?? (options.file ? await readFile(resolve(options.file), "utf8") : undefined),
@@ -269,6 +294,7 @@ memory
       importance: string;
     }) => {
       const content = requireNonEmpty(options.content, "Memory content");
+      const kind = requireMemoryKind(options.kind);
       const confidence = numberInRange(options.confidence, 0, 1, "confidence");
       const importance = numberInRange(options.importance, 1, 10, "importance");
 
@@ -278,7 +304,7 @@ memory
             projectId: session.project.id,
             threadId: options.threadId ?? options.thread,
             title: options.title,
-            kind: options.kind,
+            kind,
             content,
             source: options.source,
             confidence,
@@ -361,12 +387,14 @@ function registerWorkingCommands(parent: Command): void {
   .description("Set working memory")
   .requiredOption("--kind <kind>", "Working memory kind")
   .requiredOption("--content <content>", "Working memory content")
-  .action(async (options: { kind: WorkingMemoryKind; content: string }) => {
+  .action(async (options: { kind: string; content: string }) => {
+    const kind = requireWorkingMemoryKind(options.kind);
+
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(
         setWorkingMemory(session.db, {
           projectId: session.project.id,
-          kind: options.kind,
+          kind,
           content: options.content
         })
       );
@@ -386,9 +414,11 @@ function registerWorkingCommands(parent: Command): void {
   .command("clear")
   .description("Clear working memory")
   .option("--kind <kind>", "Working memory kind")
-  .action(async (options: { kind?: WorkingMemoryKind }) => {
+  .action(async (options: { kind?: string }) => {
+    const kind = options.kind ? requireWorkingMemoryKind(options.kind) : undefined;
+
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      clearWorkingMemory(session.db, session.project.id, options.kind);
+      clearWorkingMemory(session.db, session.project.id, kind);
       printJson({ ok: true });
     });
   });
@@ -410,11 +440,15 @@ context
   .option("--max-characters <number>", "Maximum output characters")
   .action(async (options: { query?: string; memoryLimit: string; maxCharacters?: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
+      const memoryLimit = numberInRange(options.memoryLimit, 1, 50, "memoryLimit");
+      const maxCharacters = options.maxCharacters
+        ? numberInRange(options.maxCharacters, 1, 1_000_000, "maxCharacters")
+        : undefined;
       process.stdout.write(
         buildContextBundle(session.db, session.project.id, {
           query: options.query,
-          memoryLimit: Number(options.memoryLimit),
-          maxCharacters: options.maxCharacters ? Number(options.maxCharacters) : undefined
+          memoryLimit,
+          maxCharacters
         })
       );
     });

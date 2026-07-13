@@ -68,18 +68,25 @@ function memoryEntry(memory: Memory, options: { includeCreatedAt: boolean }): st
 }
 
 function pushBudgetedEntries(lines: string[], entries: string[], maxCharacters: number | undefined): number {
-  let omitted = 0;
-
-  for (const entry of entries) {
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
     const candidate = [...lines, entry, ""].join("\n").trimEnd() + "\n";
-    if (maxCharacters && candidate.length > maxCharacters) {
-      omitted += 1;
-      continue;
+    if (maxCharacters !== undefined && candidate.length > maxCharacters) {
+      return entries.length - index;
     }
     lines.push(entry, "");
   }
 
-  return omitted;
+  return 0;
+}
+
+function pushBudgetedLine(lines: string[], line: string, maxCharacters: number | undefined): boolean {
+  const candidate = [...lines, line].join("\n").trimEnd() + "\n";
+  if (maxCharacters !== undefined && candidate.length > maxCharacters) {
+    return false;
+  }
+  lines.push(line);
+  return true;
 }
 
 export function buildContextBundle(
@@ -95,17 +102,27 @@ export function buildContextBundle(
 
   lines.push("## Working Memory");
   if (workingMemory.length === 0) {
-    lines.push("No working memory recorded.");
+    pushBudgetedLine(lines, "No working memory recorded.", options.maxCharacters);
   } else {
-    for (const item of workingMemory) {
-      lines.push(`### ${item.kind}`, `- updatedAt: ${item.updatedAt}`, item.content, "");
+    const omitted = pushBudgetedEntries(
+      lines,
+      workingMemory.map((item) => [`### ${item.kind}`, `- updatedAt: ${item.updatedAt}`, item.content].join("\n")),
+      options.maxCharacters
+    );
+    if (omitted > 0) {
+      pushBudgetedLine(lines, `Some working memory entries were omitted due to maxCharacters. (${omitted} omitted)`, options.maxCharacters);
     }
   }
 
   if (warningMemories.length > 0) {
     lines.push("## Warnings");
-    for (const memory of warningMemories) {
-      lines.push(memoryEntry(memory, { includeCreatedAt: !options.maxCharacters }), "");
+    const omitted = pushBudgetedEntries(
+      lines,
+      warningMemories.map((memory) => memoryEntry(memory, { includeCreatedAt: !options.maxCharacters })),
+      options.maxCharacters
+    );
+    if (omitted > 0) {
+      pushBudgetedLine(lines, `Some warning memories were omitted due to maxCharacters. (${omitted} omitted)`, options.maxCharacters);
     }
   }
 
@@ -119,12 +136,16 @@ export function buildContextBundle(
       options.maxCharacters
     );
     if (omitted > 0) {
-      lines.push(`Some long-term memories were omitted due to maxCharacters. (${omitted} omitted)`);
+      pushBudgetedLine(
+        lines,
+        `Some long-term memories were omitted due to maxCharacters. (${omitted} omitted)`,
+        options.maxCharacters
+      );
     }
   }
 
   const markdown = lines.join("\n").trimEnd() + "\n";
-  if (options.maxCharacters && options.maxCharacters <= 3 && markdown.length > options.maxCharacters) {
+  if (options.maxCharacters !== undefined && markdown.length > options.maxCharacters) {
     return markdown.slice(0, options.maxCharacters);
   }
   return markdown;

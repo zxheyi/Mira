@@ -88,6 +88,21 @@ describe("context bundle", () => {
     expect(bundle).not.toContain("Second memory");
   });
 
+  test("budgets working memory entries and supports small maxCharacters consistently", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, {
+      projectId: project.id,
+      kind: "current_task",
+      content: "This working memory entry is intentionally too large for a tiny budget.".repeat(3)
+    });
+
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 50 });
+
+    expect(bundle.length).toBeLessThanOrEqual(50);
+    expect(bundle).not.toContain("intentionally too large");
+  });
+
   test("prints empty state messages and supports tiny maxCharacters budgets", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
@@ -141,6 +156,75 @@ describe("context bundle", () => {
     expect(bundle).toContain("Normal note");
   });
 
+  test("applies maxCharacters budgets to warning memories", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Short task." });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Oversized warning",
+      kind: "failed_attempt",
+      content: "This warning is intentionally too long to fit inside the remaining budget.".repeat(4),
+      source: "manual",
+      confidence: 1,
+      importance: 10
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Small regular",
+      kind: "note",
+      content: "Small regular memory.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 220 });
+
+    expect(bundle.length).toBeLessThanOrEqual(220);
+    expect(bundle).not.toContain("Oversized warning");
+    expect(bundle).toContain("Some warning memories were omitted due to maxCharacters.");
+  });
+
+  test("stops adding budgeted memories after the first oversized entry", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Keep this working memory." });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Fits first",
+      kind: "decision",
+      content: "The first memory fits.",
+      source: "manual",
+      confidence: 1,
+      importance: 10
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Too large second",
+      kind: "architecture",
+      content: "This second high-priority memory is too large to fit.".repeat(5),
+      source: "manual",
+      confidence: 1,
+      importance: 9
+    });
+    addMemory(database, {
+      projectId: project.id,
+      title: "Would fit third",
+      kind: "note",
+      content: "This lower-priority memory would fit but should not leapfrog.",
+      source: "manual",
+      confidence: 1,
+      importance: 1
+    });
+
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 260 });
+
+    expect(bundle).toContain("The first memory fits.");
+    expect(bundle).not.toContain("Too large second");
+    expect(bundle).not.toContain("Would fit third");
+  });
+
   test("keeps long-term memory entries whole when applying character budgets", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
@@ -164,7 +248,7 @@ describe("context bundle", () => {
       importance: 8
     });
 
-    const bundle = buildContextBundle(database, project.id, { maxCharacters: 240 });
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 285 });
 
     expect(bundle).toContain("Keep this working memory.");
     expect(bundle).toContain("First memory should fit.");

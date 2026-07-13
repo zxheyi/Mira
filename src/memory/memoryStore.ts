@@ -98,6 +98,9 @@ function quoteFtsTerm(term: string): string {
 function toFtsQuery(query: string, mode: SearchMemoriesOptions["queryMode"] = "phrase"): string {
   if (mode === "orTerms") {
     const terms = query.split(/\s+/).map((term) => term.trim()).filter(Boolean);
+    if (terms.length === 0) {
+      return quoteFtsTerm(query);
+    }
     return terms.map(quoteFtsTerm).join(" OR ");
   }
 
@@ -153,22 +156,25 @@ export function addMemory(db: Database.Database, input: AddMemoryInput): Memory 
   };
 
   try {
-    db.transaction(() => {
-      db.prepare(
-        `insert into memories (
+    const duplicate = db.transaction(() => {
+      const result = db.prepare(
+        `insert or ignore into memories (
           id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at
         ) values (
           @id, @projectId, @threadId, @title, @kind, @content, @source, @confidence, @contentHash, @importance, @createdAt
         )`
       ).run({ ...memory, threadId: memory.threadId ?? null });
 
-      db.prepare("insert into memory_fts (id, project_id, title, content) values (?, ?, ?, ?)").run(
-        memory.id,
-        memory.projectId,
-        memory.title,
-        memory.content
-      );
+      if (result.changes === 0) {
+        return findDuplicateMemory(db, input.projectId, input.threadId, input.kind, contentHash);
+      }
+
+      return undefined;
     })();
+
+    if (duplicate) {
+      return duplicate;
+    }
   } catch (error) {
     const duplicate = findDuplicateMemory(db, input.projectId, input.threadId, input.kind, contentHash);
     if (duplicate) {

@@ -51,7 +51,7 @@ export function migrate(db: Database.Database): void {
       importance integer not null,
       created_at text not null,
       foreign key (project_id) references projects(id) on delete cascade,
-      foreign key (thread_id) references threads(id) on delete set null
+      foreign key (thread_id) references threads(id) on delete cascade
     );
 
     create unique index if not exists memories_thread_content_unique
@@ -68,6 +68,9 @@ export function migrate(db: Database.Database): void {
     create index if not exists idx_memories_project_thread
       on memories(project_id, thread_id);
 
+    create index if not exists idx_memories_thread
+      on memories(thread_id);
+
     create index if not exists idx_threads_project
       on threads(project_id);
 
@@ -77,6 +80,21 @@ export function migrate(db: Database.Database): void {
       title,
       content
     );
+
+    create trigger if not exists memories_after_insert_sync_fts
+    after insert on memories
+    begin
+      insert into memory_fts (id, project_id, title, content)
+      values (new.id, new.project_id, new.title, new.content);
+    end;
+
+    create trigger if not exists memories_after_update_sync_fts
+    after update of project_id, title, content on memories
+    begin
+      delete from memory_fts where id = old.id;
+      insert into memory_fts (id, project_id, title, content)
+      values (new.id, new.project_id, new.title, new.content);
+    end;
 
     create trigger if not exists memories_after_delete_cleanup_fts
     after delete on memories

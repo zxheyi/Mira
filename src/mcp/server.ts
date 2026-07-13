@@ -7,7 +7,7 @@ import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
-import { saveThread } from "../threads/threadStore.js";
+import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
 import {
   clearWorkingMemory,
   listWorkingMemory,
@@ -29,13 +29,13 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
-  get_context_bundle: "Build a concise Markdown context bundle with current working memory and relevant long-term memories for this project.",
-  search_memory: "Search this project's long-term memories by text and return ranked results with score, kind, title, source, and confidence.",
-  set_working_memory: "Set the current project working-memory snapshot for a supported kind such as current_task, blocker, or next_step.",
-  list_working_memory: "List the current project working-memory entries so the agent can resume the active task state.",
-  clear_working_memory: "Clear stale working-memory entries for one supported kind, or clear all working memory when no kind is provided.",
-  add_memory: "Write a stable, reviewed long-term memory for this project with provenance, confidence, importance, and a supported kind.",
-  save_thread: "Save an agent-generated session summary as a Mira thread for later distillation, search, and provenance tracking."
+  get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory plus relevant long-term memories.",
+  search_memory: "Use for targeted historical lookups; accepts optional limit and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
+  set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
+  list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
+  clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
+  add_memory: "Write a stable long-term memory; returns the Memory object and de-duplicates by projectId, kind, threadId, and content hash.",
+  save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
@@ -48,40 +48,40 @@ type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
   get_context_bundle: {
-    query: z.string().optional(),
-    memoryLimit: z.number().optional(),
-    maxCharacters: z.number().optional()
+    query: z.string().trim().min(1).max(1_000).optional(),
+    memoryLimit: z.number().int().min(1).max(50).optional(),
+    maxCharacters: z.number().int().min(100).max(1_000_000).optional()
   },
   search_memory: {
-    query: z.string(),
-    kind: z.enum(MEMORY_KINDS).optional()
+    query: z.string().trim().min(1).max(1_000),
+    kind: z.enum(MEMORY_KINDS).optional(),
+    limit: z.number().int().min(1).max(50).optional()
   },
   set_working_memory: {
     kind: z.enum(WORKING_MEMORY_KINDS),
-    content: z.string()
+    content: z.string().trim().min(1).max(100_000)
   },
   list_working_memory: {},
   clear_working_memory: {
     kind: z.enum(WORKING_MEMORY_KINDS).optional()
   },
   add_memory: {
-    title: z.string(),
+    title: z.string().trim().min(1).max(500),
     kind: z.enum(MEMORY_KINDS),
-    content: z.string(),
-    source: z.string(),
-    threadId: z.string().optional(),
-    thread: z.string().optional(),
-    confidence: z.number().optional(),
-    importance: z.number().optional()
+    content: z.string().trim().min(1).max(50_000),
+    source: z.string().trim().min(1).max(500),
+    threadId: z.string().trim().min(1).max(500).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    importance: z.number().int().min(1).max(10).optional()
   },
   save_thread: {
-    id: z.string().optional(),
-    title: z.string(),
-    source: z.string(),
-    rawFormat: z.string(),
-    rawText: z.string()
+    id: z.string().trim().min(1).max(500).optional(),
+    title: z.string().trim().min(1).max(500),
+    source: z.string().trim().min(1).max(500),
+    rawFormat: z.enum(["markdown", "jsonl"]),
+    rawText: z.string().trim().min(1).max(5_000_000)
   }
-} satisfies Record<MiraMcpToolName, Record<string, unknown>>;
+} satisfies Record<MiraMcpToolName, Record<string, z.ZodType>>;
 
 
 type ToolSession = {
@@ -134,6 +134,14 @@ function workingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind {
   return kind as WorkingMemoryKind;
 }
 
+function rawFormatArg(args: ToolArgs, name: string): ThreadRawFormat {
+  const rawFormat = stringArg(args, name);
+  if (rawFormat !== "markdown" && rawFormat !== "jsonl") {
+    throw new Error("Thread raw format must be markdown or jsonl");
+  }
+  return rawFormat;
+}
+
 function optionalWorkingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind | undefined {
   const kind = optionalStringArg(args, name);
   if (!kind) {
@@ -174,7 +182,8 @@ function executeMiraTool(
         });
       case "search_memory":
         return searchMemories(db, projectId, stringArg(args, "query"), {
-          kind: optionalMemoryKindArg(args, "kind")
+          kind: optionalMemoryKindArg(args, "kind"),
+          limit: numberArg(args, "limit", 50)
         });
       case "set_working_memory":
         return setWorkingMemory(db, {
@@ -190,7 +199,7 @@ function executeMiraTool(
       case "add_memory":
         return addMemory(db, {
           projectId,
-          threadId: optionalStringArg(args, "threadId") ?? optionalStringArg(args, "thread"),
+          threadId: optionalStringArg(args, "threadId"),
           title: stringArg(args, "title"),
           kind: memoryKindArg(args, "kind"),
           content: stringArg(args, "content"),
@@ -204,22 +213,42 @@ function executeMiraTool(
           projectId,
           title: stringArg(args, "title"),
           source: stringArg(args, "source"),
-          rawFormat: stringArg(args, "rawFormat"),
+          rawFormat: rawFormatArg(args, "rawFormat"),
           rawText: stringArg(args, "rawText")
         });
+      default: {
+        const exhaustive: never = name;
+        throw new Error(`Unsupported MCP tool in executor: ${String(exhaustive)}`);
+      }
     }
 }
 
 export function callMiraTool(
   options: MiraMcpOptions,
-  name: MiraMcpToolName,
+  name: string,
   args: ToolArgs
 ): unknown {
-  return withToolSession(options, (session) => executeMiraTool(session, name, args));
+  const parsed = parseMiraToolArgs(name, args);
+  return withToolSession(options, (session) => executeMiraTool(session, parsed.name, parsed.args));
 }
 
-function parseMiraToolArgs(name: MiraMcpToolName, args: unknown): ToolArgs {
-  return z.object(MIRA_MCP_TOOL_SCHEMAS[name]).parse(args ?? {}) as ToolArgs;
+function isMiraMcpToolName(name: string): name is MiraMcpToolName {
+  return (MIRA_MCP_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+function parseMiraToolArgs(name: string, args: unknown): { name: MiraMcpToolName; args: ToolArgs } {
+  if (!isMiraMcpToolName(name)) {
+    throw new Error(`Unsupported MCP tool: ${name}`);
+  }
+
+  const result = z.object(MIRA_MCP_TOOL_SCHEMAS[name]).strict().safeParse(args ?? {});
+  if (!result.success) {
+    const details = result.error.issues
+      .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`Invalid MCP arguments for ${name}: ${details}`);
+  }
+  return { name, args: result.data as ToolArgs };
 }
 
 function toMcpToolResult(value: unknown) {
@@ -233,13 +262,14 @@ function toMcpToolResult(value: unknown) {
   };
 }
 
-function toMcpErrorResult(error: unknown) {
+function toMcpErrorResult(toolName: MiraMcpToolName, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
   return {
     isError: true,
     content: [
       {
         type: "text" as const,
-        text: error instanceof Error ? error.message : String(error)
+        text: message.includes(toolName) ? message : `${toolName}: ${message}`
       }
     ]
   };
@@ -272,9 +302,9 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
       },
       async (args: unknown) => {
         try {
-          return toMcpToolResult(executeMiraTool(session, toolName, parseMiraToolArgs(toolName, args)));
+          return toMcpToolResult(executeMiraTool(session, toolName, parseMiraToolArgs(toolName, args).args));
         } catch (error) {
-          return toMcpErrorResult(error);
+          return toMcpErrorResult(toolName, error);
         }
       }
     );

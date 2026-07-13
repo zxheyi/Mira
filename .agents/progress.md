@@ -1,6 +1,6 @@
 # Mira Progress
 
-Last updated: 2026-07-10
+Last updated: 2026-07-13
 
 ## Current Status
 
@@ -50,6 +50,10 @@ Completed:
 - Phase 29: Export and CLI UX.
 - Phase 30: MCP architecture hardening.
 - Phase 31: Deep audit docs and verification.
+- Phase 32: Post-fix audit high-priority hardening.
+- Phase 33: Hardening audit budget and CLI guards.
+- Phase 34: Budget guards medium polish.
+- Phase 35: Low-priority audit cleanup.
 
 ## Verification Evidence
 
@@ -67,6 +71,18 @@ tests/infrastructure/packageMetadata.test.ts
 tests/infrastructure/docs.test.ts
 tests/infrastructure/schemaReadiness.test.ts
 vitest.config.ts
+specs/010-post-fix-audit-hardening/spec.md
+specs/010-post-fix-audit-hardening/plan.md
+specs/010-post-fix-audit-hardening/tasks.md
+docs/audit-reports/2026-07-13-post-fix-audit.md
+docs/audit-reports/2026-07-13-hardening-audit.md
+docs/audit-reports/2026-07-13-budget-guards-audit.md
+specs/012-budget-guards-medium-polish/spec.md
+specs/012-budget-guards-medium-polish/plan.md
+specs/012-budget-guards-medium-polish/tasks.md
+specs/011-hardening-audit-budget-and-cli-guards/spec.md
+specs/011-hardening-audit-budget-and-cli-guards/plan.md
+specs/011-hardening-audit-budget-and-cli-guards/tasks.md
 # Test Files 1 passed; Tests 1 passed
 
 npm test
@@ -173,6 +189,22 @@ Infrastructure audit RED: package metadata missing prepare/engines/files, README
 Infrastructure audit GREEN: targeted tests passed after adding bounded FTS search, top-N context memory queries, WAL/busy_timeout, schema indexes and future-version guard, race-safer project/memory writes, atomic distill replacements with empty-result guards, LLM title/content caps, package metadata, docs updates, CLI validation, MCP handler errors, non-ASCII slug support, and stable integration-test timeout budget.
 Infrastructure audit verification: targeted 009 suite passed (9 files, 50 tests); full npm test passed (21 files, 87 tests); npm run build passed.
 
+Post-fix audit RED: schema direct thread deletion left memories searchable via ON DELETE SET NULL, MCP schemas still accepted legacy `thread`, out-of-range confidence/importance, oversized text, and unconstrained rawFormat, registered MCP handlers returned success for invalid boundary inputs, MCP descriptions did not distinguish session-start bundle from targeted search, and addMemory duplicate race fallback rolled back a simulated concurrent duplicate.
+Post-fix audit GREEN: targeted tests passed after changing thread foreign key semantics to ON DELETE CASCADE, making addMemory use insert-or-ignore plus duplicate回查, hardening MCP Zod schemas and direct call validation, removing the MCP `thread` alias, adding tool-context MCP error wrapping, and clarifying MCP descriptions/return shapes.
+Post-fix audit verification: targeted suite passed (3 files, 28 tests); full npm test passed (21 files, 94 tests); npm run build passed.
+
+Hardening audit RED: warning memories bypassed maxCharacters, budgeted entries continued after the first oversized memory, get_context_bundle.query lacked a max length, unsupported MCP tool names returned undefined, CLI memory/working kind accepted invalid values, and addMemory catch fallback lacked direct coverage.
+Hardening audit GREEN: targeted tests passed after routing warnings through budgeted entry insertion, changing budget overflow to stop at the first oversized entry, adding get_context_bundle query max validation, adding unsupported MCP tool guards/default executor branch, validating CLI Memory/Working Memory kinds, and covering addMemory catch fallback with a wrapped database test.
+Hardening audit verification: targeted suite passed (4 files, 42 tests); full npm test passed (21 files, 99 tests); npm run build passed.
+
+Budget guards medium polish RED: schema lacked a single-column `memories(thread_id)` index for cascade/delete paths, MCP descriptions did not clearly document Markdown-string return shape, nested SearchResult memory fields, or rawFormat values, and blank search query coverage was missing.
+Budget guards medium polish GREEN: targeted tests passed after adding `idx_memories_thread`, adding an OR-term empty-query defensive guard, clarifying MCP descriptions for get_context_bundle/search_memory/save_thread, and adding blank `searchMemories` regression coverage.
+Budget guards medium polish verification: targeted suite passed (3 files, 30 tests); full npm test passed (21 files, 101 tests); npm run build passed.
+
+Low-priority audit cleanup RED: context bundle did not budget Working Memory edge cases, CLI accepted invalid thread formats/context numeric ranges, MCP low-priority description and top-N budget paths lacked coverage, direct memory SQL writes did not sync FTS, deleteThread redundantly cleared memories, and database/export/distill defensive paths lacked tests.
+Low-priority audit cleanup GREEN: targeted tests passed after budgeting Working Memory with final maxCharacters guard, adding thread format/context range validation, documenting MCP low-priority behavior, validating rawFormat at the MCP execution boundary, adding FTS insert/update triggers, relying on cascade thread deletion, and covering database-open/export/addMemory/distill rollback cases.
+Low-priority audit cleanup verification: targeted suite passed (9 files, 69 tests); full npm test passed (22 files, 110 tests); npm run build passed.
+
 ## Current Files Of Interest
 
 ```text
@@ -213,6 +245,18 @@ tests/infrastructure/packageMetadata.test.ts
 tests/infrastructure/docs.test.ts
 tests/infrastructure/schemaReadiness.test.ts
 vitest.config.ts
+specs/010-post-fix-audit-hardening/spec.md
+specs/010-post-fix-audit-hardening/plan.md
+specs/010-post-fix-audit-hardening/tasks.md
+docs/audit-reports/2026-07-13-post-fix-audit.md
+docs/audit-reports/2026-07-13-hardening-audit.md
+docs/audit-reports/2026-07-13-budget-guards-audit.md
+specs/012-budget-guards-medium-polish/spec.md
+specs/012-budget-guards-medium-polish/plan.md
+specs/012-budget-guards-medium-polish/tasks.md
+specs/011-hardening-audit-budget-and-cli-guards/spec.md
+specs/011-hardening-audit-budget-and-cli-guards/plan.md
+specs/011-hardening-audit-budget-and-cli-guards/tasks.md
 specs/001-mira-mvp/spec.md
 specs/001-mira-mvp/plan.md
 specs/001-mira-mvp/tasks.md
@@ -222,6 +266,11 @@ specs/002-agent-session-import/tasks.md
 specs/003-llm-distill-agent-guidance/spec.md
 specs/003-llm-distill-agent-guidance/plan.md
 specs/003-llm-distill-agent-guidance/tasks.md
+
+tests/db/client.test.ts
+specs/013-low-priority-audit-cleanup/spec.md
+specs/013-low-priority-audit-cleanup/plan.md
+specs/013-low-priority-audit-cleanup/tasks.md
 specs/004-transcript-jsonl-import/spec.md
 specs/004-transcript-jsonl-import/plan.md
 specs/004-transcript-jsonl-import/tasks.md
@@ -259,5 +308,8 @@ Post-MVP hardening:
 - MCP agent polish adds `search_memory.kind`, optional MCP `save_thread.id`, config prerequisites, and boundary tests.
 - Deep audit remediation adds FTS cleanup, deletion APIs, improved Context Bundle, distill fallback, export threads, CLI UX polish, shared MCP sessions, and JSONL spec alignment.
 - Infrastructure audit remediation adds bounded search, top-N bundle retrieval, WAL/busy_timeout, schema indexes/version checks, safer distill replacement, CLI validation, package readiness metadata, docs corrections, MCP error wrapping, and portability polish.
+- Post-fix audit hardening aligns thread deletion semantics, hardens MCP schema/direct-call validation, removes the legacy MCP `thread` alias, improves MCP error wrapping, and adds defensive tests for OR search and duplicate race fallback.
+- Hardening audit budget and CLI guards apply context maxCharacters to warnings, stop budget filling on the first oversized entry, harden MCP query/tool-name validation, validate CLI kind values, and cover addMemory catch fallback.
+- Budget guards medium polish adds thread_id indexing, defensive OR-term query handling, clearer MCP return-shape/rawFormat descriptions, and blank search regression coverage.
 - Local branch still needs explicit user confirmation before push.
 - Do not commit `.mira/`, `dist/`, `node_modules/`, `.env`, or temporary exports.

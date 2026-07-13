@@ -1,12 +1,13 @@
 import type Database from "better-sqlite3";
-import { clearMemoriesForThread } from "../memory/memoryStore.js";
+
+export type ThreadRawFormat = "markdown" | "jsonl";
 
 export type Thread = {
   id: string;
   projectId: string;
   title: string;
   source: string;
-  rawFormat: string;
+  rawFormat: ThreadRawFormat;
   rawText: string;
   createdAt: string;
   updatedAt: string;
@@ -17,7 +18,7 @@ export type SaveThreadInput = {
   projectId: string;
   title: string;
   source: string;
-  rawFormat: string;
+  rawFormat: ThreadRawFormat;
   rawText: string;
 };
 
@@ -26,7 +27,7 @@ type ThreadRow = {
   project_id: string;
   title: string;
   source: string;
-  raw_format: string;
+  raw_format: ThreadRawFormat;
   raw_text: string;
   created_at: string;
   updated_at: string;
@@ -88,8 +89,5 @@ export function listThreadsForProject(db: Database.Database, projectId: string):
 }
 
 export function deleteThread(db: Database.Database, projectId: string, threadId: string): void {
-  db.transaction(() => {
-    clearMemoriesForThread(db, projectId, threadId);
-    db.prepare("delete from threads where project_id = ? and id = ?").run(projectId, threadId);
-  })();
+  db.prepare("delete from threads where project_id = ? and id = ?").run(projectId, threadId);
 }

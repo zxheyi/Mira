@@ -23,7 +23,7 @@ describe("schema infrastructure readiness", () => {
       .map((row) => (row as { name: string }).name);
 
     expect(indexes).toEqual(
-      expect.arrayContaining(["idx_memories_project", "idx_memories_project_thread", "idx_threads_project"])
+      expect.arrayContaining(["idx_memories_project", "idx_memories_project_thread", "idx_memories_thread", "idx_threads_project"])
     );
     expect(() => migrate(db as Database.Database)).toThrow("Unsupported Mira schema version");
   });

@@ -177,6 +177,41 @@ describe("distill thread memories", () => {
     expect(searchMemories(database, project.id, "Old")).toEqual([]);
   });
 
+  test("rolls back replacement memories when a distill write fails", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_rollback",
+      projectId: project.id,
+      title: "Rollback",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "## Key Decisions\n- New memory should not persist when write fails."
+    });
+    addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_rollback",
+      title: "Old memory",
+      kind: "decision",
+      content: "Old memory should remain after rollback.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+    database.exec(`
+      create trigger fail_distill_insert before insert on memories
+      when new.source = 'distill:thread_rollback'
+      begin
+        select raise(abort, 'distill insert failed');
+      end;
+    `);
+
+    expect(() => distillThreadMemories(database, project.id, "thread_rollback")).toThrow("distill insert failed");
+    expect(searchMemories(database, project.id, "Old memory")[0]?.memory.content).toBe(
+      "Old memory should remain after rollback."
+    );
+  });
+
   test("keeps old memories when deterministic distill produces no new memories", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });

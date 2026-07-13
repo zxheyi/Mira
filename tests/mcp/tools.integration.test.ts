@@ -54,6 +54,75 @@ describe("Mira MCP tools", () => {
     }
   });
 
+
+  test("distinguishes context bundle and targeted memory search descriptions", () => {
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.get_context_bundle).toMatch(/session start/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.get_context_bundle).toMatch(/Markdown/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.search_memory).toMatch(/targeted/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.search_memory).toMatch(/SearchResult/i);
+  });
+
+  test("documents low-priority MCP details", () => {
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.add_memory).toContain("projectId");
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.list_working_memory).toMatch(/no arguments/i);
+    expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.maxCharacters?.safeParse(1).success).toBe(false);
+  });
+
+  test("supports MCP context bundle top-N and maxCharacters paths", async () => {
+    const options = await setupMcpOptions();
+    await callMiraTool(options, "add_memory", {
+      title: "High priority",
+      kind: "decision",
+      content: "High priority memory should be selected without a query.",
+      source: "mcp-test",
+      importance: 10
+    });
+    await callMiraTool(options, "add_memory", {
+      title: "Low priority",
+      kind: "note",
+      content: "Low priority memory should be excluded by top-N.",
+      source: "mcp-test",
+      importance: 1
+    });
+
+    const bundle = callMiraTool(options, "get_context_bundle", { memoryLimit: 1, maxCharacters: 220 }) as string;
+
+    expect(bundle.length).toBeLessThanOrEqual(220);
+    expect(bundle).toContain("High priority");
+    expect(bundle).not.toContain("Low priority");
+  });
+
+  test("documents MCP return shapes and raw format values", () => {
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.get_context_bundle).toMatch(/Markdown string/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.get_context_bundle).toMatch(/not JSON/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.search_memory).toContain("{ memory:");
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.search_memory).toContain("score");
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.save_thread).toMatch(/rawFormat/i);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.save_thread).toMatch(/markdown/);
+    expect(MIRA_MCP_TOOL_DESCRIPTIONS.save_thread).toMatch(/jsonl/);
+  });
+
+  test("limits get_context_bundle query length", () => {
+    expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.query?.safeParse("x".repeat(1001)).success).toBe(false);
+  });
+
+  test("rejects unsupported MCP tool names", async () => {
+    const options = await setupMcpOptions();
+
+    expect(() => callMiraTool(options, "unknown_tool" as never, {})).toThrow("Unsupported MCP tool: unknown_tool");
+  });
+
+  test("constrains MCP schema boundaries and keeps threadId as the only thread reference", () => {
+    expect("thread" in MIRA_MCP_TOOL_SCHEMAS.add_memory).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.add_memory.confidence?.safeParse(1.5).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.add_memory.importance?.safeParse(0).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.add_memory.title.safeParse("x".repeat(501)).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.add_memory.content.safeParse("x".repeat(50001)).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawFormat.safeParse("plain").success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawFormat.safeParse("markdown").success).toBe(true);
+    expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawText.safeParse("x".repeat(5_000_001)).success).toBe(false);
+  });
+
   test("runs the agent read/write loop through MCP tool handlers", async () => {
     const options = await setupMcpOptions();
 
@@ -141,6 +210,65 @@ describe("Mira MCP tools", () => {
     expect((saved as { id: string }).id).toMatch(/^thread_/);
   });
 
+  test("rejects invalid MCP boundary inputs through direct calls", async () => {
+    const options = await setupMcpOptions();
+
+    expect(() =>
+      callMiraTool(options, "add_memory", {
+        title: "Invalid confidence",
+        kind: "decision",
+        content: "Confidence must stay bounded.",
+        source: "mcp-test",
+        confidence: 2
+      })
+    ).toThrow(/confidence/);
+
+    expect(() =>
+      callMiraTool(options, "add_memory", {
+        title: "Legacy thread alias",
+        kind: "decision",
+        content: "The MCP API should only accept threadId.",
+        source: "mcp-test",
+        thread: "thread_legacy"
+      })
+    ).toThrow(/thread/);
+
+    expect(() =>
+      callMiraTool(options, "save_thread", {
+        title: "Invalid format",
+        source: "codex",
+        rawFormat: "plain",
+        rawText: "summary"
+      })
+    ).toThrow(/rawFormat/);
+  });
+
+  test("registered MCP handlers wrap validation errors without throwing", async () => {
+    const db = openDatabase(":memory:");
+    migrate(db);
+    const created = createMiraMcpServer({
+      projectRoot: "/workspace/mira",
+      dbPath: ":memory:",
+      db
+    });
+    const tools = (created.server as unknown as {
+      _registeredTools: Record<string, { handler: (args: unknown) => Promise<unknown> }>;
+    })._registeredTools;
+
+    const result = (await tools.add_memory.handler({
+      title: "Invalid confidence",
+      kind: "decision",
+      content: "Confidence must stay bounded.",
+      source: "mcp-test",
+      confidence: 2
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("add_memory");
+    expect(result.content[0]?.text).not.toContain("at ");
+    db.close();
+  });
+
   test("rejects invalid MCP memory and working memory kinds", async () => {
     const options = await setupMcpOptions();
 
@@ -151,29 +279,29 @@ describe("Mira MCP tools", () => {
         content: "This kind should not be accepted.",
         source: "mcp-test"
       })
-    ).toThrow(/Unsupported Memory kind: surprise/);
+    ).toThrow(/Invalid MCP arguments for add_memory.*kind/);
 
     expect(() =>
       callMiraTool(options, "set_working_memory", {
         kind: "surprise",
         content: "This kind should not be accepted."
       })
-    ).toThrow(/Unsupported Working Memory kind: surprise/);
+    ).toThrow(/Invalid MCP arguments for set_working_memory.*kind/);
 
     expect(() => callMiraTool(options, "clear_working_memory", { kind: "surprise" })).toThrow(
-      /Unsupported Working Memory kind: surprise/
+      /Invalid MCP arguments for clear_working_memory.*kind/
     );
     expect(() => callMiraTool(options, "search_memory", { query: "MCP", kind: "surprise" })).toThrow(
-      /Unsupported Memory kind: surprise/
+      /Invalid MCP arguments for search_memory.*kind/
     );
   });
 
   test("keeps MCP missing argument errors explicit", async () => {
     const options = await setupMcpOptions();
 
-    expect(() => callMiraTool(options, "search_memory", {})).toThrow("Missing string argument: query");
+    expect(() => callMiraTool(options, "search_memory", {})).toThrow(/Invalid MCP arguments for search_memory.*query/);
     expect(() => callMiraTool(options, "save_thread", { id: "thread_missing" })).toThrow(
-      "Missing string argument: title"
+      /Invalid MCP arguments for save_thread.*title/
     );
   });
 

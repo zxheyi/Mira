@@ -7,9 +7,14 @@ export function openDatabase(path: string): Database.Database {
     mkdirSync(dirname(path), { recursive: true });
   }
 
-  let db: Database.Database;
   try {
-    db = new Database(path);
+    const db = new Database(path);
+    db.pragma("foreign_keys = ON");
+    if (path !== ":memory:") {
+      db.pragma("journal_mode = WAL");
+    }
+    db.pragma("busy_timeout = 5000");
+    return db;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("file is not a database")) {
@@ -19,11 +24,4 @@ export function openDatabase(path: string): Database.Database {
     }
     throw error;
   }
-
-  db.pragma("foreign_keys = ON");
-  if (path !== ":memory:") {
-    db.pragma("journal_mode = WAL");
-  }
-  db.pragma("busy_timeout = 5000");
-  return db;
 }

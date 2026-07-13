@@ -26,6 +26,15 @@ function setupDb(): Database.Database {
 }
 
 describe("exportProject", () => {
+  test("throws a clear error for a missing project", async () => {
+    const database = setupDb();
+    const outDir = await mkdtemp(join(tmpdir(), "mira-export-missing-"));
+
+    await expect(exportProject(database, "project_missing", "json", outDir)).rejects.toThrow(
+      "Project not found: project_missing"
+    );
+  });
+
   test("exports project memory as JSON and Markdown", async () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });

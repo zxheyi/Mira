@@ -256,6 +256,156 @@ describe("memory store", () => {
     ]);
   });
 
+  test("returns an empty list for blank search queries", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+
+    expect(searchMemories(database, project.id, "   ")).toEqual([]);
+    expect(searchMemories(database, project.id, "   ", { queryMode: "orTerms" })).toEqual([]);
+  });
+
+  test("matches any query term in orTerms mode", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    const mcp = addMemory(database, {
+      projectId: project.id,
+      title: "MCP boundary",
+      kind: "decision",
+      content: "MCP tools should validate arguments.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+    const bundle = addMemory(database, {
+      projectId: project.id,
+      title: "Bundle fallback",
+      kind: "note",
+      content: "Context bundle fallback should use one FTS query.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    expect(searchMemories(database, project.id, "MCP bundle")).toEqual([]);
+    expect(searchMemories(database, project.id, "MCP bundle", { queryMode: "orTerms" }).map((result) => result.memory)).toEqual([
+      mcp,
+      bundle
+    ]);
+  });
+
+  test("returns the duplicate created by a concurrent insert fallback", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_race",
+      projectId: project.id,
+      title: "Race",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "summary"
+    });
+    database.exec(`
+      create trigger simulate_memory_race before insert on memories
+      when new.title = 'Race duplicate'
+      begin
+        insert into memories (id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at)
+        values ('memory_race_winner', new.project_id, new.thread_id, 'Race duplicate winner', new.kind, new.content, new.source, new.confidence, new.content_hash, new.importance, new.created_at);
+        insert into memory_fts (id, project_id, title, content)
+        values ('memory_race_winner', new.project_id, 'Race duplicate winner', new.content);
+      end;
+    `);
+
+    const memory = addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_race",
+      title: "Race duplicate",
+      kind: "decision",
+      content: "A duplicate may appear between lookup and insert.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    expect(memory).toMatchObject({ id: "memory_race_winner", title: "Race duplicate winner" });
+    expect(listMemoriesForProject(database, project.id)).toHaveLength(1);
+  });
+
+  test("returns an existing duplicate from the catch fallback path", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_catch",
+      projectId: project.id,
+      title: "Catch",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "summary"
+    });
+    let intercepted = false;
+    const wrappedDb = Object.create(database) as Database.Database;
+    wrappedDb.prepare = ((sql: string) => {
+      const statement = database.prepare(sql);
+      if (!intercepted && sql.includes("insert or ignore into memories")) {
+        intercepted = true;
+        return {
+          run(params: Record<string, unknown>) {
+            database
+              .prepare(
+                `insert into memories (id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at)
+                 values ('memory_catch_winner', @projectId, @threadId, 'Catch fallback winner', @kind, @content, @source, @confidence, @contentHash, @importance, @createdAt)`
+              )
+              .run(params);
+            database
+              .prepare("insert into memory_fts (id, project_id, title, content) values (?, ?, ?, ?)")
+              .run("memory_catch_winner", params.projectId, "Catch fallback winner", params.content);
+            throw new Error("simulated insert failure after concurrent duplicate");
+          }
+        };
+      }
+      return statement;
+    }) as Database.Database["prepare"];
+    wrappedDb.transaction = ((fn: () => unknown) => () => fn()) as Database.Database["transaction"];
+
+    const memory = addMemory(wrappedDb, {
+      projectId: project.id,
+      threadId: "thread_catch",
+      title: "Catch duplicate",
+      kind: "decision",
+      content: "A duplicate may exist when the insert throws.",
+      source: "manual",
+      confidence: 1,
+      importance: 5
+    });
+
+    expect(memory).toMatchObject({ id: "memory_catch_winner", title: "Catch fallback winner" });
+    expect(listMemoriesForProject(database, project.id)).toHaveLength(1);
+  });
+
+  test("rethrows addMemory insert errors when no duplicate exists", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    const wrappedDb = Object.create(database) as Database.Database;
+    wrappedDb.transaction = ((fn: () => unknown) => () => fn()) as Database.Database["transaction"];
+    wrappedDb.prepare = ((sql: string) => {
+      if (sql.includes("insert or ignore into memories")) {
+        return { run: () => { throw new Error("insert exploded"); } };
+      }
+      return database.prepare(sql);
+    }) as Database.Database["prepare"];
+
+    expect(() =>
+      addMemory(wrappedDb, {
+        projectId: project.id,
+        title: "Explode",
+        kind: "note",
+        content: "This insert should fail.",
+        source: "manual",
+        confidence: 1,
+        importance: 5
+      })
+    ).toThrow("insert exploded");
+  });
+
   test("limits search results and lists top memories without loading all rows", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });

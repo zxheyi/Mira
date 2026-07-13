@@ -43,6 +43,43 @@ describe("database schema", () => {
     expect(db.prepare("select version from schema_version").pluck().get()).toBe(1);
   });
 
+  test("keeps memory FTS synchronized for direct inserts and updates", () => {
+    db = openDatabase(":memory:");
+
+    migrate(db);
+    db.prepare("insert into projects (id, name, root_path, created_at) values (?, ?, ?, ?)").run(
+      "project_fts",
+      "Mira",
+      "/workspace/mira",
+      new Date().toISOString()
+    );
+    db.prepare(
+      `insert into memories (id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at)
+       values (?, ?, null, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "memory_direct",
+      "project_fts",
+      "Direct insert",
+      "note",
+      "Direct insert should be searchable.",
+      "test",
+      1,
+      "hash_direct",
+      5,
+      new Date().toISOString()
+    );
+
+    expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get('"Direct insert"')).toBe(1);
+
+    db.prepare("update memories set title = ?, content = ? where id = ?").run(
+      "Updated title",
+      "Updated memory content is searchable.",
+      "memory_direct"
+    );
+
+    expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get('"Updated memory"')).toBe(1);
+  });
+
   test("threads, memories, and FTS columns preserve planned contracts", () => {
     db = openDatabase(":memory:");
 

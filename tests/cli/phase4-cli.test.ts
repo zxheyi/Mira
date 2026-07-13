@@ -248,6 +248,36 @@ describe("Phase 4 CLI commands", () => {
         dbPath
       )
     ).rejects.toMatchObject({ stderr: expect.stringContaining("Thread raw text is required") });
+
+
+    await expect(
+      runMira(
+        ["memory", "add", "--title", "Bad", "--kind", "surprise", "--content", "Invalid kind", "--source", "manual"],
+        tempRoot,
+        dbPath
+      )
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("Memory kind is unsupported") });
+
+    await expect(
+      runMira(["working", "set", "--kind", "surprise", "--content", "Invalid kind"], tempRoot, dbPath)
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("Working memory kind is unsupported") });
+
+
+    await expect(
+      runMira(
+        ["thread", "save", "--id", "bad_format", "--title", "Bad", "--source", "codex", "--format", "plain", "--text", "summary"],
+        tempRoot,
+        dbPath
+      )
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("Thread raw format must be markdown or jsonl") });
+
+    await expect(
+      runMira(["context", "bundle", "--memory-limit", "0"], tempRoot, dbPath)
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("memoryLimit must be a number from 1 to 50") });
+
+    await expect(
+      runMira(["context", "bundle", "--max-characters", "0"], tempRoot, dbPath)
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("maxCharacters must be a number from 1 to 1000000") });
   });
 
 
