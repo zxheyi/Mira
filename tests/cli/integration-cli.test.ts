@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,8 @@ import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { ensureProjectForRoot } from "../../src/projects/projectStore.js";
 import { listThreadsForProject } from "../../src/threads/threadStore.js";
+import { listDistillJobs } from "../../src/distill/distillJobStore.js";
+import { listMemoriesForProject } from "../../src/memory/memoryStore.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
@@ -75,6 +78,76 @@ function parseJson<T>(stdout: string): T {
 }
 
 describe("integration CLI", () => {
+  test("returns from Stop before the detached provider worker completes", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "mira-cli-detached-distill-"));
+    await mkdir(join(projectRoot, ".git"));
+    const dbPath = join(projectRoot, ".mira", "mira.sqlite");
+    const codexHome = await mkdtemp(join(tmpdir(), "mira-cli-detached-codex-"));
+    const sessions = join(codexHome, "sessions", "2026", "07", "17");
+    await mkdir(sessions, { recursive: true });
+    const transcriptPath = join(sessions, "detached.jsonl");
+    await writeFile(transcriptPath, JSON.stringify({
+      role: "user", content: "Trusted automatic distillation uses a detached worker."
+    }), "utf8");
+
+    let releaseResponse: (() => void) | undefined;
+    let notifyRequest: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolveRequest) => { notifyRequest = resolveRequest; });
+    const server = createServer((_request, response) => {
+      notifyRequest?.();
+      releaseResponse = () => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({
+            candidates: [{
+              title: "Detached worker", kind: "fact",
+              content: "Trusted automatic distillation uses a detached worker.",
+              evidence: "Trusted automatic distillation uses a detached worker.",
+              confidence: 0.99, importance: 0.8
+            }]
+          }) } }]
+        }));
+      };
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Provider test server did not bind");
+    const env = {
+      CODEX_HOME: codexHome,
+      MIRA_LLM_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+      MIRA_LLM_MODEL: "test-model"
+    };
+
+    try {
+      const hookPromise = runMiraHook("codex", {
+        session_id: "detached-distill", transcript_path: transcriptPath,
+        cwd: projectRoot, hook_event_name: "Stop"
+      }, projectRoot, dbPath, env);
+
+      await requestStarted;
+      const hook = await Promise.race([
+        hookPromise,
+        new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("Hook waited for Provider")), 2_000))
+      ]);
+      expect(hook).toMatchObject({ code: 0, stdout: "" });
+      releaseResponse?.();
+
+      let completed = false;
+      for (let attempt = 0; attempt < 50 && !completed; attempt += 1) {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+        const db = openDatabase(dbPath);
+        migrate(db);
+        const project = ensureProjectForRoot(db, projectRoot);
+        completed = listDistillJobs(db, project.id, "completed").length === 1
+          && listMemoriesForProject(db, project.id).some((memory) => memory.title === "Detached worker");
+        db.close();
+      }
+      expect(completed).toBe(true);
+    } finally {
+      server.close();
+    }
+  }, 15_000);
+
   test("installs, runs and uninstalls automatic Codex and Claude Code integration", async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), "mira-cli-integration-"));
     await mkdir(join(projectRoot, ".git"));

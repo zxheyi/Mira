@@ -8,11 +8,29 @@ import { buildContextBundle } from "./context/contextBundle.js";
 import { openDatabase } from "./db/client.js";
 import { migrate } from "./db/schema.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
+import { startDetachedDistillWorker } from "./distill/detachedWorker.js";
+import {
+  listMemoryCandidates,
+  reviewMemoryCandidate
+} from "./distill/candidateService.js";
+import { CANDIDATE_STATUSES, type CandidateStatus } from "./distill/candidateTypes.js";
+import {
+  DISTILL_JOB_STATUSES,
+  enqueueDistillJob,
+  listDistillJobs,
+  retryDistillJob,
+  type DistillJobStatus
+} from "./distill/distillJobStore.js";
+import { runNextDistillJob } from "./distill/distillWorker.js";
 import {
   applyLlmDistillCandidates,
   buildLlmDistillPromptForThread,
   parseLlmMemoryCandidates
 } from "./distill/llmDistill.js";
+import {
+  createOpenAiCompatibleProvider,
+  providerConfigFromEnv
+} from "./distill/openAiCompatibleProvider.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
 import {
@@ -141,6 +159,27 @@ function requireWorkingMemoryKind(kind: string): WorkingMemoryKind {
   return kind as WorkingMemoryKind;
 }
 
+function requireDistillJobStatus(status: string): DistillJobStatus {
+  if (!(DISTILL_JOB_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`Distill job status is unsupported: ${status}. Supported statuses: ${DISTILL_JOB_STATUSES.join(", ")}`);
+  }
+  return status as DistillJobStatus;
+}
+
+function requireCandidateStatus(status: string): CandidateStatus {
+  if (!(CANDIDATE_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`Candidate status is unsupported: ${status}. Supported statuses: ${CANDIDATE_STATUSES.join(", ")}`);
+  }
+  return status as CandidateStatus;
+}
+
+function requireReviewDecision(decision: string): "accept" | "reject" {
+  if (decision !== "accept" && decision !== "reject") {
+    throw new Error("Candidate review decision must be accept or reject");
+  }
+  return decision;
+}
+
 function requireRawFormat(rawFormat: string): "markdown" | "jsonl" {
   if (rawFormat !== "markdown" && rawFormat !== "jsonl") {
     throw new Error("Thread raw format must be markdown or jsonl");
@@ -171,6 +210,29 @@ function integrationRuntime(): IntegrationRuntime {
       ? resolve(dirname(currentEntry), "../dist/src/index.js")
       : currentEntry
   };
+}
+
+async function enqueueHookDistill(input: {
+  projectId: string;
+  threadId: string;
+  projectRoot: string;
+  dbPath: string;
+}): Promise<void> {
+  const db = openMigratedDatabase(input.dbPath);
+  try {
+    enqueueDistillJob(db, input.projectId, input.threadId, "hook");
+  } finally {
+    db.close();
+  }
+
+  const runtime = integrationRuntime();
+  await startDetachedDistillWorker({
+    nodePath: runtime.nodePath,
+    entryPath: runtime.entryPath,
+    dbPath: input.dbPath,
+    projectRoot: input.projectRoot,
+    env: process.env
+  });
 }
 
 async function readStdinJson(): Promise<unknown> {
@@ -433,6 +495,95 @@ memory
     });
   });
 
+const memoryCandidate = memory.command("candidate").description("Review trusted memory candidates");
+
+memoryCandidate
+  .command("list")
+  .description("List memory candidates")
+  .option("--status <status>", "pending_review, accepted, or rejected")
+  .option("--limit <number>", "Maximum candidates", "50")
+  .action(async (options: { status?: string; limit: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listMemoryCandidates(
+        session.db,
+        session.project.id,
+        options.status ? requireCandidateStatus(options.status) : undefined,
+        numberInRange(options.limit, 1, 100, "limit")
+      ));
+    });
+  });
+
+memoryCandidate
+  .command("review")
+  .description("Accept or reject a pending memory candidate")
+  .requiredOption("--id <id>", "Candidate id")
+  .requiredOption("--decision <decision>", "accept or reject")
+  .option("--reason <reason>", "Review reason")
+  .action(async (options: { id: string; decision: string; reason?: string }) => {
+    const decision = requireReviewDecision(options.decision);
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(reviewMemoryCandidate(session.db, session.project.id, options.id, decision, options.reason));
+    });
+  });
+
+const distill = program.command("distill").description("Manage trusted automatic distillation");
+const distillJobs = distill.command("jobs").description("Manage distillation jobs");
+
+distillJobs
+  .command("enqueue")
+  .description("Enqueue the current version of a saved Thread")
+  .requiredOption("--thread <id>", "Thread id")
+  .action(async (options: { thread: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(enqueueDistillJob(session.db, session.project.id, options.thread, "cli"));
+    });
+  });
+
+distillJobs
+  .command("list")
+  .description("List distillation jobs")
+  .option("--status <status>", "pending, running, completed, or failed")
+  .option("--limit <number>", "Maximum jobs", "100")
+  .action(async (options: { status?: string; limit: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listDistillJobs(
+        session.db,
+        session.project.id,
+        options.status ? requireDistillJobStatus(options.status) : undefined,
+        numberInRange(options.limit, 1, 100, "limit")
+      ));
+    });
+  });
+
+distillJobs
+  .command("run")
+  .description("Run one pending distillation job")
+  .option("--once", "Run one job and exit", true)
+  .action(async () => {
+    const config = providerConfigFromEnv(process.env);
+    if (!config) {
+      throw new Error("Provider is not configured; set MIRA_LLM_BASE_URL and MIRA_LLM_MODEL");
+    }
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      printJson(await runNextDistillJob(
+        session.db,
+        session.project.id,
+        createOpenAiCompatibleProvider(config),
+        config.model
+      ));
+    });
+  });
+
+distillJobs
+  .command("retry")
+  .description("Retry a failed or interrupted distillation job")
+  .requiredOption("--id <id>", "Distillation job id")
+  .action(async (options: { id: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(retryDistillJob(session.db, session.project.id, options.id));
+    });
+  });
+
 function registerWorkingCommands(parent: Command): void {
   parent
   .command("set")
@@ -581,7 +732,8 @@ integration
       {
         agent: requireIntegrationAgent(options.agent),
         projectRoot,
-        dbPath
+        dbPath,
+        onThreadCaptured: providerConfigFromEnv(process.env) ? enqueueHookDistill : undefined
       },
       await readStdinJson()
     );

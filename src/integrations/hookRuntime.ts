@@ -28,6 +28,12 @@ export type HookRuntimeOptions = {
   dbPath: string;
   allowedTranscriptRoots?: string[];
   contextMaxCharacters?: number;
+  onThreadCaptured?: (input: {
+    projectId: string;
+    threadId: string;
+    projectRoot: string;
+    dbPath: string;
+  }) => void | Promise<void>;
 };
 
 export type HookRunResult =
@@ -160,9 +166,11 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
   const transcriptPath = await realpath(input.transcript_path);
   const transcriptStat = await stat(transcriptPath);
   const db = openDatabase(options.dbPath);
+  let capturedProjectId: string;
   try {
     migrate(db);
     const project = ensureProjectForRoot(db, options.projectRoot);
+    capturedProjectId = project.id;
     const cursor = getCaptureCursor(db, project.id, options.agent, input.session_id);
     if (
       cursor?.transcriptPath === transcriptPath &&
@@ -199,6 +207,19 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
     })();
   } finally {
     db.close();
+  }
+
+  if (options.onThreadCaptured) {
+    try {
+      await options.onThreadCaptured({
+        projectId: capturedProjectId,
+        threadId,
+        projectRoot: options.projectRoot,
+        dbPath: options.dbPath
+      });
+    } catch (error) {
+      await appendDiagnostic(options, input, "distill-enqueue-failed", error);
+    }
   }
 
   return { status: "captured", stdout: "", threadId };

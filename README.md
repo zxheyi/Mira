@@ -50,6 +50,8 @@ MVP 包含：
 - 自动探测当前 Git 项目根目录。
 - 保存 Agent 会话为项目关联 Thread。
 - 从会话中提炼确定性 Memory。
+- 支持 Agent 候选与可选 OpenAI-compatible Provider 的可信自动提炼。
+- 高置信低风险候选自动接受，高影响、低置信或冲突候选进入审核队列。
 - 支持 Agent 通过 MCP 主动保存 Thread 和写入 Memory。
 - 维护 Working Memory。
 - 使用 SQLite FTS5 搜索项目记忆。
@@ -87,7 +89,7 @@ MVP 采用每项目一个 Mira 实例的模型：
 
 - 数据库默认位于项目内 `.mira/mira.sqlite`。
 - `mira mcp serve` 启动时绑定一个 `--project-root` 和一个 `--db`。
-- MCP 工具入参仍可携带 `projectRoot`，但未传时使用启动时绑定的项目。
+- MCP Server 启动时绑定项目，工具调用复用该项目数据库，不依赖 MCP Client 的工作目录。
 - 如果命令或工具探测到项目根目录，但数据库里没有 Project 记录，Mira 自动创建 Project，名称使用目录名。
 - Claude Code、Cursor 等 Agent 配置示例必须使用绝对路径，避免 MCP client 从用户 home 目录启动时找错数据库。
 - 全局多项目数据库和跨项目记忆放到 post-MVP。
@@ -128,6 +130,11 @@ mira thread delete --id thread_2
 mira memory distill --thread thread_1
 mira memory llm-prompt --thread thread_1
 mira memory apply-candidates --thread thread_1 --path ./candidates.json
+mira distill jobs enqueue --thread thread_1
+mira distill jobs list --status pending
+mira distill jobs run --once
+mira memory candidate list --status pending_review
+mira memory candidate review --id candidate_123 --decision accept --reason "Confirmed"
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
 mira memory search --query "script-friendly"
 mira memory search "script-friendly"
@@ -155,6 +162,18 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
 
+Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动一次性 Worker：
+
+```bash
+export MIRA_LLM_BASE_URL="https://provider.example/v1"
+export MIRA_LLM_MODEL="model-name"
+export MIRA_LLM_API_KEY="optional-api-key"
+```
+
+只有 `confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson`、`failed_attempt` 或 `constraint` 的候选会自动接受。`decision`、`architecture`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
+
+Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模式，但无法识别所有敏感内容；未命中的完整 Thread 会发送到你配置的 Provider，请只在确认其隐私与数据保留策略后启用。未配置 Provider 时自动捕获保持原行为，Agent MCP 候选通道仍可用。
+
 MVP Memory kind 是兼容性超集：`decision`、`convention`、`architecture`、`preference`、`task`、`fact`、`failed_attempt`、`lesson`、`constraint`、`todo`、`note`。Working Memory kind 是：`current_task`、`current_phase`、`recent_decision`、`blocker`、`next_step`、`preference`、`decision`、`note`。
 
 ## Codex / Claude Code 自动接入
@@ -175,6 +194,7 @@ mira --project-root /path/to/project integration status
 - Codex `Stop`、Claude Code `Stop` / `SessionEnd` 自动导入 Hook 提供的主 transcript。
 - 同一 Agent 会话映射到稳定 Thread ID；transcript 未变化时根据 SQLite 检查点跳过重复解析。
 - Hook 错误不会阻塞 Agent，诊断写入 `.mira/integrations.log`，且不记录 transcript 正文。
+- 配置 Provider 后，内容变化会创建幂等提炼任务；Hook 不等待网络请求，任务失败可由 CLI 查看和重试。
 - 本机绝对路径配置会加入 `.git/info/exclude` 的 Mira 托管块，避免误提交且不修改团队 `.gitignore`。
 
 首次在项目中启用 Hook/MCP 时，Codex 或 Claude Code 仍可能显示官方信任确认；Mira 不绕过该安全机制。卸载只移除 Mira 管理的条目：
@@ -203,6 +223,9 @@ list_working_memory
 clear_working_memory
 add_memory
 save_thread
+submit_memory_candidates
+list_memory_candidates
+review_memory_candidate
 ```
 
 MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
@@ -217,6 +240,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [LLM Distill Spec](specs/003-llm-distill-agent-guidance/spec.md)
 - [Transcript JSONL Import Spec](specs/004-transcript-jsonl-import/spec.md)
 - [Phase 0/1 自动接入 Spec](specs/014-phase0-phase1-auto-integration/spec.md)
+- [Phase 2 可信自动提炼 Spec](specs/015-trusted-memory-distillation/spec.md)
+- [Phase 2 Candidate API 契约](specs/015-trusted-memory-distillation/contracts/candidate-api.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)

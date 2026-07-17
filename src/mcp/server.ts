@@ -5,6 +5,12 @@ import { z } from "zod";
 import { buildContextBundle } from "../context/contextBundle.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
+import {
+  listMemoryCandidates,
+  reviewMemoryCandidate,
+  submitMemoryCandidates
+} from "../distill/candidateService.js";
+import { CANDIDATE_STATUSES, type MemoryCandidateInput } from "../distill/candidateTypes.js";
 import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
@@ -23,7 +29,10 @@ export const MIRA_MCP_TOOL_NAMES = [
   "list_working_memory",
   "clear_working_memory",
   "add_memory",
-  "save_thread"
+  "save_thread",
+  "submit_memory_candidates",
+  "list_memory_candidates",
+  "review_memory_candidate"
 ] as const;
 
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
@@ -35,7 +44,10 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
   clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
   add_memory: "Write a stable long-term memory; returns the Memory object and de-duplicates by projectId, kind, threadId, and content hash.",
-  save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object."
+  save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object.",
+  submit_memory_candidates: "Submit evidence-backed memory candidates after important work; Mira validates provenance and either auto-accepts trusted low-risk items or queues them for review.",
+  list_memory_candidates: "List memory candidates for the bound project, optionally filtered by review status; use this to inspect items awaiting human or Agent confirmation.",
+  review_memory_candidate: "Accept or reject one pending memory candidate; acceptance writes a traceable durable Memory while preserving the original evidence and review decision."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
@@ -81,6 +93,28 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     source: z.string().trim().min(1).max(500),
     rawFormat: z.enum(["markdown", "jsonl"]),
     rawText: z.string().trim().min(1).max(5_000_000)
+  },
+  submit_memory_candidates: {
+    threadId: z.string().trim().min(1).max(500),
+    sourceAgent: z.string().trim().min(1).max(100),
+    sourceModel: z.string().trim().min(1).max(200).optional(),
+    candidates: z.array(z.object({
+      title: z.string().trim().min(1).max(200),
+      kind: z.enum(MEMORY_KINDS),
+      content: z.string().trim().min(1).max(10_000),
+      evidence: z.string().trim().min(1).max(4_000),
+      confidence: z.number().min(0).max(1),
+      importance: z.number().min(0).max(1)
+    }).strict()).min(1).max(50)
+  },
+  list_memory_candidates: {
+    status: z.enum(CANDIDATE_STATUSES).optional(),
+    limit: z.number().int().min(1).max(100).optional()
+  },
+  review_memory_candidate: {
+    candidateId: z.string().trim().min(1).max(500),
+    decision: z.enum(["accept", "reject"]),
+    reason: z.string().trim().min(1).max(1_000).optional()
   }
 } satisfies Record<MiraMcpToolName, Record<string, z.ZodType>>;
 
@@ -222,6 +256,34 @@ function executeMiraTool(
           rawFormat: rawFormatArg(args, "rawFormat"),
           rawText: stringArg(args, "rawText")
         });
+      case "submit_memory_candidates":
+        return {
+          results: submitMemoryCandidates(db, {
+            projectId,
+            threadId: stringArg(args, "threadId"),
+            sourceAgent: stringArg(args, "sourceAgent"),
+            sourceModel: optionalStringArg(args, "sourceModel"),
+            extractionMethod: "agent",
+            candidates: args.candidates as MemoryCandidateInput[]
+          })
+        };
+      case "list_memory_candidates":
+        return {
+          candidates: listMemoryCandidates(
+            db,
+            projectId,
+            optionalStringArg(args, "status") as (typeof CANDIDATE_STATUSES)[number] | undefined,
+            numberArg(args, "limit", 50)
+          )
+        };
+      case "review_memory_candidate":
+        return reviewMemoryCandidate(
+          db,
+          projectId,
+          stringArg(args, "candidateId"),
+          stringArg(args, "decision") as "accept" | "reject",
+          optionalStringArg(args, "reason")
+        );
       default: {
         const exhaustive: never = name;
         throw new Error(`Unsupported MCP tool in executor: ${String(exhaustive)}`);

@@ -14,6 +14,7 @@ MCP Agent Polish and Boundary Tests are implemented and locally verified.
 Deep Audit Remediation is implemented and locally verified.
 Phase 0 engineering baseline closure is implemented and locally verified.
 Phase 1 automatic Codex / Claude Code session integration is implemented and locally verified, including real-project installation and Hook smoke tests.
+Phase 2 trusted automatic memory distillation is implemented and locally verified.
 
 Completed:
 
@@ -59,12 +60,24 @@ Completed:
 - Phase 36: Phase 0 recursive-trigger FTS integrity and default OR search semantics.
 - Phase 37: Phase 1 Codex / Claude Code project Hook/MCP automatic integration.
 - Phase 38: Persistent transcript capture cursor and Git local-config protection.
+- Phase 39: Schema v3 distill jobs and memory candidates.
+- Phase 40: Evidence, sensitive-data, risk, duplicate and conflict candidate policy.
+- Phase 41: Idempotent job queue, OpenAI-compatible Provider and one-shot Worker.
+- Phase 42: Hook async enqueue and detached Worker startup.
+- Phase 43: Candidate/job CLI and candidate MCP tools.
+- Phase 44: Phase 2 documentation and verification.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
+npm test
+# Test Files 31 passed; Tests 158 passed
+
+npm run build
+# tsc completed successfully
+
 npm test
 # Test Files 25 passed; Tests 131 passed
 
@@ -307,9 +320,9 @@ specs/008-deep-audit-remediation/tasks.md
 
 ## Next Step
 
-1. 进入 Phase 2 自动可信提炼：候选生成、去重、置信度、来源和审查门禁。
-2. 在不自动污染长期 Memory 的前提下，设计 Working Memory 受控更新策略。
-3. 用后续真实 Codex / Claude Code 会话持续观察 importer envelope 兼容性和 Hook 诊断。
+1. 进入 Phase 3 记忆生命周期治理：supersedes、状态、归档和事件账本。
+2. 继续用真实 Codex / Claude Code 会话观察候选质量并校准自动接受策略。
+3. 在不自动污染长期 Memory 的前提下，设计 Working Memory 受控更新策略。
 
 ## Notes For Next Agent
 
@@ -319,6 +332,11 @@ specs/008-deep-audit-remediation/tasks.md
 - P2 JSONL import normalizes transcript records into Markdown Thread text while preserving `rawFormat=jsonl`.
 - Phase 1 automatically injects Context Bundle at SessionStart and captures Codex/Claude Code transcripts on lifecycle Hooks.
 - Schema v2 persists capture cursors so unchanged transcripts are skipped and failed imports remain retryable.
+- Schema v3 adds idempotent distill jobs and evidence-backed memory candidates.
+- Phase 2 supports Agent-submitted candidates plus an optional OpenAI-compatible Provider; both share the same trust policy.
+- Low-risk candidates require confidence >= 0.9 and exact Thread evidence for auto-acceptance; high-impact, low-confidence and conflicting items remain reviewable.
+- Candidate review is bound to a Thread input hash, project-wide duplicate Memory is linked instead of rewritten, and Provider calls preflight common secret patterns.
+- Running distill jobs use a five-minute recovery lease and detached spawn errors are handled without crashing Hook execution.
 - Project-local absolute-path integration configs are protected through a managed `.git/info/exclude` block.
 - Real Mira status reports Codex and Claude Code hooks/MCP installed; SessionStart output, live transcript capture, and static transcript cursor idempotency were smoke-tested with the built CLI.
 - Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.

@@ -1,7 +1,7 @@
 import { appendFile, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { runIntegrationHook } from "../../src/integrations/hookRuntime.js";
@@ -21,6 +21,55 @@ function jsonl(records: unknown[]): string {
 }
 
 describe("integration hook runtime", () => {
+  test("notifies optional distill integration only after a successful changed capture", async () => {
+    const options = await setup();
+    const transcriptPath = join(options.transcriptRoot, "distill.jsonl");
+    await writeFile(transcriptPath, jsonl([{ role: "user", content: "Extract trusted memory." }]), "utf8");
+    const onThreadCaptured = vi.fn(async () => undefined);
+    const runtime = {
+      agent: "codex" as const,
+      projectRoot: options.projectRoot,
+      dbPath: options.dbPath,
+      allowedTranscriptRoots: [options.transcriptRoot],
+      onThreadCaptured
+    };
+    const input = {
+      session_id: "distill-session", transcript_path: transcriptPath,
+      cwd: options.projectRoot, hook_event_name: "Stop"
+    };
+
+    const captured = await runIntegrationHook(runtime, input);
+    const unchanged = await runIntegrationHook(runtime, input);
+
+    expect(captured.status).toBe("captured");
+    expect(unchanged).toMatchObject({ status: "ignored", reason: "transcript-unchanged" });
+    expect(onThreadCaptured).toHaveBeenCalledTimes(1);
+    expect(onThreadCaptured).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: "thread_codex_distill_session",
+      projectRoot: options.projectRoot,
+      dbPath: options.dbPath
+    }));
+  });
+
+  test("keeps capture successful when optional distill notification fails", async () => {
+    const options = await setup();
+    const transcriptPath = join(options.transcriptRoot, "distill-failure.jsonl");
+    await writeFile(transcriptPath, jsonl([{ role: "user", content: "Capture must survive." }]), "utf8");
+
+    const result = await runIntegrationHook({
+      agent: "codex", projectRoot: options.projectRoot, dbPath: options.dbPath,
+      allowedTranscriptRoots: [options.transcriptRoot],
+      onThreadCaptured: async () => { throw new Error("queue unavailable"); }
+    }, {
+      session_id: "distill-failure", transcript_path: transcriptPath,
+      cwd: options.projectRoot, hook_event_name: "Stop"
+    });
+
+    expect(result.status).toBe("captured");
+    expect(await readFile(join(options.projectRoot, ".mira", "integrations.log"), "utf8"))
+      .toContain("distill-enqueue-failed");
+  });
+
   test("injects a budgeted Context Bundle at Codex and Claude Code session start", async () => {
     const options = await setup();
     const db = openDatabase(options.dbPath);

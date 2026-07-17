@@ -32,9 +32,34 @@ mira --project-root /absolute/project integration status
 | Codex | `SessionStart` 注入 Context Bundle | `Stop` 导入主 transcript |
 | Claude Code | `SessionStart` 注入 Context Bundle | `Stop` 同步，`SessionEnd` 最终同步 |
 
-同一 `<agent, session_id>` 始终更新同一个 Thread。Mira 在 schema v2 的 `integration_cursors` 表保存 transcript 路径、大小和修改时间；文件未变化时跳过重复导入，导入失败时不推进检查点，因此后续 Hook 可以重试。
+同一 `<agent, session_id>` 始终更新同一个 Thread。Mira 在 `integration_cursors` 表保存 transcript 路径、大小和修改时间；文件未变化时跳过重复导入，导入失败时不推进检查点，因此后续 Hook 可以重试。
 
 Mira 只接受 Hook 明确提供、位于官方会话目录中的 `.jsonl` transcript，并要求 Hook `cwd` 位于绑定项目内。它不会扫描浏览器、凭据目录、子 Agent 目录或其他项目。
+
+## 可选可信自动提炼
+
+默认安装不调用外部模型。需要 Provider 自动提炼时，为启动 Agent 的环境设置：
+
+```bash
+export MIRA_LLM_BASE_URL="https://provider.example/v1"
+export MIRA_LLM_MODEL="model-name"
+export MIRA_LLM_API_KEY="optional-api-key"
+```
+
+Provider 使用 OpenAI-compatible `/chat/completions`。成功捕获变化后的 Thread 后，Hook 只执行本地幂等入队并 detached 启动一次性 Worker，不等待网络请求。未配置 `MIRA_LLM_BASE_URL` 或 `MIRA_LLM_MODEL` 时不会入队，也不会产生失败任务。
+
+候选必须携带可在 Thread 正文中定位的原文证据，并绑定提取时的 Thread 版本。正文变化后旧待审候选不能接受，需要重新提交。高置信低风险候选可自动接受；高影响、低置信或冲突候选留在审核队列：
+
+```bash
+mira --project-root /absolute/project distill jobs list
+mira --project-root /absolute/project distill jobs retry --id distill_job_123
+mira --project-root /absolute/project memory candidate list --status pending_review
+mira --project-root /absolute/project memory candidate review --id candidate_123 --decision accept
+```
+
+任务和候选保存在 schema v3 的 `distill_jobs`、`memory_candidates` 中。同一 Thread 正文版本只创建一个 Provider 任务；Provider 响应仍必须经过证据、敏感信息、重复与冲突校验。失败任务可立即重试，running 任务需超过 5 分钟租约才可恢复。
+
+启用 Provider 意味着把完整 Thread 发送到该外部服务。Mira 会在发送前拦截常见私钥、OpenAI/GitHub Token、AWS Access Key 和显式 secret/password/token 赋值，但规则无法覆盖所有敏感内容；请先确认 Provider 的隐私和数据保留策略。
 
 ## 本地产物
 
@@ -81,6 +106,7 @@ tail -n 50 /absolute/project/.mira/integrations.log
 - `transcript-path-not-allowed`：文件不在 Agent 官方会话目录。
 - `transcript-unchanged`：检查点确认 transcript 没有变化。
 - `hook-processing-failed`：导入或数据库操作失败；修复后下一次 Hook 会重试。
+- `distill-enqueue-failed`：Thread 已保存，但提炼入队或 Worker 启动失败；不会阻塞 Agent，可用 CLI 手动 enqueue。
 
 ## 卸载
 

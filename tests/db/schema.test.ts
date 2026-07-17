@@ -38,10 +38,12 @@ describe("database schema", () => {
         "working_memory",
         "memories",
         "memory_fts",
-        "integration_cursors"
+        "integration_cursors",
+        "distill_jobs",
+        "memory_candidates"
       ])
     );
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(2);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(3);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -106,6 +108,55 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(2);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(3);
+  });
+
+  test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version (version, applied_at) values (2, '2026-07-17T00:00:00.000Z');
+      create table projects (
+        id text primary key,
+        name text not null,
+        root_path text not null unique,
+        created_at text not null
+      );
+      create table threads (
+        id text primary key,
+        project_id text not null,
+        title text not null,
+        source text not null,
+        raw_format text not null,
+        raw_text text not null,
+        created_at text not null,
+        updated_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade
+      );
+      insert into projects values ('project_existing', 'Existing', '/existing', '2026-07-17T00:00:00.000Z');
+      insert into threads values (
+        'thread_existing', 'project_existing', 'Existing thread', 'codex', 'markdown',
+        'A durable decision.', '2026-07-17T00:00:00.000Z', '2026-07-17T00:00:00.000Z'
+      );
+    `);
+
+    migrate(db);
+
+    expect(db.prepare("select title from threads where id = ?").pluck().get("thread_existing")).toBe("Existing thread");
+    expect(columnNames(db, "distill_jobs")).toEqual(
+      expect.arrayContaining(["project_id", "thread_id", "input_hash", "status", "attempts", "last_error"])
+    );
+    expect(columnNames(db, "memory_candidates")).toEqual(
+      expect.arrayContaining([
+        "job_id",
+        "thread_input_hash",
+        "evidence",
+        "risk_level",
+        "status",
+        "review_reason",
+        "accepted_memory_id"
+      ])
+    );
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(3);
   });
 });

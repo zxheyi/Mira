@@ -31,7 +31,10 @@ describe("Mira MCP tools", () => {
       "list_working_memory",
       "clear_working_memory",
       "add_memory",
-      "save_thread"
+      "save_thread",
+      "submit_memory_candidates",
+      "list_memory_candidates",
+      "review_memory_candidate"
     ]);
     expect(created.server).toBeDefined();
   });
@@ -44,7 +47,10 @@ describe("Mira MCP tools", () => {
       "list_working_memory",
       "clear_working_memory",
       "add_memory",
-      "save_thread"
+      "save_thread",
+      "submit_memory_candidates",
+      "list_memory_candidates",
+      "review_memory_candidate"
     ]);
 
     for (const [toolName, description] of Object.entries(MIRA_MCP_TOOL_DESCRIPTIONS)) {
@@ -188,6 +194,52 @@ describe("Mira MCP tools", () => {
 
     expect(await callMiraTool(options, "clear_working_memory", { kind: "current_task" })).toEqual({ ok: true });
     expect(await callMiraTool(options, "list_working_memory", {})).toEqual([]);
+  });
+
+  test("submits, lists, and reviews trusted candidates through MCP", async () => {
+    const options = await setupMcpOptions();
+    await callMiraTool(options, "save_thread", {
+      id: "thread_candidate_mcp",
+      title: "Candidate MCP",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "Architecture changes require explicit review."
+    });
+
+    const submitted = await callMiraTool(options, "submit_memory_candidates", {
+      threadId: "thread_candidate_mcp",
+      sourceAgent: "codex",
+      sourceModel: "gpt-5",
+      candidates: [{
+        title: "Architecture review",
+        kind: "architecture",
+        content: "Architecture changes require explicit review.",
+        evidence: "Architecture changes require explicit review.",
+        confidence: 0.99,
+        importance: 0.9
+      }]
+    }) as { results: Array<{ candidate: { id: string }; outcome: string }> };
+    expect(submitted.results[0]?.outcome).toBe("pending_review");
+
+    const listed = await callMiraTool(options, "list_memory_candidates", {
+      status: "pending_review",
+      limit: 10
+    }) as { candidates: Array<{ id: string }> };
+    expect(listed.candidates).toHaveLength(1);
+
+    const reviewed = await callMiraTool(options, "review_memory_candidate", {
+      candidateId: listed.candidates[0]?.id,
+      decision: "accept",
+      reason: "Confirmed"
+    }) as { outcome: string; memory: { title: string } };
+    expect(reviewed).toMatchObject({ outcome: "accepted", memory: { title: "Architecture review" } });
+  });
+
+  test("constrains candidate MCP schemas", () => {
+    expect(MIRA_MCP_TOOL_SCHEMAS.submit_memory_candidates.candidates.safeParse([]).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.submit_memory_candidates.candidates.safeParse(Array.from({ length: 51 }, () => ({}))).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.list_memory_candidates.limit?.safeParse(101).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.review_memory_candidate.decision.safeParse("delete").success).toBe(false);
   });
 
   test("filters MCP memory search by kind", async () => {
