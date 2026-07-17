@@ -37,10 +37,11 @@ describe("database schema", () => {
         "threads",
         "working_memory",
         "memories",
-        "memory_fts"
+        "memory_fts",
+        "integration_cursors"
       ])
     );
-    expect(db.prepare("select version from schema_version").pluck().get()).toBe(1);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(2);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -90,5 +91,21 @@ describe("database schema", () => {
       expect.arrayContaining(["title", "source", "confidence", "content_hash"])
     );
     expect(columnNames(db, "memory_fts")).toEqual(expect.arrayContaining(["title", "content"]));
+    expect(columnNames(db, "integration_cursors")).toEqual(
+      expect.arrayContaining(["project_id", "agent", "session_id", "transcript_path", "size", "mtime_ms"])
+    );
+  });
+
+  test("upgrades an existing version 1 database to the capture cursor schema", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version (version, applied_at) values (1, '2026-07-17T00:00:00.000Z');
+    `);
+
+    migrate(db);
+
+    expect(tableNames(db)).toContain("integration_cursors");
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(2);
   });
 });

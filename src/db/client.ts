@@ -10,6 +10,7 @@ export function openDatabase(path: string): Database.Database {
   try {
     const db = new Database(path);
     db.pragma("foreign_keys = ON");
+    db.pragma("recursive_triggers = ON");
     if (path !== ":memory:") {
       db.pragma("journal_mode = WAL");
     }

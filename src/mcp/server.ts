@@ -30,7 +30,7 @@ export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory plus relevant long-term memories.",
-  search_memory: "Use for targeted historical lookups; accepts optional limit and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
+  search_memory: "Use for targeted historical lookups; defaults to keyword OR matching, supports explicit phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
   set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
   clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
@@ -55,6 +55,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   search_memory: {
     query: z.string().trim().min(1).max(1_000),
     kind: z.enum(MEMORY_KINDS).optional(),
+    queryMode: z.enum(["orTerms", "phrase"]).optional(),
     limit: z.number().int().min(1).max(50).optional()
   },
   set_working_memory: {
@@ -126,6 +127,10 @@ function optionalMemoryKindArg(args: ToolArgs, name: string): MemoryKind | undef
   return kind as MemoryKind;
 }
 
+function searchQueryModeArg(args: ToolArgs): "orTerms" | "phrase" {
+  return optionalStringArg(args, "queryMode") === "phrase" ? "phrase" : "orTerms";
+}
+
 function workingMemoryKindArg(args: ToolArgs, name: string): WorkingMemoryKind {
   const kind = stringArg(args, name);
   if (!(WORKING_MEMORY_KINDS as readonly string[]).includes(kind)) {
@@ -183,6 +188,7 @@ function executeMiraTool(
       case "search_memory":
         return searchMemories(db, projectId, stringArg(args, "query"), {
           kind: optionalMemoryKindArg(args, "kind"),
+          queryMode: searchQueryModeArg(args),
           limit: numberArg(args, "limit", 50)
         });
       case "set_working_memory":

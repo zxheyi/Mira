@@ -104,6 +104,7 @@ describe("thread store", () => {
     database.prepare("delete from threads where project_id = ? and id = ?").run(project.id, "thread_cascade");
 
     expect(searchMemories(database, project.id, "Cascade")).toEqual([]);
+    expect(database.prepare("select count(*) from memory_fts").pluck().get()).toBe(0);
   });
 
   test("relies on cascade when deleting a thread", () => {

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -8,7 +8,20 @@ export function migrate(db: Database.Database): void {
       version integer primary key,
       applied_at text not null
     );
+  `);
 
+  const existingVersion = db
+    .prepare("select version from schema_version order by version desc limit 1")
+    .pluck()
+    .get() as number | undefined;
+
+  if (existingVersion !== undefined && existingVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported Mira schema version ${existingVersion}; this Mira supports schema version ${CURRENT_SCHEMA_VERSION}`
+    );
+  }
+
+  db.exec(`
     create table if not exists projects (
       id text primary key,
       name text not null,
@@ -74,6 +87,18 @@ export function migrate(db: Database.Database): void {
     create index if not exists idx_threads_project
       on threads(project_id);
 
+    create table if not exists integration_cursors (
+      project_id text not null,
+      agent text not null,
+      session_id text not null,
+      transcript_path text not null,
+      size integer not null,
+      mtime_ms real not null,
+      updated_at text not null,
+      primary key (project_id, agent, session_id),
+      foreign key (project_id) references projects(id) on delete cascade
+    );
+
     create virtual table if not exists memory_fts using fts5(
       id unindexed,
       project_id unindexed,
@@ -103,18 +128,7 @@ export function migrate(db: Database.Database): void {
     end;
   `);
 
-  const existingVersion = db
-    .prepare("select version from schema_version order by version desc limit 1")
-    .pluck()
-    .get() as number | undefined;
-
-  if (existingVersion !== undefined && existingVersion > CURRENT_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported Mira schema version ${existingVersion}; this Mira supports schema version ${CURRENT_SCHEMA_VERSION}`
-    );
-  }
-
-  if (existingVersion === undefined) {
+  if (existingVersion === undefined || existingVersion < CURRENT_SCHEMA_VERSION) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()

@@ -41,7 +41,7 @@ Mira 关注的是项目连续性，不追求成为完整桌面 AI coworker、企
 MVP 只做一条闭环：
 
 ```text
-保存会话 -> 提炼项目记忆 -> 维护工作记忆 -> 搜索记忆 -> 输出上下文包 -> 通过 CLI/MCP 给 Agent 使用
+自动捕获会话 -> 提炼项目记忆 -> 维护工作记忆 -> 搜索记忆 -> 新会话自动注入上下文 -> Agent 继续工作
 ```
 
 MVP 包含：
@@ -57,6 +57,9 @@ MVP 包含：
 - 支持 Markdown / JSON 导出，保证本地可审计。
 - 提供 CLI 命令给人类使用。
 - 提供 MCP stdio server 给 Agent 使用。
+- 支持 Codex 与 Claude Code 的项目级 Hook/MCP 一键安装。
+- 会话开始自动注入 Context Bundle，会话停止或结束自动保存真实 transcript。
+- 提供持久化捕获检查点，避免重复处理未变化 transcript，失败后可在下次 Hook 重试。
 - 提供 Claude Code、Cursor 等接入示例，以及 AGENTS.md 行为引导模板。
 
 MVP 暂不做：
@@ -91,10 +94,10 @@ MVP 采用每项目一个 Mira 实例的模型：
 
 Agent 使用 Mira 的基本习惯：
 
-- 会话开始先读取 `get_context_bundle`。
+- 安装自动集成后，会话开始由 Hook 注入 Context Bundle；未安装或需要刷新时主动调用 `get_context_bundle`。
 - 涉及历史决策、踩坑或约定时调用 `search_memory`，结果包含 Memory 和匹配分数。
 - 做出重要决策后调用 `add_memory` 或更新 Working Memory。
-- 会话结束前通过 `save_thread` 保存本轮摘要；完整 transcript 自动捕获放到 post-MVP。
+- 会话结束前更新 Working Memory 和稳定 Memory；真实 transcript 由 Hook 自动捕获，`save_thread` 保留为手动摘要兜底。
 
 ## 安装与首次运行
 
@@ -154,6 +157,34 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 
 MVP Memory kind 是兼容性超集：`decision`、`convention`、`architecture`、`preference`、`task`、`fact`、`failed_attempt`、`lesson`、`constraint`、`todo`、`note`。Working Memory kind 是：`current_task`、`current_phase`、`recent_decision`、`blocker`、`next_step`、`preference`、`decision`、`note`。
 
+## Codex / Claude Code 自动接入
+
+完成构建后，在目标项目中执行一次安装。全局选项仍需放在子命令前：
+
+```bash
+mira --project-root /path/to/project integration install --agent all --dry-run
+mira --project-root /path/to/project integration install --agent all
+mira --project-root /path/to/project integration status
+```
+
+也可以把 `all` 换成 `codex` 或 `claude-code`。安装后：
+
+- Codex 使用 `.codex/hooks.json` 和 `.codex/config.toml`。
+- Claude Code 使用 `.claude/settings.local.json` 和 `.mcp.json`。
+- `SessionStart` 自动输出有字符预算的 Context Bundle。
+- Codex `Stop`、Claude Code `Stop` / `SessionEnd` 自动导入 Hook 提供的主 transcript。
+- 同一 Agent 会话映射到稳定 Thread ID；transcript 未变化时根据 SQLite 检查点跳过重复解析。
+- Hook 错误不会阻塞 Agent，诊断写入 `.mira/integrations.log`，且不记录 transcript 正文。
+- 本机绝对路径配置会加入 `.git/info/exclude` 的 Mira 托管块，避免误提交且不修改团队 `.gitignore`。
+
+首次在项目中启用 Hook/MCP 时，Codex 或 Claude Code 仍可能显示官方信任确认；Mira 不绕过该安全机制。卸载只移除 Mira 管理的条目：
+
+```bash
+mira --project-root /path/to/project integration uninstall --agent all
+```
+
+完整行为与排障说明见 [自动接入指南](docs/agent-config/automatic-integration.md)。
+
 ## MCP 快速配置
 
 Mira MVP 提供每项目一个 stdio MCP server。推荐使用绝对路径绑定项目和数据库：
@@ -185,6 +216,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Agent Session Import Tasks](specs/002-agent-session-import/tasks.md)
 - [LLM Distill Spec](specs/003-llm-distill-agent-guidance/spec.md)
 - [Transcript JSONL Import Spec](specs/004-transcript-jsonl-import/spec.md)
+- [Phase 0/1 自动接入 Spec](specs/014-phase0-phase1-auto-integration/spec.md)
+- [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)
 - [Mira 开发节奏](.agents/development-rhythm.md)

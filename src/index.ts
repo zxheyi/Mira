@@ -2,7 +2,8 @@
 import { Command } from "commander";
 import type Database from "better-sqlite3";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { buildContextBundle } from "./context/contextBundle.js";
 import { openDatabase } from "./db/client.js";
 import { migrate } from "./db/schema.js";
@@ -14,6 +15,15 @@ import {
 } from "./distill/llmDistill.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
+import {
+  getIntegrationStatus,
+  installAgentIntegration,
+  uninstallAgentIntegration,
+  type IntegrationAgent,
+  type IntegrationAgentTarget,
+  type IntegrationRuntime
+} from "./integrations/configInstaller.js";
+import { runIntegrationHook } from "./integrations/hookRuntime.js";
 import { addMemory, clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
 import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
 import {
@@ -136,6 +146,48 @@ function requireRawFormat(rawFormat: string): "markdown" | "jsonl" {
     throw new Error("Thread raw format must be markdown or jsonl");
   }
   return rawFormat;
+}
+
+function requireIntegrationAgentTarget(agent: string): IntegrationAgentTarget {
+  if (agent !== "codex" && agent !== "claude-code" && agent !== "all") {
+    throw new Error("Integration agent must be codex, claude-code, or all");
+  }
+  return agent;
+}
+
+function requireIntegrationAgent(agent: string): IntegrationAgent {
+  const target = requireIntegrationAgentTarget(agent);
+  if (target === "all") {
+    throw new Error("Integration hook agent must be codex or claude-code");
+  }
+  return target;
+}
+
+function integrationRuntime(): IntegrationRuntime {
+  const currentEntry = fileURLToPath(import.meta.url);
+  return {
+    nodePath: process.execPath,
+    entryPath: currentEntry.endsWith(".ts")
+      ? resolve(dirname(currentEntry), "../dist/src/index.js")
+      : currentEntry
+  };
+}
+
+async function readStdinJson(): Promise<unknown> {
+  const chunks: string[] = [];
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  const raw = chunks.join("").trim();
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
 }
 
 function commandPathFromArgs(args: string[]): string {
@@ -467,6 +519,75 @@ mcp
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
     await serveMiraMcpStdio({ projectRoot, dbPath });
+  });
+
+const integration = program.command("integration").description("Manage automatic coding-agent integration");
+
+integration
+  .command("install")
+  .description("Install project-local Codex and/or Claude Code hooks and MCP configuration")
+  .requiredOption("--agent <agent>", "codex, claude-code, or all")
+  .option("--dry-run", "Preview changes without writing files", false)
+  .action(async (options: { agent: string; dryRun: boolean }) => {
+    const globalOptions = program.opts<GlobalOptions>();
+    const projectRoot = await resolveProjectRoot(globalOptions);
+    const dbPath = resolveDbPath(projectRoot, globalOptions);
+    printJson(
+      await installAgentIntegration({
+        agent: requireIntegrationAgentTarget(options.agent),
+        projectRoot,
+        dbPath,
+        runtime: integrationRuntime(),
+        dryRun: options.dryRun
+      })
+    );
+  });
+
+integration
+  .command("status")
+  .description("Show project-local Codex and Claude Code integration status")
+  .action(async () => {
+    const projectRoot = await resolveProjectRoot(program.opts<GlobalOptions>());
+    printJson(await getIntegrationStatus(projectRoot));
+  });
+
+integration
+  .command("uninstall")
+  .description("Remove only Mira-managed project integration entries")
+  .requiredOption("--agent <agent>", "codex, claude-code, or all")
+  .option("--dry-run", "Preview changes without writing files", false)
+  .action(async (options: { agent: string; dryRun: boolean }) => {
+    const projectRoot = await resolveProjectRoot(program.opts<GlobalOptions>());
+    printJson(
+      await uninstallAgentIntegration({
+        agent: requireIntegrationAgentTarget(options.agent),
+        projectRoot,
+        runtime: integrationRuntime(),
+        dryRun: options.dryRun
+      })
+    );
+  });
+
+integration
+  .command("hook")
+  .description("Run a Mira lifecycle hook for Codex or Claude Code")
+  .requiredOption("--agent <agent>", "codex or claude-code")
+  .option("--managed-by <owner>", "Integration owner marker")
+  .action(async (options: { agent: string; managedBy?: string }) => {
+    const globalOptions = program.opts<GlobalOptions>();
+    const projectRoot = await resolveProjectRoot(globalOptions);
+    const dbPath = resolveDbPath(projectRoot, globalOptions);
+    const result = await runIntegrationHook(
+      {
+        agent: requireIntegrationAgent(options.agent),
+        projectRoot,
+        dbPath
+      },
+      await readStdinJson()
+    );
+    if (result.stdout) {
+      process.stdout.write(result.stdout);
+    }
   });
 
 program

@@ -1,5 +1,13 @@
 # Claude Code MCP Config Example
 
+推荐优先使用自动安装，它会同时配置 Session Hook 与 MCP：
+
+```bash
+mira --project-root /absolute/path/to/project integration install --agent claude-code
+```
+
+完整说明见 [automatic-integration.md](automatic-integration.md)。以下手工配置仅作为无法使用安装器时的兜底。
+
 Use absolute paths so the MCP client does not depend on its startup cwd.
 
 ## Prerequisites

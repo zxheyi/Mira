@@ -121,6 +121,30 @@ describe("Mira MCP tools", () => {
     expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawFormat.safeParse("plain").success).toBe(false);
     expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawFormat.safeParse("markdown").success).toBe(true);
     expect(MIRA_MCP_TOOL_SCHEMAS.save_thread.rawText.safeParse("x".repeat(5_000_001)).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.search_memory.queryMode?.safeParse("orTerms").success).toBe(true);
+    expect(MIRA_MCP_TOOL_SCHEMAS.search_memory.queryMode?.safeParse("phrase").success).toBe(true);
+    expect(MIRA_MCP_TOOL_SCHEMAS.search_memory.queryMode?.safeParse("semantic").success).toBe(false);
+  });
+
+  test("uses keyword OR search by default and supports explicit phrase search", async () => {
+    const options = await setupMcpOptions();
+    await callMiraTool(options, "add_memory", {
+      title: "Auth decision",
+      kind: "decision",
+      content: "Authentication uses signed sessions.",
+      source: "mcp-test"
+    });
+    await callMiraTool(options, "add_memory", {
+      title: "Token constraint",
+      kind: "constraint",
+      content: "Tokens never enter project logs.",
+      source: "mcp-test"
+    });
+
+    expect((await callMiraTool(options, "search_memory", { query: "auth token" })) as unknown[]).toHaveLength(2);
+    expect(
+      (await callMiraTool(options, "search_memory", { query: "auth token", queryMode: "phrase" })) as unknown[]
+    ).toEqual([]);
   });
 
   test("runs the agent read/write loop through MCP tool handlers", async () => {

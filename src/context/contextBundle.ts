@@ -17,7 +17,7 @@ function durableMemories(
   const query = options.query?.trim();
 
   if (query) {
-    const exactResults = searchMemories(db, projectId, query, { limit });
+    const exactResults = searchMemories(db, projectId, query, { limit, queryMode: "phrase" });
     const fallbackResults = exactResults.length > 0
       ? exactResults
       : searchMemories(db, projectId, query, { limit, queryMode: "orTerms" });

@@ -95,7 +95,7 @@ function quoteFtsTerm(term: string): string {
   return `"${term.replace(/"/g, '""')}"`;
 }
 
-function toFtsQuery(query: string, mode: SearchMemoriesOptions["queryMode"] = "phrase"): string {
+function toFtsQuery(query: string, mode: SearchMemoriesOptions["queryMode"] = "orTerms"): string {
   if (mode === "orTerms") {
     const terms = query.split(/\s+/).map((term) => term.trim()).filter(Boolean);
     if (terms.length === 0) {

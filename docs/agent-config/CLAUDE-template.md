@@ -4,7 +4,7 @@
 
 ## 开始任务
 
-- 先通过 Mira MCP 调用 `get_context_bundle`，理解当前 Working Memory、长期 Memory 和近期项目状态。
+- 如果项目已安装 Mira 自动集成，先使用 `SessionStart` 注入的 Context Bundle；上下文缺失或需要刷新时调用 `get_context_bundle`。
 - 如果任务涉及历史决策、架构、编码约定、失败尝试或用户偏好，调用 `search_memory`。
 - 不要只依赖当前聊天上下文判断项目历史。
 
@@ -17,9 +17,9 @@
 
 ## 结束任务
 
-- 保存本轮工作摘要到 Mira Thread。
+- 真实 transcript 由 Mira `Stop` / `SessionEnd` Hook 自动保存；只在自动接入不可用或需要独立摘要时调用 `save_thread`。
 - 更新 Working Memory，明确当前状态和下一步。
-- 对长会话，优先生成 Thread 摘要；完整 transcript 自动捕获不是 Mira 当前默认能力。
+- 确认稳定决策和失败经验已写入长期 Memory；不要重复保存 Hook 已捕获的完整 transcript。
 
 
 ## MCP 参数要求

@@ -11,6 +11,7 @@ This directory archives external MVP audit reports as improvement records and re
 - `2026-07-13-post-fix-audit.md`: post-fix audit validating previous fixes and identifying MCP/data-model hardening follow-ups.
 - `2026-07-13-hardening-audit.md`: hardening audit validating the post-fix pass and identifying context budget, CLI guard, and exhaustiveness follow-ups.
 - `2026-07-13-budget-guards-audit.md`: budget/guard audit confirming high-severity issues are cleared and listing medium/low polish items.
+- `2026-07-13-round4-audit.md`: fourth-round audit confirming prior hardening and recording the Phase 0 search/FTS findings addressed by Spec 014.
 
 ## How To Use
 

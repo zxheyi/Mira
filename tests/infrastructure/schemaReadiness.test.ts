@@ -27,4 +27,17 @@ describe("schema infrastructure readiness", () => {
     );
     expect(() => migrate(db as Database.Database)).toThrow("Unsupported Mira schema version");
   });
+
+  test("rejects a future schema before applying current-version DDL", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version (version, applied_at) values (999, '2026-07-17T00:00:00.000Z');
+    `);
+
+    expect(() => migrate(db as Database.Database)).toThrow("Unsupported Mira schema version");
+    expect(
+      db.prepare("select count(*) from sqlite_master where type = 'table' and name = 'projects'").pluck().get()
+    ).toBe(0);
+  });
 });

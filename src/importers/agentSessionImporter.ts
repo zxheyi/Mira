@@ -164,17 +164,30 @@ function extractTranscriptMessage(record: unknown): TranscriptMessage | undefine
     return undefined;
   }
 
+  const envelopePayload = getObject(object.payload);
   const nestedMessage = getObject(object.message);
-  const source = nestedMessage ?? object;
+  const source =
+    nestedMessage ??
+    ((object.type === "response_item" || object.type === "event_msg") && envelopePayload
+      ? envelopePayload
+      : object);
+  const sourceType = typeof source.type === "string" ? source.type : undefined;
   const role =
     typeof source.role === "string"
       ? source.role
+      : sourceType === "user_message"
+        ? "user"
+        : sourceType === "agent_message" || sourceType === "function_call"
+          ? "assistant"
       : typeof object.role === "string"
         ? object.role
         : typeof object.type === "string"
           ? object.type
           : "message";
-  const rawContent = source.content ?? object.content ?? source.text ?? object.text;
+  const rawContent =
+    sourceType === "function_call"
+      ? source
+      : source.content ?? source.message ?? object.content ?? source.text ?? object.text;
   const content = extractContent(rawContent);
 
   if (!content.trim()) {

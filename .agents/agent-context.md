@@ -1,295 +1,133 @@
 # Mira Agent Context
 
-This file is the project entry card for coding agents working on Mira. It is inspired by Rowboat's `CLAUDE.md`, but scoped to Mira's current stage: project-level memory infrastructure for coding agents.
+Last updated: 2026-07-17
 
-## Quick Reference
+本文件是开发 Agent 接手 Mira 时的项目入口卡片。Mira 是面向 Codex、Claude Code 等编程 Agent 的本地优先项目记忆层，不是通用 AI 工作台。
 
-Current commands:
+## 当前状态
+
+- MVP 的 Thread、Memory、Working Memory、Context Bundle、CLI、导出和 MCP 闭环已完成。
+- Codex / Claude Code Markdown 与 JSONL transcript 导入已完成。
+- 可审查的 LLM distill candidate 工作流已完成。
+- 多轮审计修复已完成，Phase 0 FTS/搜索基线已收口。
+- Phase 1 项目级自动接入已实现：SessionStart 注入上下文，Stop/SessionEnd 捕获真实 transcript。
+- 自动捕获使用 schema v2 持久化检查点；未变化跳过，失败不推进。
+- Phase 2 自动可信提炼尚未实现，Hook 当前不会自动改写长期 Memory 或 Working Memory。
+
+## 事实源
+
+按以下顺序读取：
+
+1. `specs/014-phase0-phase1-auto-integration/spec.md`
+2. `specs/014-phase0-phase1-auto-integration/tasks.md`
+3. `.agents/progress.md`
+4. `README.md`
+5. `.agents/development-rhythm.md`
+6. `specs/001-mira-mvp/spec.md`
+7. `docs/agent-config/automatic-integration.md`
+8. `docs/agent-config/AGENTS-template.md`
+
+规格、任务和代码不一致时，先确认最新规格，再按 SDD + TDD 修正实现和文档。
+
+## 常用命令
 
 ```bash
 git -C /Users/limaolin/Desktop/Mira status --short
 npm run dev -- health
 npm test
 npm run build
-sed -n '1,260p' docs/superpowers/plans/2026-07-09-mira-mvp.md
-sed -n '1,220p' .agents/development-rhythm.md
+
+node dist/src/index.js --project-root /Users/limaolin/Desktop/Mira integration install --agent all --dry-run
+node dist/src/index.js --project-root /Users/limaolin/Desktop/Mira integration status
 ```
 
-Planned MVP commands after later phases:
+全局 `--project-root` 与 `--db` 必须位于子命令前。
 
-```bash
-npm run dev -- init
-npm run dev -- project list
-npm run dev -- import --source codex --path ./codex-session.md
-npm run dev -- import --source claude-code --path ./claude-session.md
-npm run dev -- import --source claude-code --format jsonl --path ./claude-transcript.jsonl
-npm run dev -- import --source codex --format jsonl --path ./codex-transcript.jsonl
-npm run dev -- memory llm-prompt --thread thread_1
-npm run dev -- memory apply-candidates --thread thread_1 --path ./candidates.json
-npm run dev -- memory search "SQLite FTS"
-npm run dev -- context bundle
-npm run dev -- mcp serve --project-root /Users/limaolin/Desktop/Mira --db /Users/limaolin/Desktop/Mira/.mira/mira.sqlite
-```
-
-## Current Repository State
-
-Mira has started MVP implementation. Phase 1.1 and 1.2 are complete: the TypeScript CLI skeleton, health command, SQLite connection, schema migration, and first tests exist.
-
-Current tracked areas:
+## 当前架构
 
 ```text
-Mira/
-  README.md
-  package.json
-  package-lock.json
-  tsconfig.json
-  .gitignore
-  src/
-    index.ts
-    db/
-      client.ts
-      schema.ts
-  tests/
-    cli-smoke.test.ts
-    db/
-      schema.test.ts
-  .agents/
-    agent-context.md
-    development-rhythm.md
-    progress.md
-  specs/
-    001-mira-mvp/
-      spec.md
-      plan.md
-      tasks.md
-  docs/
-    agent-config/
-      AGENTS-template.md
-    research/
-      nowledge-mem-analysis.md
-      nowledge-mem-reverse-engineering.md
-      rowboat-summary.md
-    sessions/
-      019f45f0-40bf-7261-8685-d5e0a6a8bf13.md
-    superpowers/plans/
-      2026-07-09-mira-mvp.md
+Codex / Claude Code
+  -> project SessionStart Hook
+  -> Mira Context Bundle stdout
+
+Codex Stop / Claude Stop + SessionEnd
+  -> Hook input validation
+  -> transcript path + cwd guard
+  -> persisted capture cursor
+  -> JSONL importer
+  -> stable Thread upsert
+
+Agent MCP calls
+  -> project-bound stdio server
+  -> Working Memory / Memory / Thread stores
+  -> SQLite + FTS5
 ```
 
-The TypeScript project now exists. `.mira/` is still runtime data and must remain ignored. Later MVP phases will add more `src/` modules and tests.
-
-## Source Of Truth
-
-Read these first, in order:
-
-1. `specs/004-transcript-jsonl-import/spec.md` — current post-MVP P2 JSONL transcript import requirements.
-2. `specs/004-transcript-jsonl-import/tasks.md` — current post-MVP P2 execution checklist.
-3. `specs/003-llm-distill-agent-guidance/spec.md` — completed post-MVP P1 LLM distill and guidance requirements.
-4. `specs/003-llm-distill-agent-guidance/tasks.md` — completed post-MVP P1 execution checklist.
-5. `specs/002-agent-session-import/spec.md` — completed post-MVP P0 import requirements.
-6. `specs/002-agent-session-import/tasks.md` — completed post-MVP P0 execution checklist.
-7. `specs/001-mira-mvp/spec.md` — completed MVP what/why requirements.
-8. `specs/001-mira-mvp/tasks.md` — completed MVP checklist.
-9. `.agents/progress.md` — current progress pointer and latest verification evidence.
-10. `README.md` — positioning, scope, and design principles.
-11. `.agents/agent-context.md` — quick project map and Agent entry context.
-12. `.agents/development-rhythm.md` — SDD/TDD development rhythm.
-13. `docs/superpowers/plans/2026-07-09-mira-mvp.md` — detailed historical MVP plan and acceptance gates.
-14. `docs/agent-config/AGENTS-template.md` — target behavior for agents using Mira.
-
-If these files disagree, treat `spec.md` and `tasks.md` as the implementation contract, then update the other docs to match.
-
-## Product Focus
-
-Mira is not a general AI workspace. Mira is a local-first project memory system for coding agents.
-
-The MVP loop is:
+关键目录：
 
 ```text
-Thread save
-  -> Memory distill / manual add
-  -> Working Memory maintain
-  -> Memory search
-  -> Context Bundle output
-  -> CLI / MCP access
-  -> Agent writes back Thread / Memory after work
+src/db/                 SQLite client 与 schema
+src/projects/           项目探测与 Project Store
+src/threads/            Thread Store
+src/memory/             Memory Store 与 FTS 搜索
+src/workingMemory/      Working Memory
+src/context/            Context Bundle
+src/distill/            deterministic / reviewed LLM distill
+src/importers/          Markdown / JSONL importer
+src/integrations/       Hook、安装器、捕获检查点
+src/mcp/                MCP tools 与 stdio transport
+tests/                  单元、集成和 CLI 端到端测试
+specs/                  SDD 规格、计划和任务证据
 ```
 
-## Target Architecture
+## 关键契约
 
-The MVP target stack is intentionally small:
+### 项目解析
 
-| Layer | Planned Technology |
-| --- | --- |
-| Runtime | Node.js + TypeScript |
-| Storage | SQLite + FTS5 |
-| DB Driver | `better-sqlite3` |
-| CLI | `commander` |
-| Tests | `vitest` |
-| Dev runner | `tsx` |
-| Agent protocol | MCP TypeScript SDK |
+- 显式 `--project-root` 优先，否则从 cwd 向上探测 Git 根目录。
+- Project 不存在时按根目录自动创建，名称使用目录名。
+- 默认数据库是 `<project>/.mira/mira.sqlite`。
 
-No Electron, Next.js, vector database, queue, hosted service, multi-user account, or plugin marketplace in MVP.
+### 搜索
 
-## Target Build Order
+- `searchMemories` 默认 `orTerms`，可显式使用 `phrase`。
+- FTS 同时搜索 title 与 content。
+- 返回 `{ memory, score }`，score 越高越相关。
+- Context Bundle 使用 phrase 优先、OR 回退，并严格执行字符预算。
 
-Once the TypeScript project exists, implement in this order:
+### 自动捕获
+
+- Codex：`SessionStart` + `Stop`。
+- Claude Code：`SessionStart` + `Stop` + `SessionEnd`。
+- 只读取 Hook 明确提供的主 `.jsonl` transcript，不扫描子 Agent 目录。
+- Hook cwd 必须位于绑定项目，transcript 必须位于 Agent 官方会话目录。
+- Thread ID 为 `thread_<agent-slug>_<session-id-slug>`。
+- `integration_cursors` 以 project + agent + session 为唯一键。
+- 捕获失败默认不阻塞宿主 Agent，日志不含 transcript 正文。
+
+### 配置安装
+
+- `integration install` 原子合并用户配置，重复执行幂等。
+- 同名非 Mira MCP 配置视为冲突，不覆盖。
+- `.git/info/exclude` 只管理 Mira 标记块，不改团队 `.gitignore`。
+- `integration uninstall` 只移除 Mira 管理内容，不删除数据库。
+
+### 记忆边界
+
+- Hook 当前自动保存 Thread，不自动把 transcript 结论写成长期 Memory。
+- 稳定决策、失败经验和当前状态仍由 Agent 通过 MCP 主动维护。
+- `save_thread` 是手动摘要兜底，不应重复保存 Hook 已捕获的完整 transcript。
+- Phase 2 才引入候选生成、审查、去重和受控写回。
+
+## 开发节奏
 
 ```text
-schema / db client
-  -> project root detection
-  -> project store
-  -> thread store
-  -> memory store + FTS search
-  -> working memory store
-  -> distill + clear-before-write
-  -> context bundle
-  -> export
-  -> CLI
-  -> MCP server + stdio
-  -> MCP tools integration
-  -> local end-to-end loop
+SDD：先更新目标、边界、数据模型、CLI/MCP 契约和验收标准。
+TDD：写失败测试，确认 RED；最小实现到 GREEN；再重构和扩大验证。
 ```
 
-This order keeps lower-level data contracts stable before exposing CLI and MCP surfaces.
+更改数据契约时同步 schema、store、CLI/MCP、文档与迁移测试。完成前至少执行相关定向测试、`npm test`、`npm run build` 和 `git diff --check`。
 
-## Planned Key Files
+## 下一阶段
 
-| Purpose | Planned File |
-| --- | --- |
-| CLI entry | `src/index.ts` |
-| DB connection | `src/db/client.ts` |
-| Schema and migration | `src/db/schema.ts` |
-| Project root detection | `src/projects/projectRoot.ts` |
-| Project storage | `src/projects/projectStore.ts` |
-| Thread storage | `src/threads/threadStore.ts` |
-| Memory kinds | `src/memory/kinds.ts` |
-| Memory storage/search | `src/memory/memoryStore.ts` |
-| Distill rules | `src/memory/distill.ts` |
-| Distill orchestration | `src/memory/distillThread.ts` |
-| Working Memory | `src/workingMemory/workingMemoryStore.ts` |
-| Context Bundle | `src/context/contextBundle.ts` |
-| Exporter | `src/export/exporter.ts` |
-| MCP server | `src/mcp/server.ts` |
-| MCP stdio | `src/mcp/stdio.ts` |
-
-## Important Contracts
-
-### Project Resolution
-
-- Explicit `--project-root` wins.
-- Otherwise use `detectProjectRoot(process.cwd())`.
-- If the root is missing in the database, automatically create Project with directory basename.
-- `mira project add` is for explicit name creation/update, not a mandatory first step.
-
-### Search Result
-
-Search returns:
-
-```ts
-type SearchResult = {
-  memory: Memory;
-  score: number;
-};
-```
-
-FTS searches both `title` and `content`. `score` is normalized so higher means more relevant.
-
-### Working Memory
-
-- One record per `projectId + kind`.
-- Multiple blockers or next steps belong in Markdown list content.
-- Use `clearWorkingMemory` / `mira working clear` when a kind becomes stale.
-
-### MCP Runtime
-
-MVP uses one stdio server per project:
-
-```bash
-mira mcp serve --project-root /abs/project --db /abs/project/.mira/mira.sqlite
-```
-
-MCP tools may accept `projectRoot`; if omitted, use the server-bound project.
-
-### save_thread
-
-In MVP, `save_thread` stores an Agent-generated summary or key excerpt. Do not pretend the Agent has access to a full transcript. Full transcript capture belongs to post-MVP hooks/adapters.
-
-## Development Rhythm
-
-Use SDD for direction and TDD for execution:
-
-```text
-SDD: decide scope, contracts, data model, CLI/MCP interfaces, acceptance gates.
-TDD: write failing tests for each store/CLI/MCP behavior, then implement the smallest passing code.
-```
-
-Before implementation, read `.agents/development-rhythm.md`.
-
-## Common Tasks
-
-### Start A New MVP Phase
-
-1. Read the relevant phase in `docs/superpowers/plans/2026-07-09-mira-mvp.md`.
-2. Confirm the phase boundaries and acceptance gates.
-3. Add or update tests first.
-4. Implement the smallest code needed.
-5. Run the phase-specific test, then broader tests.
-6. Update checkboxes only after verification evidence exists.
-
-### Change A Data Contract
-
-1. Update the MVP plan first.
-2. Update schema expectations.
-3. Update store tests.
-4. Update CLI/MCP docs if the contract is user-facing.
-5. Then implement.
-
-### Add A CLI Command
-
-1. Add CLI smoke or behavior test.
-2. Wire command to existing store/context/export functions.
-3. Keep output script-friendly.
-4. Document the command in the MVP plan if it changes scope.
-
-### Add An MCP Tool
-
-1. Define input/output shape in plan first.
-2. Add tool-level test.
-3. Reuse core store/context functions.
-4. Confirm default project resolution uses bound project.
-5. Avoid tool behavior that cannot be tested without a real client.
-
-## Verification Commands
-
-Use the narrowest relevant command first, then broaden:
-
-```bash
-npm test -- tests/db/schema.test.ts
-npm test -- tests/memory/memoryStore.test.ts
-npm test -- tests/mcp/tools.integration.test.ts
-npm test
-npm run build
-```
-
-If the Node project does not exist yet, verify documentation changes with:
-
-```bash
-git -C /Users/limaolin/Desktop/Mira diff --check
-rg -n "TBD|TODO" README.md .agents docs
-```
-
-## Do Not Do In MVP
-
-- Do not add cloud sync.
-- Do not add a UI.
-- Do not add vector search before SQLite FTS is working.
-- Do not build a general personal memory product.
-- Do not add integrations like email, Slack, browser, calendar, or meetings.
-- Do not create a second competing plan outside the MVP plan.
-
-## Research References
-
-- `docs/research/rowboat-summary.md` — Rowboat architecture and product summary.
-- `docs/research/nowledge-mem-analysis.md` — Nowledge Mem architecture lessons.
-- `docs/research/nowledge-mem-reverse-engineering.md` — reverse analysis notes.
-- Rowboat `CLAUDE.md`: https://github.com/rowboatlabs/rowboat/blob/main/CLAUDE.md
+Phase 2：自动可信提炼。目标是从自动捕获的 Thread 生成结构化 Memory 候选，通过明确的置信度、来源、去重和审查门禁受控写回，并安全更新 Working Memory。

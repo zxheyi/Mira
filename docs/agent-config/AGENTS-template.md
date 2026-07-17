@@ -4,7 +4,7 @@
 
 ## 会话开始
 
-1. 先调用 `get_context_bundle`，读取当前 Working Memory 和长期项目记忆。
+1. 如果项目已安装 Mira 自动集成，先使用 `SessionStart` 注入的 Context Bundle；上下文缺失或需要刷新时调用 `get_context_bundle`。
 2. 如果任务涉及历史决策、架构约定、失败尝试或用户偏好，调用 `search_memory` 查询相关记忆；结果里的 `score` 表示匹配强度。
 
 ## 工作过程中
@@ -19,7 +19,7 @@
 
 1. 用 `set_working_memory` 更新：当前任务状态、阻塞点、下一步。
 2. 用 `add_memory` 保存本轮产生的稳定决策或经验。
-3. 用 `save_thread` 保存本轮会话摘要或关键原文。MVP 中保存的是你生成的摘要，不是假设你能访问完整 transcript。
+3. 真实 transcript 由 Mira Hook 自动保存；只在自动接入不可用或需要独立摘要时用 `save_thread` 保存摘要或关键原文。
 
 
 ## MCP 参数要求

@@ -160,6 +160,55 @@ describe("agent session importer", () => {
     expect(session.rawText).toContain("Tool: shell");
   });
 
+  test("normalizes current Codex response_item and event_msg envelopes", () => {
+    const rawText = [
+      JSON.stringify({
+        timestamp: "2026-07-17T10:00:00.000Z",
+        type: "session_meta",
+        payload: { session_id: "session-1", cwd: "/workspace/mira" }
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-17T10:01:00.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "Capture the Codex transcript." }]
+        }
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-17T10:02:00.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "shell",
+          arguments: { cmd: "npm test" }
+        }
+      }),
+      JSON.stringify({
+        timestamp: "2026-07-17T10:03:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "Codex transcript captured."
+        }
+      })
+    ].join("\n");
+
+    const session = normalizeJsonlSession({
+      source: "codex",
+      inputPath: "/workspace/mira/rollout-session-1.jsonl",
+      rawText
+    });
+
+    expect(session.rawText).toContain("## user");
+    expect(session.rawText).toContain("Capture the Codex transcript.");
+    expect(session.rawText).toContain("Tool: shell");
+    expect(session.rawText).toContain("## assistant");
+    expect(session.rawText).toContain("Codex transcript captured.");
+    expect(session.rawText).not.toContain("session_meta");
+  });
+
   test("reports invalid JSONL line numbers", () => {
     expect(() =>
       normalizeJsonlSession({

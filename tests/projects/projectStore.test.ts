@@ -4,10 +4,13 @@ import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import {
   createProject,
+  deleteProject,
   ensureProjectForRoot,
   findProjectByRoot,
   listProjects
 } from "../../src/projects/projectStore.js";
+import { addMemory } from "../../src/memory/memoryStore.js";
+import { saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
 
@@ -72,6 +75,36 @@ describe("project store", () => {
 
     expect(second).toEqual(first);
     expect(listProjects(database)).toHaveLength(1);
+  });
+
+  test("removes cascaded project memories from the FTS index", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    saveThread(database, {
+      id: "thread_project_cascade",
+      projectId: project.id,
+      title: "Project cascade",
+      source: "codex",
+      rawFormat: "markdown",
+      rawText: "Project cascade transcript"
+    });
+    addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_project_cascade",
+      title: "Cascade cleanup",
+      kind: "decision",
+      content: "Project deletion must remove the FTS row.",
+      source: "manual",
+      confidence: 1,
+      importance: 8
+    });
+
+    expect(database.prepare("select count(*) from memory_fts").pluck().get()).toBe(1);
+
+    deleteProject(database, project.id);
+
+    expect(database.prepare("select count(*) from memories").pluck().get()).toBe(0);
+    expect(database.prepare("select count(*) from memory_fts").pluck().get()).toBe(0);
   });
 
 });

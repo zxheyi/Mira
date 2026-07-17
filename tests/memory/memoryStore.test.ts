@@ -162,7 +162,7 @@ describe("memory store", () => {
     clearMemoriesForThread(database, project.id, "thread_1");
 
     expect(listMemoriesForProject(database, project.id)).toEqual([kept]);
-    expect(searchMemories(database, project.id, "thread one")).toEqual([]);
+    expect(searchMemories(database, project.id, "thread one", { queryMode: "phrase" })).toEqual([]);
   });
 
   test("searches title and content and returns scored results", () => {
@@ -264,7 +264,7 @@ describe("memory store", () => {
     expect(searchMemories(database, project.id, "   ", { queryMode: "orTerms" })).toEqual([]);
   });
 
-  test("matches any query term in orTerms mode", () => {
+  test("matches any query term by default and keeps phrase mode explicit", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     const mcp = addMemory(database, {
@@ -286,11 +286,11 @@ describe("memory store", () => {
       importance: 5
     });
 
-    expect(searchMemories(database, project.id, "MCP bundle")).toEqual([]);
-    expect(searchMemories(database, project.id, "MCP bundle", { queryMode: "orTerms" }).map((result) => result.memory)).toEqual([
+    expect(searchMemories(database, project.id, "MCP bundle").map((result) => result.memory)).toEqual([
       mcp,
       bundle
     ]);
+    expect(searchMemories(database, project.id, "MCP bundle", { queryMode: "phrase" })).toEqual([]);
   });
 
   test("returns the duplicate created by a concurrent insert fallback", () => {

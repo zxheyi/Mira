@@ -1,6 +1,6 @@
 # Mira Progress
 
-Last updated: 2026-07-13
+Last updated: 2026-07-17
 
 ## Current Status
 
@@ -12,6 +12,8 @@ Audit Alignment P1 is implemented and locally verified.
 MCP Agent Usability hardening is implemented and locally verified.
 MCP Agent Polish and Boundary Tests are implemented and locally verified.
 Deep Audit Remediation is implemented and locally verified.
+Phase 0 engineering baseline closure is implemented and locally verified.
+Phase 1 automatic Codex / Claude Code session integration is implemented and locally verified, including real-project installation and Hook smoke tests.
 
 Completed:
 
@@ -54,12 +56,27 @@ Completed:
 - Phase 33: Hardening audit budget and CLI guards.
 - Phase 34: Budget guards medium polish.
 - Phase 35: Low-priority audit cleanup.
+- Phase 36: Phase 0 recursive-trigger FTS integrity and default OR search semantics.
+- Phase 37: Phase 1 Codex / Claude Code project Hook/MCP automatic integration.
+- Phase 38: Persistent transcript capture cursor and Git local-config protection.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
+npm test
+# Test Files 25 passed; Tests 131 passed
+
+npm run build
+# tsc completed successfully
+
+npm run test -- tests/db/client.test.ts tests/db/schema.test.ts tests/projects/projectStore.test.ts tests/threads/threadStore.test.ts tests/memory/memoryStore.test.ts tests/context/contextBundle.test.ts tests/mcp/tools.integration.test.ts tests/importers/agentSessionImporter.test.ts tests/integrations/configInstaller.test.ts tests/integrations/hookRuntime.test.ts tests/cli/integration-cli.test.ts
+# Test Files 11 passed; Tests 83 passed
+
+npm run build
+# tsc completed successfully
+
 npm run test -- tests/mcp/tools.integration.test.ts
 # Test Files 1 passed; Tests 2 passed
 
@@ -290,12 +307,9 @@ specs/008-deep-audit-remediation/tasks.md
 
 ## Next Step
 
-Post-MVP hardening:
-
-1. Try `mira import --source claude-code --format jsonl --path <transcript.jsonl>` with a real Claude Code transcript.
-2. Try `mira import --source codex --format jsonl --path <transcript.jsonl>` with a real Codex transcript.
-3. Run `mira memory llm-prompt --thread <thread_id>` on an imported JSONL Thread.
-4. Improve distill adapters for real transcript edge cases.
+1. 进入 Phase 2 自动可信提炼：候选生成、去重、置信度、来源和审查门禁。
+2. 在不自动污染长期 Memory 的前提下，设计 Working Memory 受控更新策略。
+3. 用后续真实 Codex / Claude Code 会话持续观察 importer envelope 兼容性和 Hook 诊断。
 
 ## Notes For Next Agent
 
@@ -303,6 +317,10 @@ Post-MVP hardening:
 - P0 Agent Session Import currently supports Markdown files for `codex`, `claude-code`, and `markdown`.
 - P1 LLM Distill currently uses a provider-neutral prompt + reviewed candidate JSON workflow.
 - P2 JSONL import normalizes transcript records into Markdown Thread text while preserving `rawFormat=jsonl`.
+- Phase 1 automatically injects Context Bundle at SessionStart and captures Codex/Claude Code transcripts on lifecycle Hooks.
+- Schema v2 persists capture cursors so unchanged transcripts are skipped and failed imports remain retryable.
+- Project-local absolute-path integration configs are protected through a managed `.git/info/exclude` block.
+- Real Mira status reports Codex and Claude Code hooks/MCP installed; SessionStart output, live transcript capture, and static transcript cursor idempotency were smoke-tested with the built CLI.
 - Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.
 - MCP usability hardening replaces placeholder tool descriptions and validates kind values at runtime.
 - MCP agent polish adds `search_memory.kind`, optional MCP `save_thread.id`, config prerequisites, and boundary tests.
