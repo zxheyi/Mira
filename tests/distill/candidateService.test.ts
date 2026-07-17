@@ -8,6 +8,7 @@ import {
   submitMemoryCandidates
 } from "../../src/distill/candidateService.js";
 import { addMemory, listMemoriesForProject } from "../../src/memory/memoryStore.js";
+import { archiveMemory } from "../../src/memory/memoryLifecycleStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 
@@ -234,7 +235,7 @@ describe("trusted memory candidate service", () => {
     expect(result).toMatchObject({
       outcome: "duplicate",
       candidate: { status: "accepted", acceptedMemoryId: existing.id },
-      memory: { id: existing.id, source: "manual" }
+      memory: { id: existing.id, source: "manual", status: "active", updatedAt: expect.any(String) }
     });
     expect(listMemoriesForProject(database, project.id)).toHaveLength(1);
   });
@@ -303,5 +304,79 @@ describe("trusted memory candidate service", () => {
     });
     expect(resubmitted.candidate.id).not.toBe(pending.candidate.id);
     expect(reviewMemoryCandidate(database, project.id, resubmitted.candidate.id, "accept").outcome).toBe("accepted");
+  });
+
+  test("accepts a conflict candidate as the explicit successor of an active Memory", () => {
+    const { database, project, thread } = setup();
+    const predecessor = addMemory(database, {
+      projectId: project.id,
+      title: "Storage",
+      kind: "fact",
+      content: "The existing storage is local SQLite.",
+      source: "manual",
+      confidence: 1,
+      importance: 8
+    });
+    const [pending] = submitMemoryCandidates(database, {
+      projectId: project.id,
+      threadId: thread.id,
+      sourceAgent: "codex",
+      extractionMethod: "agent",
+      candidates: [{
+        title: "Storage",
+        kind: "fact",
+        content: "The replacement storage is a remote database.",
+        evidence: "The replacement storage is a remote database.",
+        confidence: 0.99,
+        importance: 0.9
+      }]
+    });
+
+    const reviewed = reviewMemoryCandidate(
+      database, project.id, pending.candidate.id, "accept", "Approved replacement", predecessor.id
+    );
+
+    expect(reviewed).toMatchObject({
+      outcome: "accepted",
+      memory: { supersedesMemoryId: predecessor.id, status: "active" },
+      candidate: { acceptedMemoryId: reviewed.memory?.id }
+    });
+    expect(database.prepare("select status from memories where id = ?").pluck().get(predecessor.id)).toBe("superseded");
+    expect(reviewed.memory?.threadId).toBeUndefined();
+  });
+
+  test("restores an archived duplicate candidate instead of linking inactive Memory", () => {
+    const { database, project, thread } = setup();
+    const archived = addMemory(database, {
+      projectId: project.id, threadId: thread.id, title: "Local storage", kind: "fact",
+      content: "Mira stores durable project memory in local SQLite.", source: "manual", confidence: 1, importance: 8
+    });
+    archiveMemory(database, project.id, archived.id, "cli", "Temporarily stale");
+
+    const [result] = submitMemoryCandidates(database, {
+      projectId: project.id, threadId: thread.id, sourceAgent: "codex", extractionMethod: "agent",
+      candidates: [{
+        title: "Local storage", kind: "fact", content: archived.content, evidence: archived.content,
+        confidence: 0.99, importance: 0.8
+      }]
+    });
+
+    expect(result).toMatchObject({ outcome: "accepted", memory: { id: archived.id, status: "active" } });
+  });
+
+  test("rejects supersedes when rejecting a candidate", () => {
+    const { database, project, thread } = setup();
+    const [pending] = submitMemoryCandidates(database, {
+      projectId: project.id, threadId: thread.id, sourceAgent: "codex", extractionMethod: "agent",
+      candidates: [{
+        title: "Architecture review", kind: "architecture",
+        content: "Architecture changes require human review.",
+        evidence: "We decided that architecture changes require human review.", confidence: 0.99, importance: 0.9
+      }]
+    });
+
+    expect(() => reviewMemoryCandidate(
+      database, project.id, pending.candidate.id, "reject", "Not accepted", "memory_unused"
+    )).toThrow(/supersedes is only valid when accepting/);
   });
 });

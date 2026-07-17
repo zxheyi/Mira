@@ -43,6 +43,13 @@ import {
 } from "./integrations/configInstaller.js";
 import { runIntegrationHook } from "./integrations/hookRuntime.js";
 import { addMemory, clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
+import {
+  archiveMemory,
+  getMemory,
+  getMemoryHistory,
+  restoreMemory,
+  updateMemory
+} from "./memory/memoryLifecycleStore.js";
 import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
 import {
   createProject,
@@ -317,8 +324,9 @@ project
 
 project
   .command("delete")
-  .description("Delete a project record and its local Mira data")
+  .description("Permanently erase a project and all local Mira data for privacy")
   .requiredOption("--id <id>", "Project id")
+  .requiredOption("--confirm-hard-delete", "Confirm irreversible privacy deletion")
   .action(async (options: { id: string }) => {
     await withDatabase(program.opts<GlobalOptions>(), (db) => {
       deleteProject(db, options.id);
@@ -374,8 +382,9 @@ thread
 
 thread
   .command("delete")
-  .description("Delete a thread and memories distilled from it")
+  .description("Permanently erase a thread and all linked memories for privacy")
   .requiredOption("--id <id>", "Thread id")
+  .requiredOption("--confirm-hard-delete", "Confirm irreversible privacy deletion")
   .action(async (options: { id: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       deleteThread(session.db, session.project.id, options.id);
@@ -421,6 +430,7 @@ memory
             kind,
             content,
             source: options.source,
+            actor: "cli",
             confidence,
             importance
           })
@@ -457,12 +467,88 @@ memory
 
 memory
   .command("clear")
-  .description("Clear memories distilled from a thread")
+  .description("Permanently erase all memories linked to a thread for privacy")
   .requiredOption("--thread <id>", "Thread id")
+  .requiredOption("--confirm-hard-delete", "Confirm irreversible privacy deletion")
   .action(async (options: { thread: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       clearMemoriesForThread(session.db, session.project.id, options.thread);
       printJson({ ok: true });
+    });
+  });
+
+memory
+  .command("get")
+  .description("Get a Memory by id, including inactive history")
+  .requiredOption("--id <id>", "Memory id")
+  .action(async (options: { id: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      const found = getMemory(session.db, session.project.id, options.id);
+      if (!found) throw new Error(`Memory not found: ${options.id}`);
+      printJson(found);
+    });
+  });
+
+memory
+  .command("update")
+  .description("Create an immutable successor for an active Memory")
+  .requiredOption("--id <id>", "Predecessor Memory id")
+  .requiredOption("--content <content>", "Successor content")
+  .option("--title <title>", "Successor title")
+  .option("--kind <kind>", "Successor Memory kind")
+  .option("--confidence <number>", "Successor confidence")
+  .option("--importance <number>", "Successor importance")
+  .option("--source <source>", "Successor source")
+  .option("--reason <reason>", "Update reason")
+  .action(async (options: {
+    id: string; content: string; title?: string; kind?: string; confidence?: string;
+    importance?: string; source?: string; reason?: string;
+  }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(updateMemory(session.db, {
+        projectId: session.project.id,
+        memoryId: options.id,
+        content: options.content,
+        title: options.title,
+        kind: options.kind ? requireMemoryKind(options.kind) : undefined,
+        confidence: options.confidence ? numberInRange(options.confidence, 0, 1, "confidence") : undefined,
+        importance: options.importance ? numberInRange(options.importance, 1, 10, "importance") : undefined,
+        source: options.source,
+        actor: "cli",
+        reason: options.reason
+      }));
+    });
+  });
+
+memory
+  .command("archive")
+  .description("Archive an active Memory")
+  .requiredOption("--id <id>", "Memory id")
+  .option("--reason <reason>", "Archive reason")
+  .action(async (options: { id: string; reason?: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(archiveMemory(session.db, session.project.id, options.id, "cli", options.reason));
+    });
+  });
+
+memory
+  .command("restore")
+  .description("Restore an archived Memory without an active successor")
+  .requiredOption("--id <id>", "Memory id")
+  .option("--reason <reason>", "Restore reason")
+  .action(async (options: { id: string; reason?: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(restoreMemory(session.db, session.project.id, options.id, "cli", options.reason));
+    });
+  });
+
+memory
+  .command("history")
+  .description("Read a Memory successor chain and event history")
+  .requiredOption("--id <id>", "Memory id")
+  .action(async (options: { id: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(getMemoryHistory(session.db, session.project.id, options.id));
     });
   });
 
@@ -519,10 +605,13 @@ memoryCandidate
   .requiredOption("--id <id>", "Candidate id")
   .requiredOption("--decision <decision>", "accept or reject")
   .option("--reason <reason>", "Review reason")
-  .action(async (options: { id: string; decision: string; reason?: string }) => {
+  .option("--supersedes <id>", "Active Memory replaced by this candidate; valid only with accept")
+  .action(async (options: { id: string; decision: string; reason?: string; supersedes?: string }) => {
     const decision = requireReviewDecision(options.decision);
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(reviewMemoryCandidate(session.db, session.project.id, options.id, decision, options.reason));
+      printJson(reviewMemoryCandidate(
+        session.db, session.project.id, options.id, decision, options.reason, options.supersedes
+      ));
     });
   });
 

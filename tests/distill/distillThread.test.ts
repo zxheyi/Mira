@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { addMemory, listMemoriesForProject, searchMemories } from "../../src/memory/memoryStore.js";
+import { getMemory, listMemoryEvents } from "../../src/memory/memoryLifecycleStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 import { distillMemoriesFromText, distillThreadMemories } from "../../src/distill/distillThread.js";
@@ -138,7 +139,7 @@ describe("distill thread memories", () => {
     );
   });
 
-  test("clears old memories before writing the latest distill result", () => {
+  test("archives old memories before writing the latest distill result", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     saveThread(database, {
@@ -149,7 +150,7 @@ describe("distill thread memories", () => {
       rawFormat: "markdown",
       rawText: "## Key Decisions\n- Old decision."
     });
-    addMemory(database, {
+    const oldMemory = addMemory(database, {
       projectId: project.id,
       threadId: "thread_1",
       title: "Old decision",
@@ -158,6 +159,16 @@ describe("distill thread memories", () => {
       source: "distill:thread_1",
       confidence: 1,
       importance: 8
+    });
+    const manualMemory = addMemory(database, {
+      projectId: project.id,
+      threadId: "thread_1",
+      title: "Manual note",
+      kind: "note",
+      content: "Keep this manually curated note.",
+      source: "manual",
+      confidence: 1,
+      importance: 6
     });
 
     saveThread(database, {
@@ -171,10 +182,21 @@ describe("distill thread memories", () => {
     const distilled = distillThreadMemories(database, project.id, "thread_1");
 
     expect(distilled.map((memory) => memory.content)).toEqual(["New decision."]);
-    expect(listMemoriesForProject(database, project.id).map((memory) => memory.content)).toEqual([
-      "New decision."
-    ]);
+    expect(listMemoriesForProject(database, project.id).map((memory) => memory.content)).toEqual(
+      expect.arrayContaining(["New decision.", manualMemory.content])
+    );
     expect(searchMemories(database, project.id, "Old")).toEqual([]);
+    expect(getMemory(database, project.id, oldMemory.id)?.status).toBe("archived");
+    expect(getMemory(database, project.id, manualMemory.id)?.status).toBe("active");
+    expect(listMemoryEvents(database, project.id, oldMemory.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "archived",
+          actor: "distill:thread_1",
+          reason: "Replaced by a newer deterministic distill result"
+        })
+      ])
+    );
   });
 
   test("rolls back replacement memories when a distill write fails", () => {

@@ -119,14 +119,14 @@ Phase 4 已提供本地 CLI 闭环。常用命令示例：
 ```bash
 mira init
 mira project list
-mira project delete --id project_123
+mira project delete --id project_123 --confirm-hard-delete
 mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira thread save --id thread_2 --title "Session File" --source codex --raw-format markdown --file ./session.md
-mira thread delete --id thread_2
+mira thread delete --id thread_2 --confirm-hard-delete
 mira memory distill --thread thread_1
 mira memory llm-prompt --thread thread_1
 mira memory apply-candidates --thread thread_1 --path ./candidates.json
@@ -138,7 +138,7 @@ mira memory candidate review --id candidate_123 --decision accept --reason "Conf
 mira memory add --title "Preference" --kind preference --content "Keep output script-friendly." --source manual
 mira memory search --query "script-friendly"
 mira memory search "script-friendly"
-mira memory clear --thread thread_1
+mira memory clear --thread thread_1 --confirm-hard-delete
 mira working set --kind current_task --content "Continue Phase 4."
 mira working list
 mira working clear --kind blocker
@@ -148,7 +148,7 @@ mira export --format json --out ./export
 mira export --format markdown --out ./export
 ```
 
-`mira thread save` 中 `--raw-format` 是 `--format` 的别名，保留 `--raw-format` 是为了与数据模型里的 `rawFormat` 命名一致。`mira wm` 是 `mira working` 的短别名。删除类命令会移除本地记录，执行前请确认目标 id。
+`mira thread save` 中 `--raw-format` 是 `--format` 的别名，保留 `--raw-format` 是为了与数据模型里的 `rawFormat` 命名一致。`mira wm` 是 `mira working` 的短别名。`project delete`、`memory clear` 与 `thread delete` 是隐私擦除入口，会连同生命周期历史和事件账本永久删除数据，因此必须显式传入 `--confirm-hard-delete`；日常停用记忆应使用 `memory archive`。
 
 全局选项需要放在子命令前：`--db` 与 `--project-root` 需要写在子命令前，例如 `mira --project-root /path --db /path/.mira/mira.sqlite memory search "Mira"`。
 
@@ -173,6 +173,24 @@ export MIRA_LLM_API_KEY="optional-api-key"
 只有 `confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson`、`failed_attempt` 或 `constraint` 的候选会自动接受。`decision`、`architecture`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
 
 Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模式，但无法识别所有敏感内容；未命中的完整 Thread 会发送到你配置的 Provider，请只在确认其隐私与数据保留策略后启用。未配置 Provider 时自动捕获保持原行为，Agent MCP 候选通道仍可用。
+
+## Memory 生命周期
+
+Memory 内容不原地覆盖。更新会创建 active successor，并在同一事务中把 predecessor 标记为 superseded；历史内容和事件账本始终可审计。归档会让 Memory 退出默认搜索和 Context Bundle，合法恢复后重新进入：
+
+```bash
+mira memory get --id memory_123
+mira memory update --id memory_123 --content "Updated durable fact" --reason "Decision changed"
+mira memory archive --id memory_456 --reason "No longer current"
+mira memory restore --id memory_456
+mira memory history --id memory_456
+```
+
+冲突候选可独立接受，也可显式替代一个 active Memory：
+
+```bash
+mira memory candidate review --id candidate_123 --decision accept --supersedes memory_456
+```
 
 MVP Memory kind 是兼容性超集：`decision`、`convention`、`architecture`、`preference`、`task`、`fact`、`failed_attempt`、`lesson`、`constraint`、`todo`、`note`。Working Memory kind 是：`current_task`、`current_phase`、`recent_decision`、`blocker`、`next_step`、`preference`、`decision`、`note`。
 
@@ -226,6 +244,10 @@ save_thread
 submit_memory_candidates
 list_memory_candidates
 review_memory_candidate
+get_memory
+update_memory
+archive_memory
+get_memory_history
 ```
 
 MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
@@ -242,6 +264,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 0/1 自动接入 Spec](specs/014-phase0-phase1-auto-integration/spec.md)
 - [Phase 2 可信自动提炼 Spec](specs/015-trusted-memory-distillation/spec.md)
 - [Phase 2 Candidate API 契约](specs/015-trusted-memory-distillation/contracts/candidate-api.md)
+- [Phase 3 Memory 生命周期 Spec](specs/016-memory-lifecycle/spec.md)
+- [Phase 3 Lifecycle API 契约](specs/016-memory-lifecycle/contracts/lifecycle-api.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { addMemory, type Memory, type MemoryKind } from "../memory/memoryStore.js";
+import { getMemory, updateMemory } from "../memory/memoryLifecycleStore.js";
 import {
   candidateReviewReasons,
   hashCandidateContent,
@@ -73,14 +74,9 @@ function selectCandidate(db: Database.Database, projectId: string, id: string): 
   return row ? toCandidate(row as CandidateRow) : undefined;
 }
 
-function findMemory(db: Database.Database, id: string | undefined): Memory | undefined {
+function findMemory(db: Database.Database, projectId: string, id: string | undefined): Memory | undefined {
   if (!id) return undefined;
-  const row = db.prepare(
-    `select id, project_id as projectId, thread_id as threadId, title, kind, content, source,
-            confidence, content_hash as contentHash, importance, created_at as createdAt
-     from memories where id = ?`
-  ).get(id) as (Memory & { threadId: string | null }) | undefined;
-  return row ? { ...row, threadId: row.threadId ?? undefined } : undefined;
+  return getMemory(db, projectId, id);
 }
 
 function findExistingMemoryForCandidate(
@@ -90,9 +86,11 @@ function findExistingMemoryForCandidate(
   contentHash: string
 ): Memory | undefined {
   const row = db.prepare(
-    "select id from memories where project_id = ? and kind = ? and content_hash = ? order by created_at asc, rowid asc limit 1"
+    `select id from memories
+     where project_id = ? and kind = ? and content_hash = ? and status = 'active'
+     order by created_at asc, rowid asc limit 1`
   ).get(projectId, kind, contentHash) as { id: string } | undefined;
-  return findMemory(db, row?.id);
+  return findMemory(db, projectId, row?.id);
 }
 
 function findDuplicate(
@@ -118,7 +116,8 @@ function hasMemoryConflict(
   candidate: NormalizedCandidateInput
 ): boolean {
   const rows = db.prepare(
-    `select title, content_hash from memories where project_id = ? and kind = ? and content_hash <> ?`
+    `select title, content_hash from memories
+     where project_id = ? and kind = ? and content_hash <> ? and status = 'active'`
   ).all(projectId, candidate.kind, candidate.contentHash) as Array<{ title: string; content_hash: string }>;
   const title = normalizeCandidateTitle(candidate.title);
   return rows.some((row) => normalizeCandidateTitle(row.title) === title);
@@ -129,21 +128,41 @@ function resultForExisting(db: Database.Database, candidate: MemoryCandidate): M
     candidate,
     outcome: "duplicate",
     reasons: ["duplicate"],
-    memory: findMemory(db, candidate.acceptedMemoryId)
+    memory: findMemory(db, candidate.projectId, candidate.acceptedMemoryId)
   };
 }
 
-function acceptCandidate(db: Database.Database, candidate: MemoryCandidate, reason?: string): MemoryCandidateResult {
-  const memory = addMemory(db, {
-    projectId: candidate.projectId,
-    threadId: candidate.threadId,
-    title: candidate.title,
-    kind: candidate.kind,
-    content: candidate.content,
-    source: `candidate:${candidate.id}`,
-    confidence: candidate.confidence,
-    importance: Math.max(1, Math.round(candidate.importance * 10))
-  });
+function acceptCandidate(
+  db: Database.Database,
+  candidate: MemoryCandidate,
+  reason?: string,
+  supersedesMemoryId?: string
+): MemoryCandidateResult {
+  const source = `candidate:${candidate.id}`;
+  const memory = supersedesMemoryId
+    ? updateMemory(db, {
+      projectId: candidate.projectId,
+      memoryId: supersedesMemoryId,
+      title: candidate.title,
+      kind: candidate.kind,
+      content: candidate.content,
+      source,
+      confidence: candidate.confidence,
+      importance: Math.max(1, Math.round(candidate.importance * 10)),
+      actor: source,
+      reason
+    })
+    : addMemory(db, {
+      projectId: candidate.projectId,
+      threadId: candidate.threadId,
+      title: candidate.title,
+      kind: candidate.kind,
+      content: candidate.content,
+      source,
+      actor: source,
+      confidence: candidate.confidence,
+      importance: Math.max(1, Math.round(candidate.importance * 10))
+    });
   const reviewedAt = new Date().toISOString();
   db.prepare(
     `update memory_candidates
@@ -264,16 +283,25 @@ export function reviewMemoryCandidate(
   projectId: string,
   candidateId: string,
   decision: "accept" | "reject",
-  reason?: string
+  reason?: string,
+  supersedesMemoryId?: string
 ): MemoryCandidateResult {
   const normalizedReason = reason?.trim();
   if (normalizedReason && normalizedReason.length > 1000) throw new Error("Review reason must be at most 1000 characters");
+  if (decision === "reject" && supersedesMemoryId) {
+    throw new Error("supersedes is only valid when accepting a candidate");
+  }
   return db.transaction((): MemoryCandidateResult => {
     const candidate = selectCandidate(db, projectId, candidateId);
     if (!candidate) throw new Error(`Memory candidate not found: ${candidateId}`);
     if (candidate.status === "accepted") {
       if (decision === "reject") throw new Error(`Memory candidate is already accepted: ${candidateId}`);
-      return { candidate, outcome: "accepted", reasons: [], memory: findMemory(db, candidate.acceptedMemoryId) };
+      return {
+        candidate,
+        outcome: "accepted",
+        reasons: [],
+        memory: findMemory(db, candidate.projectId, candidate.acceptedMemoryId)
+      };
     }
     if (candidate.status === "rejected") {
       if (decision === "accept") throw new Error(`Memory candidate is already rejected: ${candidateId}`);
@@ -288,7 +316,7 @@ export function reviewMemoryCandidate(
       if (!thread.raw_text.includes(candidate.evidence)) {
         throw new Error(`Memory candidate evidence is no longer present; resubmit the candidate: ${candidateId}`);
       }
-      return acceptCandidate(db, candidate, normalizedReason);
+      return acceptCandidate(db, candidate, normalizedReason, supersedesMemoryId);
     }
 
     const reviewedAt = new Date().toISOString();

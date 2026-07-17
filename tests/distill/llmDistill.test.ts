@@ -9,6 +9,7 @@ import {
   parseLlmMemoryCandidates
 } from "../../src/distill/llmDistill.js";
 import { addMemory, searchMemories } from "../../src/memory/memoryStore.js";
+import { getMemory, listMemoryEvents } from "../../src/memory/memoryLifecycleStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 
@@ -140,7 +141,7 @@ describe("LLM distill", () => {
   });
 
 
-  test("applies candidates as the replacement distill output for a thread", () => {
+  test("archives stale memories when applying replacement distill output for a thread", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     saveThread(database, {
@@ -151,7 +152,7 @@ describe("LLM distill", () => {
       rawFormat: "markdown",
       rawText: "# Session"
     });
-    addMemory(database, {
+    const oldMemory = addMemory(database, {
       projectId: project.id,
       threadId: "thread_1",
       title: "Old memory",
@@ -182,6 +183,16 @@ describe("LLM distill", () => {
     ]);
     expect(searchMemories(database, project.id, "stale")).toEqual([]);
     expect(searchMemories(database, project.id, "SQLite")[0]?.memory.title).toBe("Use local SQLite");
+    expect(getMemory(database, project.id, oldMemory.id)?.status).toBe("archived");
+    expect(listMemoryEvents(database, project.id, oldMemory.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "archived",
+          actor: "llm-distill:thread_1",
+          reason: "Replaced by a newer LLM distill result"
+        })
+      ])
+    );
   });
 
   test("keeps old memories when applying an empty candidate list", () => {

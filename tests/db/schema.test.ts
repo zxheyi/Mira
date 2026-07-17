@@ -41,9 +41,10 @@ describe("database schema", () => {
         "integration_cursors",
         "distill_jobs",
         "memory_candidates"
+        ,"memory_events"
       ])
     );
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(3);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(4);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -108,7 +109,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(3);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -157,6 +158,103 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
+  });
+
+  test("upgrades version 3 memories to active lifecycle records", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version values (3, '2026-07-17T00:00:00.000Z');
+      create table projects (id text primary key, name text not null, root_path text not null unique, created_at text not null);
+      create table threads (
+        id text primary key, project_id text not null, title text not null, source text not null,
+        raw_format text not null, raw_text text not null, created_at text not null, updated_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade
+      );
+      create table memories (
+        id text primary key, project_id text not null, thread_id text, title text not null, kind text not null,
+        content text not null, source text not null, confidence real not null, content_hash text not null,
+        importance integer not null, created_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade,
+        foreign key (thread_id) references threads(id) on delete cascade
+      );
+      insert into projects values ('project_v3', 'V3', '/v3', '2026-07-17T00:00:00.000Z');
+      insert into memories values (
+        'memory_v3', 'project_v3', null, 'Existing', 'fact', 'Existing fact', 'manual', 1,
+        'hash-v3', 8, '2026-07-17T00:00:00.000Z'
+      );
+    `);
+
+    migrate(db);
+
+    expect(columnNames(db, "memories")).toEqual(
+      expect.arrayContaining(["status", "supersedes_memory_id", "updated_at"])
+    );
+    expect(db.prepare("select status, updated_at from memories where id = 'memory_v3'").get()).toEqual({
+      status: "active", updated_at: "2026-07-17T00:00:00.000Z"
+    });
+    expect(tableNames(db)).toContain("memory_events");
+    const info = db.prepare("pragma table_info(memories)").all() as Array<{
+      name: string; notnull: number; dflt_value: string | null;
+    }>;
+    expect(info.find((column) => column.name === "status")).toMatchObject({ notnull: 1 });
+    expect(info.find((column) => column.name === "updated_at")).toMatchObject({ notnull: 1 });
+    expect(db.prepare("pragma foreign_key_list(memories)").all()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ from: "supersedes_memory_id", table: "memories" })])
+    );
+    expect(db.prepare("pragma index_list(memories)").all()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "idx_memories_project" }),
+        expect.objectContaining({ name: "idx_memories_project_thread" }),
+        expect.objectContaining({ name: "idx_memories_thread" })
+      ])
+    );
+    expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
+    expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
+    expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
+  });
+
+  test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
+    db = openDatabase(":memory:");
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version values (3, '2026-07-17T00:00:00.000Z');
+      create table projects (id text primary key, name text not null, root_path text not null unique, created_at text not null);
+      create table threads (
+        id text primary key, project_id text not null, title text not null, source text not null,
+        raw_format text not null, raw_text text not null, created_at text not null, updated_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade
+      );
+      create table memories (
+        id text primary key, project_id text not null, thread_id text, title text not null, kind text not null,
+        content text not null, source text not null, confidence real not null, content_hash text not null,
+        importance integer not null, created_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade,
+        foreign key (thread_id) references threads(id) on delete cascade
+      );
+      insert into memories values (
+        'memory_orphan', 'missing_project', null, 'Orphan', 'fact', 'Invalid', 'manual', 1,
+        'hash-orphan', 5, '2026-07-17T00:00:00.000Z'
+      );
+    `);
+    db.pragma("foreign_keys = ON");
+
+    expect(() => migrate(db as Database.Database)).toThrow(/foreign key violation/);
     expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(3);
+    expect(columnNames(db, "memories")).not.toContain("status");
+  });
+
+  test("does not rebuild FTS when an existing v4 database is reopened", () => {
+    db = openDatabase(":memory:");
+    migrate(db);
+    db.prepare("insert into memory_fts (id, project_id, title, content) values (?, ?, ?, ?)")
+      .run("sentinel", "project_sentinel", "Sentinel", "Preserve existing v4 FTS state");
+
+    migrate(db);
+
+    expect(db.prepare("select count(*) from memory_fts where id = 'sentinel'").pluck().get()).toBe(1);
   });
 });

@@ -34,7 +34,11 @@ describe("Mira MCP tools", () => {
       "save_thread",
       "submit_memory_candidates",
       "list_memory_candidates",
-      "review_memory_candidate"
+      "review_memory_candidate",
+      "get_memory",
+      "update_memory",
+      "archive_memory",
+      "get_memory_history"
     ]);
     expect(created.server).toBeDefined();
   });
@@ -50,7 +54,11 @@ describe("Mira MCP tools", () => {
       "save_thread",
       "submit_memory_candidates",
       "list_memory_candidates",
-      "review_memory_candidate"
+      "review_memory_candidate",
+      "get_memory",
+      "update_memory",
+      "archive_memory",
+      "get_memory_history"
     ]);
 
     for (const [toolName, description] of Object.entries(MIRA_MCP_TOOL_DESCRIPTIONS)) {
@@ -240,6 +248,30 @@ describe("Mira MCP tools", () => {
     expect(MIRA_MCP_TOOL_SCHEMAS.submit_memory_candidates.candidates.safeParse(Array.from({ length: 51 }, () => ({}))).success).toBe(false);
     expect(MIRA_MCP_TOOL_SCHEMAS.list_memory_candidates.limit?.safeParse(101).success).toBe(false);
     expect(MIRA_MCP_TOOL_SCHEMAS.review_memory_candidate.decision.safeParse("delete").success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.review_memory_candidate.supersedesMemoryId?.safeParse("").success).toBe(false);
+  });
+
+  test("runs immutable Memory lifecycle through MCP", async () => {
+    const options = await setupMcpOptions();
+    const first = await callMiraTool(options, "add_memory", {
+      title: "Storage", kind: "decision", content: "Use local SQLite.", source: "user-provided-source"
+    }) as { id: string };
+    expect(await callMiraTool(options, "get_memory", { memoryId: first.id }))
+      .toMatchObject({ id: first.id, status: "active" });
+
+    const successor = await callMiraTool(options, "update_memory", {
+      memoryId: first.id,
+      content: "Use lifecycle-aware local SQLite.",
+      reason: "Approved"
+    }) as { id: string; supersedesMemoryId: string };
+    expect(successor.supersedesMemoryId).toBe(first.id);
+    expect(await callMiraTool(options, "get_memory_history", { memoryId: successor.id }))
+      .toMatchObject({ memories: [{ id: first.id }, { id: successor.id }] });
+    expect(await callMiraTool(options, "get_memory_history", { memoryId: first.id }))
+      .toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "accepted", actor: "mcp" })]) });
+    expect(await callMiraTool(options, "archive_memory", { memoryId: successor.id, reason: "Paused" }))
+      .toMatchObject({ status: "archived" });
+    expect(await callMiraTool(options, "search_memory", { query: "lifecycle-aware" })).toEqual([]);
   });
 
   test("filters MCP memory search by kind", async () => {
@@ -317,6 +349,14 @@ describe("Mira MCP tools", () => {
         rawText: "summary"
       })
     ).toThrow(/rawFormat/);
+
+    expect(() =>
+      callMiraTool(options, "review_memory_candidate", {
+        candidateId: "candidate_missing",
+        decision: "reject",
+        supersedesMemoryId: "memory_invalid"
+      })
+    ).toThrow(/supersedes is only valid when accepting/);
   });
 
   test("registered MCP handlers wrap validation errors without throwing", async () => {

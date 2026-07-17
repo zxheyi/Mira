@@ -12,6 +12,7 @@ import {
 } from "../distill/candidateService.js";
 import { CANDIDATE_STATUSES, type MemoryCandidateInput } from "../distill/candidateTypes.js";
 import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
+import { archiveMemory, getMemory, getMemoryHistory, updateMemory } from "../memory/memoryLifecycleStore.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
 import {
@@ -32,7 +33,11 @@ export const MIRA_MCP_TOOL_NAMES = [
   "save_thread",
   "submit_memory_candidates",
   "list_memory_candidates",
-  "review_memory_candidate"
+  "review_memory_candidate",
+  "get_memory",
+  "update_memory",
+  "archive_memory",
+  "get_memory_history"
 ] as const;
 
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
@@ -47,7 +52,11 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object.",
   submit_memory_candidates: "Submit evidence-backed memory candidates after important work; Mira validates provenance and either auto-accepts trusted low-risk items or queues them for review.",
   list_memory_candidates: "List memory candidates for the bound project, optionally filtered by review status; use this to inspect items awaiting human or Agent confirmation.",
-  review_memory_candidate: "Accept or reject one pending memory candidate; acceptance writes a traceable durable Memory while preserving the original evidence and review decision."
+  review_memory_candidate: "Accept or reject one pending memory candidate; only acceptance may provide supersedesMemoryId to create a traceable successor of an active predecessor.",
+  get_memory: "Read one Memory by id including inactive lifecycle state, provenance, predecessor link, and timestamps for audit or update preparation.",
+  update_memory: "Create an immutable active successor and atomically supersede its active predecessor; returns the new Memory without overwriting history.",
+  archive_memory: "Archive one active Memory so it leaves default search and Context Bundle results while remaining available in auditable history.",
+  get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
@@ -114,7 +123,28 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   review_memory_candidate: {
     candidateId: z.string().trim().min(1).max(500),
     decision: z.enum(["accept", "reject"]),
+    reason: z.string().trim().min(1).max(1_000).optional(),
+    supersedesMemoryId: z.string().trim().min(1).max(500).optional()
+  },
+  get_memory: {
+    memoryId: z.string().trim().min(1).max(500)
+  },
+  update_memory: {
+    memoryId: z.string().trim().min(1).max(500),
+    content: z.string().trim().min(1).max(50_000),
+    title: z.string().trim().min(1).max(500).optional(),
+    kind: z.enum(MEMORY_KINDS).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    importance: z.number().int().min(1).max(10).optional(),
+    source: z.string().trim().min(1).max(500).optional(),
     reason: z.string().trim().min(1).max(1_000).optional()
+  },
+  archive_memory: {
+    memoryId: z.string().trim().min(1).max(500),
+    reason: z.string().trim().min(1).max(1_000).optional()
+  },
+  get_memory_history: {
+    memoryId: z.string().trim().min(1).max(500)
   }
 } satisfies Record<MiraMcpToolName, Record<string, z.ZodType>>;
 
@@ -244,6 +274,7 @@ function executeMiraTool(
           kind: memoryKindArg(args, "kind"),
           content: stringArg(args, "content"),
           source: stringArg(args, "source"),
+          actor: "mcp",
           confidence: numberArg(args, "confidence", 1),
           importance: numberArg(args, "importance", 5)
         });
@@ -282,8 +313,33 @@ function executeMiraTool(
           projectId,
           stringArg(args, "candidateId"),
           stringArg(args, "decision") as "accept" | "reject",
-          optionalStringArg(args, "reason")
+          optionalStringArg(args, "reason"),
+          optionalStringArg(args, "supersedesMemoryId")
         );
+      case "get_memory": {
+        const memory = getMemory(db, projectId, stringArg(args, "memoryId"));
+        if (!memory) throw new Error(`Memory not found: ${stringArg(args, "memoryId")}`);
+        return memory;
+      }
+      case "update_memory":
+        return updateMemory(db, {
+          projectId,
+          memoryId: stringArg(args, "memoryId"),
+          content: stringArg(args, "content"),
+          title: optionalStringArg(args, "title"),
+          kind: optionalMemoryKindArg(args, "kind"),
+          confidence: typeof args.confidence === "number" ? args.confidence : undefined,
+          importance: typeof args.importance === "number" ? args.importance : undefined,
+          source: optionalStringArg(args, "source"),
+          actor: "mcp",
+          reason: optionalStringArg(args, "reason")
+        });
+      case "archive_memory":
+        return archiveMemory(
+          db, projectId, stringArg(args, "memoryId"), "mcp", optionalStringArg(args, "reason")
+        );
+      case "get_memory_history":
+        return getMemoryHistory(db, projectId, stringArg(args, "memoryId"));
       default: {
         const exhaustive: never = name;
         throw new Error(`Unsupported MCP tool in executor: ${String(exhaustive)}`);

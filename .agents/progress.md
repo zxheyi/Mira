@@ -15,6 +15,7 @@ Deep Audit Remediation is implemented and locally verified.
 Phase 0 engineering baseline closure is implemented and locally verified.
 Phase 1 automatic Codex / Claude Code session integration is implemented and locally verified, including real-project installation and Hook smoke tests.
 Phase 2 trusted automatic memory distillation is implemented and locally verified.
+Phase 3 auditable Memory lifecycle is implemented, independently reviewed, and locally verified.
 
 Completed:
 
@@ -66,12 +67,25 @@ Completed:
 - Phase 42: Hook async enqueue and detached Worker startup.
 - Phase 43: Candidate/job CLI and candidate MCP tools.
 - Phase 44: Phase 2 documentation and verification.
+- Phase 45: Schema v4 Memory status, successor link and event ledger.
+- Phase 46: Immutable update, archive, restore and history Core APIs.
+- Phase 47: Active-only FTS, list, search and Context behavior.
+- Phase 48: Candidate supersede plus lifecycle CLI/MCP tools.
+- Phase 49: Lifecycle review remediation for strict migrations, active-only uniqueness, candidate provenance and managed distill archival.
+- Phase 50: Explicit privacy hard-delete confirmation, documentation and final verification.
+- Phase 51: Final review remediation for internal successor writes, pre-commit FK validation, trusted actors and v4 startup cost.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
+npm test
+# Test Files 33 passed; Tests 175 passed
+
+npm run build
+# tsc completed successfully
+
 npm test
 # Test Files 31 passed; Tests 158 passed
 
@@ -320,9 +334,9 @@ specs/008-deep-audit-remediation/tasks.md
 
 ## Next Step
 
-1. 进入 Phase 3 记忆生命周期治理：supersedes、状态、归档和事件账本。
+1. 进入 Phase 4 主动 Project Briefing 与上下文规划。
 2. 继续用真实 Codex / Claude Code 会话观察候选质量并校准自动接受策略。
-3. 在不自动污染长期 Memory 的前提下，设计 Working Memory 受控更新策略。
+3. 观察 lifecycle history 的实际可读性，再决定 post-MVP 分支历史需求。
 
 ## Notes For Next Agent
 
@@ -337,6 +351,8 @@ specs/008-deep-audit-remediation/tasks.md
 - Low-risk candidates require confidence >= 0.9 and exact Thread evidence for auto-acceptance; high-impact, low-confidence and conflicting items remain reviewable.
 - Candidate review is bound to a Thread input hash, project-wide duplicate Memory is linked instead of rewritten, and Provider calls preflight common secret patterns.
 - Running distill jobs use a five-minute recovery lease and detached spawn errors are handled without crashing Hook execution.
+- Schema v4 adds active/superseded/archived/rejected states, immutable successor chains and a lifecycle event ledger.
+- Default list/search/context only use active Memory; archive/restore and candidate supersede preserve auditable history.
 - Project-local absolute-path integration configs are protected through a managed `.git/info/exclude` block.
 - Real Mira status reports Codex and Claude Code hooks/MCP installed; SessionStart output, live transcript capture, and static transcript cursor idempotency were smoke-tested with the built CLI.
 - Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.

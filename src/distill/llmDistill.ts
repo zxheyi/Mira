@@ -1,12 +1,12 @@
 import type Database from "better-sqlite3";
 import {
   addMemory,
-  clearMemoriesForThread,
   MEMORY_KINDS,
   type AddMemoryInput,
   type Memory,
   type MemoryKind
 } from "../memory/memoryStore.js";
+import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
 
 type ThreadTextRow = {
   raw_text: string;
@@ -175,7 +175,15 @@ export function applyLlmDistillCandidates(
   }
 
   return db.transaction(() => {
-    clearMemoriesForThread(db, projectId, threadId);
+    archiveStaleMemoriesForThread(
+      db,
+      projectId,
+      threadId,
+      candidates,
+      [`distill:${threadId}`, `llm-distill:${threadId}`],
+      `llm-distill:${threadId}`,
+      "Replaced by a newer LLM distill result"
+    );
 
     return candidates.map((candidate) => {
       const input: AddMemoryInput = {

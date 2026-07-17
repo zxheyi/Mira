@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -21,7 +21,17 @@ export function migrate(db: Database.Database): void {
     );
   }
 
-  db.exec(`
+  const hasLegacyMemories = existingVersion !== undefined && existingVersion < 4 && Boolean(
+    db.prepare("select 1 from sqlite_master where type = 'table' and name = 'memories'").get()
+  );
+  const requiresV4Setup = existingVersion === undefined || existingVersion < 4;
+  const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
+  if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
+
+  try {
+    db.transaction(() => {
+
+  if (requiresV4Setup) db.exec(`
     create table if not exists projects (
       id text primary key,
       name text not null,
@@ -63,17 +73,13 @@ export function migrate(db: Database.Database): void {
       content_hash text not null,
       importance integer not null,
       created_at text not null,
+      status text not null default 'active' check (status in ('active', 'superseded', 'archived', 'rejected')),
+      supersedes_memory_id text,
+      updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       foreign key (project_id) references projects(id) on delete cascade,
-      foreign key (thread_id) references threads(id) on delete cascade
+      foreign key (thread_id) references threads(id) on delete cascade,
+      foreign key (supersedes_memory_id) references memories(id) on delete restrict
     );
-
-    create unique index if not exists memories_thread_content_unique
-      on memories(project_id, thread_id, kind, content_hash)
-      where thread_id is not null;
-
-    create unique index if not exists memories_project_content_unique
-      on memories(project_id, kind, content_hash)
-      where thread_id is null;
 
     create index if not exists idx_memories_project
       on memories(project_id);
@@ -160,6 +166,25 @@ export function migrate(db: Database.Database): void {
     create index if not exists idx_memory_candidates_job
       on memory_candidates(job_id);
 
+    create table if not exists memory_events (
+      id text primary key,
+      memory_id text not null,
+      project_id text not null,
+      event_type text not null check (event_type in ('accepted', 'updated', 'superseded', 'archived', 'rejected', 'restored')),
+      actor text not null check (length(trim(actor)) > 0),
+      reason text,
+      metadata text not null default '{}' check (json_valid(metadata)),
+      created_at text not null,
+      foreign key (memory_id) references memories(id) on delete cascade,
+      foreign key (project_id) references projects(id) on delete cascade
+    );
+
+    create index if not exists idx_memory_events_memory_created
+      on memory_events(memory_id, created_at);
+
+    create index if not exists idx_memory_events_project_created
+      on memory_events(project_id, created_at);
+
     create virtual table if not exists memory_fts using fts5(
       id unindexed,
       project_id unindexed,
@@ -167,32 +192,114 @@ export function migrate(db: Database.Database): void {
       content
     );
 
-    create trigger if not exists memories_after_insert_sync_fts
-    after insert on memories
+  `);
+
+  if (hasLegacyMemories) {
+    db.exec(`
+      drop trigger if exists memories_after_insert_sync_fts;
+      drop trigger if exists memories_after_update_sync_fts;
+      drop trigger if exists memories_after_delete_cleanup_fts;
+
+      create table memories_v4 (
+        id text primary key,
+        project_id text not null,
+        thread_id text,
+        title text not null,
+        kind text not null,
+        content text not null,
+        source text not null,
+        confidence real not null,
+        content_hash text not null,
+        importance integer not null,
+        created_at text not null,
+        status text not null default 'active' check (status in ('active', 'superseded', 'archived', 'rejected')),
+        supersedes_memory_id text,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        foreign key (project_id) references projects(id) on delete cascade,
+        foreign key (thread_id) references threads(id) on delete cascade,
+        foreign key (supersedes_memory_id) references memories_v4(id) on delete restrict
+      );
+
+      insert into memories_v4 (
+        id, project_id, thread_id, title, kind, content, source, confidence, content_hash,
+        importance, created_at, status, supersedes_memory_id, updated_at
+      )
+      select id, project_id, thread_id, title, kind, content, source, confidence, content_hash,
+             importance, created_at, 'active', null, created_at
+      from memories;
+
+      drop table memories;
+      alter table memories_v4 rename to memories;
+    `);
+  }
+
+  if (requiresV4Setup) db.exec(`
+    drop index if exists memories_thread_content_unique;
+    drop index if exists memories_project_content_unique;
+
+    create unique index memories_thread_content_unique
+      on memories(project_id, thread_id, kind, content_hash)
+      where thread_id is not null and status = 'active';
+
+    create unique index memories_project_content_unique
+      on memories(project_id, kind, content_hash)
+      where thread_id is null and status = 'active';
+
+    create index if not exists idx_memories_project
+      on memories(project_id);
+
+    create index if not exists idx_memories_project_thread
+      on memories(project_id, thread_id);
+
+    create index if not exists idx_memories_thread
+      on memories(thread_id);
+
+    create unique index if not exists idx_memories_single_successor
+      on memories(supersedes_memory_id)
+      where supersedes_memory_id is not null;
+
+    drop trigger if exists memories_after_insert_sync_fts;
+    drop trigger if exists memories_after_update_sync_fts;
+    drop trigger if exists memories_after_delete_cleanup_fts;
+
+    create trigger memories_after_insert_sync_fts
+    after insert on memories when new.status = 'active'
     begin
       insert into memory_fts (id, project_id, title, content)
       values (new.id, new.project_id, new.title, new.content);
     end;
 
-    create trigger if not exists memories_after_update_sync_fts
-    after update of project_id, title, content on memories
+    create trigger memories_after_update_sync_fts
+    after update of project_id, title, content, status on memories
     begin
       delete from memory_fts where id = old.id;
       insert into memory_fts (id, project_id, title, content)
-      values (new.id, new.project_id, new.title, new.content);
+      select new.id, new.project_id, new.title, new.content
+      where new.status = 'active';
     end;
 
-    create trigger if not exists memories_after_delete_cleanup_fts
+    create trigger memories_after_delete_cleanup_fts
     after delete on memories
     begin
       delete from memory_fts where id = old.id;
     end;
+
+    delete from memory_fts;
+    insert into memory_fts (id, project_id, title, content)
+      select id, project_id, title, content from memories where status = 'active';
   `);
 
-  if (existingVersion === undefined || existingVersion < CURRENT_SCHEMA_VERSION) {
+  const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
+  if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
+
+  if (requiresV4Setup) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()
     );
+  }
+    })();
+  } finally {
+    if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = ON");
   }
 }

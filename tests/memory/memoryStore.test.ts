@@ -13,6 +13,7 @@ import {
   MEMORY_KINDS,
   searchMemories
 } from "../../src/memory/memoryStore.js";
+import { updateMemory } from "../../src/memory/memoryLifecycleStore.js";
 
 let db: Database.Database | undefined;
 
@@ -404,6 +405,23 @@ describe("memory store", () => {
         importance: 5
       })
     ).toThrow("insert exploded");
+  });
+
+  test("rejects direct re-add of superseded content", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    const predecessor = addMemory(database, {
+      projectId: project.id, title: "Original", kind: "decision", content: "Original decision.",
+      source: "manual", confidence: 1, importance: 8
+    });
+    updateMemory(database, {
+      projectId: project.id, memoryId: predecessor.id, content: "Current decision.", actor: "cli"
+    });
+
+    expect(() => addMemory(database, {
+      projectId: project.id, title: "Original again", kind: "decision", content: predecessor.content,
+      source: "manual", confidence: 1, importance: 8
+    })).toThrow(/already exists with status superseded/);
   });
 
   test("limits search results and lists top memories without loading all rows", () => {
