@@ -361,6 +361,18 @@ export function listMemoriesForProject(db: Database.Database, projectId: string)
     .map((row) => toMemory(row as MemoryRow));
 }
 
+export function listAllMemoriesForProject(db: Database.Database, projectId: string): Memory[] {
+  return db
+    .prepare(
+      `select id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance, created_at, status, supersedes_memory_id, updated_at
+       from memories
+       where project_id = ?
+       order by id asc`
+    )
+    .all(projectId)
+    .map((row) => toMemory(row as MemoryRow));
+}
+
 export function listTopMemoriesForProject(
   db: Database.Database,
   projectId: string,

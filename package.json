@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "pretest": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepare": "tsc && chmod +x dist/src/index.js"

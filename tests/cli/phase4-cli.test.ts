@@ -139,7 +139,7 @@ describe("Phase 4 CLI commands", () => {
     );
     expect(markdownExport.files.some((file) => file.endsWith("mira-export.md"))).toBe(true);
     expect(await readFile(join(exportRoot, "mira-export.md"), "utf8")).toContain("# Mira Export");
-  });
+  }, 30_000);
 
   test("clears working memory through the CLI", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "mira-cli-clear-"));

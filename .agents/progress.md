@@ -17,6 +17,7 @@ Phase 1 automatic Codex / Claude Code session integration is implemented and loc
 Phase 2 trusted automatic memory distillation is implemented and locally verified.
 Phase 3 auditable Memory lifecycle is implemented, independently reviewed, and locally verified.
 Phase 4 proactive Project Briefing and Context Planner are implemented, independently reviewed, and locally verified.
+Phase 5 Obsidian-ready Markdown Vault is implemented and locally verified.
 
 Completed:
 
@@ -79,12 +80,24 @@ Completed:
 - Phase 53: Deterministic Briefing renderer, provenance, versions and failed fallback.
 - Phase 54: Proactive Context Planner with independent warnings and character/token budgets.
 - Phase 55: Briefing CLI/MCP interfaces and Phase 4 documentation.
+- Phase 56: Deterministic full-lifecycle Vault snapshot and Markdown/WikiLink renderer.
+- Phase 57: Staging/backup atomic sync, rollback, path encoding and protected-target guards.
+- Phase 58: Vault CLI, documentation and end-to-end verification.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
+npm test
+# Test Files 37 passed; Tests 193 passed
+
+npm run test -- tests/vault/markdownVault.test.ts tests/cli/vault-cli.test.ts
+# Test Files 2 passed; Tests 6 passed
+
+npm run build
+# tsc completed successfully
+
 npm test
 # Test Files 35 passed; Tests 187 passed
 
@@ -345,9 +358,9 @@ specs/008-deep-audit-remediation/tasks.md
 
 ## Next Step
 
-1. 进入 Phase 5 Obsidian-ready Markdown Vault 展示层。
-2. 继续用真实 Codex / Claude Code 会话观察候选质量并校准自动接受策略。
-3. 观察 Briefing 与 lifecycle history 的实际可读性，再决定 post-MVP 分支历史需求。
+1. 用真实 Codex / Claude Code 会话观察候选质量并校准自动接受策略。
+2. 观察 Briefing、Vault 与 lifecycle history 的实际可读性和审核效率。
+3. 依据真实检索失败样本决定是否进入 hybrid/vector search，而不是预先扩张技术栈。
 
 ## Notes For Next Agent
 
@@ -366,6 +379,9 @@ specs/008-deep-audit-remediation/tasks.md
 - Default list/search/context only use active Memory; archive/restore and candidate supersede preserve auditable history.
 - Schema v5 adds versioned deterministic Project Briefings with exact Memory, Thread and Working Memory provenance.
 - Context Bundle proactively refreshes stale Briefings and budgets Working Memory, Briefing, warnings and relevant Memory in that order.
+- Phase 5 materializes the complete project memory as a deterministic Obsidian-ready Markdown Vault with atomic replacement and rollback.
+- Phase 5 safety review added encoded entity paths, protected project/control targets, rollback backup preservation, and a stable timeout budget for the expanded CLI suite.
+- `npm test` runs `pretest: tsc` first so detached-worker integration tests never execute a stale ignored `dist/` artifact.
 - Project-local absolute-path integration configs are protected through a managed `.git/info/exclude` block.
 - Real Mira status reports Codex and Claude Code hooks/MCP installed; SessionStart output, live transcript capture, and static transcript cursor idempotency were smoke-tested with the built CLI.
 - Audit alignment keeps existing kinds and CLI flags while adding planned kinds and compatibility aliases.

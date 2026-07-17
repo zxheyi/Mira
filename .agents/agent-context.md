@@ -12,7 +12,7 @@ Last updated: 2026-07-17
 - 多轮审计修复已完成，Phase 0 FTS/搜索基线已收口。
 - Phase 1 项目级自动接入已实现：SessionStart 注入上下文，Stop/SessionEnd 捕获真实 transcript。
 - 自动捕获使用 schema v2 持久化检查点；未变化跳过，失败不推进。
-- Phase 2 自动可信提炼尚未实现，Hook 当前不会自动改写长期 Memory 或 Working Memory。
+- Phase 2 可信自动提炼、Phase 3 Memory 生命周期、Phase 4 Project Briefing 与 Phase 5 Markdown Vault 均已实现并验证。
 
 ## 事实源
 
@@ -72,7 +72,9 @@ src/threads/            Thread Store
 src/memory/             Memory Store 与 FTS 搜索
 src/workingMemory/      Working Memory
 src/context/            Context Bundle
+src/briefing/           Project Briefing
 src/distill/            deterministic / reviewed LLM distill
+src/vault/              Obsidian-ready Markdown Vault
 src/importers/          Markdown / JSONL importer
 src/integrations/       Hook、安装器、捕获检查点
 src/mcp/                MCP tools 与 stdio transport
@@ -114,10 +116,10 @@ specs/                  SDD 规格、计划和任务证据
 
 ### 记忆边界
 
-- Hook 当前自动保存 Thread，不自动把 transcript 结论写成长期 Memory。
-- 稳定决策、失败经验和当前状态仍由 Agent 通过 MCP 主动维护。
+- Hook 自动保存 Thread；配置 Provider 后会异步生成证据绑定候选，只有高置信低风险候选自动接受。
+- 高影响、低置信或冲突候选进入审核队列，稳定决策和当前状态仍可由 Agent 通过 MCP 主动维护。
 - `save_thread` 是手动摘要兜底，不应重复保存 Hook 已捕获的完整 transcript。
-- Phase 2 才引入候选生成、审查、去重和受控写回。
+- Markdown Vault 是 SQLite 的单向物化视图，不解析或回写人工编辑。
 
 ## 开发节奏
 
@@ -130,4 +132,4 @@ TDD：写失败测试，确认 RED；最小实现到 GREEN；再重构和扩大�
 
 ## 下一阶段
 
-Phase 2：自动可信提炼。目标是从自动捕获的 Thread 生成结构化 Memory 候选，通过明确的置信度、来源、去重和审查门禁受控写回，并安全更新 Working Memory。
+Phase 2-5 进化路线已完成。下一阶段以真实 Codex / Claude Code 会话验证日常使用质量，重点观察候选准确率、Briefing 可读性、Vault 审核效率和 Context 预算命中率，再用数据决定检索与审核体验的后续投入。

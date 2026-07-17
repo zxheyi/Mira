@@ -73,6 +73,7 @@ import {
   WORKING_MEMORY_KINDS,
   type WorkingMemoryKind
 } from "./workingMemory/workingMemoryStore.js";
+import { syncMarkdownVault } from "./vault/markdownVault.js";
 
 type GlobalOptions = {
   db?: string;
@@ -789,6 +790,21 @@ context
           maxTokens
         })
       );
+    });
+  });
+
+const vault = program.command("vault").description("Materialize the project memory as Markdown");
+
+vault
+  .command("sync")
+  .description("Deterministically rebuild the Obsidian-ready Markdown Vault")
+  .option("--out <path>", "Output directory, relative to the project root")
+  .action(async (options: { out?: string }) => {
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      const outputPath = options.out
+        ? resolve(session.projectRoot, options.out)
+        : join(session.projectRoot, ".mira", "vault");
+      printJson(await syncMarkdownVault(session.db, session.project, outputPath));
     });
   });
 

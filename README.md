@@ -36,6 +36,10 @@ Mira 关注的是项目连续性，不追求成为完整桌面 AI coworker、企
 
 为 Agent 生成的 Markdown 上下文包。它优先包含 Working Memory，再包含与当前项目相关的长期 Memory，便于注入新会话或通过 MCP 返回给 Agent。
 
+### Markdown Vault
+
+SQLite 项目记忆的 Obsidian-ready 只读物化视图。它把 Briefing、Working Memory、全生命周期 Memory、Thread 和待审核候选组织成带 frontmatter 与 WikiLink 的 Markdown 文件，便于人类浏览和审计。
+
 ## MVP 边界
 
 MVP 只做一条闭环：
@@ -56,6 +60,7 @@ MVP 包含：
 - 维护 Working Memory。
 - 使用 SQLite FTS5 搜索项目记忆。
 - 生成短小的 Markdown Context Bundle。
+- 确定性生成可直接用 Obsidian 浏览的 Markdown Vault。
 - 支持 Markdown / JSON 导出，保证本地可审计。
 - 提供 CLI 命令给人类使用。
 - 提供 MCP stdio server 给 Agent 使用。
@@ -148,6 +153,8 @@ mira briefing rebuild
 mira briefing history --limit 20
 mira context bundle --query "Mira"
 mira context bundle --max-tokens 1000
+mira vault sync
+mira vault sync --out ./notes/mira
 mira export --format json --out ./export
 mira export --format markdown --out ./export
 ```
@@ -169,6 +176,8 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 `mira briefing show` 从 Working Memory、active Memory 和 Thread provenance 确定性生成版本化 Project Briefing。Memory 或 Working Memory 变化后，旧快照自动标记 stale；下一次 `briefing show`、MCP 读取或 Context Bundle 会执行一次本地重建。重建失败时继续使用最后一份 complete 快照。Briefing 是可重建派生数据，SQLite 仍是唯一事实源。
 
 Context Bundle 的顺序是 Working Memory、Project Briefing、Warning Memory、相关长期 Memory。`--max-characters` 与 `--max-tokens` 可同时使用，Mira 按 `1 token ≈ 4 characters` 估算并采用更严格的预算。
+
+`mira vault sync` 默认完整重建 `<project>/.mira/vault/`，也可通过 `--out` 指定相对项目根目录或绝对路径。Vault 包含索引、Project Briefing、Working Memory、每条 Memory、每个 Thread 和待审核候选；全生命周期状态、来源和前驱/后继关系均可追溯。同步先写 staging，再原子替换目标，失败会恢复上一版。SQLite 始终是唯一事实源，Vault 中的手动编辑不会回写，并会在下次同步时被覆盖。为保护项目，输出目标不能是项目根目录、其祖先、`.git` 或 `.mira` 控制目录。
 
 Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动一次性 Worker：
 
@@ -278,6 +287,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 3 Lifecycle API 契约](specs/016-memory-lifecycle/contracts/lifecycle-api.md)
 - [Phase 4 Project Briefing Spec](specs/017-project-briefing/spec.md)
 - [Phase 4 Briefing API 契约](specs/017-project-briefing/contracts/briefing-api.md)
+- [Phase 5 Markdown Vault Spec](specs/018-markdown-vault/spec.md)
+- [Phase 5 Vault 布局契约](specs/018-markdown-vault/contracts/vault-layout.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)

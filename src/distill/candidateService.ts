@@ -278,6 +278,16 @@ export function listMemoryCandidates(
   return rows.map((row) => toCandidate(row as CandidateRow));
 }
 
+export function listAllMemoryCandidatesByStatus(
+  db: Database.Database,
+  projectId: string,
+  status: CandidateStatus
+): MemoryCandidate[] {
+  return db.prepare(
+    "select * from memory_candidates where project_id = ? and status = ? order by id asc"
+  ).all(projectId, status).map((row) => toCandidate(row as CandidateRow));
+}
+
 export function reviewMemoryCandidate(
   db: Database.Database,
   projectId: string,
