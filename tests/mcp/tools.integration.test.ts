@@ -26,6 +26,8 @@ describe("Mira MCP tools", () => {
 
     expect(created.toolNames).toEqual([
       "get_context_bundle",
+      "get_project_briefing",
+      "rebuild_project_briefing",
       "search_memory",
       "set_working_memory",
       "list_working_memory",
@@ -46,6 +48,8 @@ describe("Mira MCP tools", () => {
   test("defines precise agent-facing descriptions for every MCP tool", () => {
     expect(Object.keys(MIRA_MCP_TOOL_DESCRIPTIONS)).toEqual([
       "get_context_bundle",
+      "get_project_briefing",
+      "rebuild_project_briefing",
       "search_memory",
       "set_working_memory",
       "list_working_memory",
@@ -118,6 +122,9 @@ describe("Mira MCP tools", () => {
 
   test("limits get_context_bundle query length", () => {
     expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.query?.safeParse("x".repeat(1001)).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.maxTokens?.safeParse(24).success).toBe(false);
+    expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.maxTokens?.safeParse(25).success).toBe(true);
+    expect(MIRA_MCP_TOOL_SCHEMAS.get_context_bundle.maxTokens?.safeParse(250001).success).toBe(false);
   });
 
   test("rejects unsupported MCP tool names", async () => {
@@ -272,6 +279,34 @@ describe("Mira MCP tools", () => {
     expect(await callMiraTool(options, "archive_memory", { memoryId: successor.id, reason: "Paused" }))
       .toMatchObject({ status: "archived" });
     expect(await callMiraTool(options, "search_memory", { query: "lifecycle-aware" })).toEqual([]);
+  });
+
+  test("gets and rebuilds proactive Project Briefings through MCP", async () => {
+    const options = await setupMcpOptions();
+    await callMiraTool(options, "set_working_memory", {
+      kind: "current_task", content: "Expose Briefing through MCP."
+    });
+
+    const first = await callMiraTool(options, "get_project_briefing", {}) as {
+      briefing: { version: number; markdown: string };
+    };
+    expect(first.briefing).toMatchObject({ version: 1 });
+    expect(first.briefing.markdown).toContain("Expose Briefing through MCP.");
+
+    await callMiraTool(options, "set_working_memory", {
+      kind: "next_step", content: "Verify MCP Briefing versions."
+    });
+    const fresh = await callMiraTool(options, "get_project_briefing", {}) as {
+      briefing: { version: number; markdown: string };
+    };
+    expect(fresh.briefing).toMatchObject({ version: 2 });
+    const rebuilt = await callMiraTool(options, "rebuild_project_briefing", {}) as {
+      briefing: { version: number };
+    };
+    expect(rebuilt.briefing.version).toBe(3);
+
+    const bundle = await callMiraTool(options, "get_context_bundle", { maxTokens: 50 }) as string;
+    expect(bundle.length).toBeLessThanOrEqual(200);
   });
 
   test("filters MCP memory search by kind", async () => {

@@ -378,6 +378,24 @@ export function listTopMemoriesForProject(
     .map((row) => toMemory(row as MemoryRow));
 }
 
+export function listTopMemoriesForProjectByKinds(
+  db: Database.Database,
+  projectId: string,
+  kinds: readonly MemoryKind[],
+  limit: number
+): Memory[] {
+  if (kinds.length === 0) return [];
+  const placeholders = kinds.map(() => "?").join(", ");
+  return db.prepare(
+    `select id, project_id, thread_id, title, kind, content, source, confidence, content_hash, importance,
+            created_at, status, supersedes_memory_id, updated_at
+     from memories
+     where project_id = ? and status = 'active' and kind in (${placeholders})
+     order by importance desc, confidence desc, created_at desc, rowid desc
+     limit ?`
+  ).all(projectId, ...kinds, limit).map((row) => toMemory(row as MemoryRow));
+}
+
 export function searchMemories(
   db: Database.Database,
   projectId: string,

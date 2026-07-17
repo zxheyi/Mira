@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type Database from "better-sqlite3";
 import { buildContextBundle } from "../../src/context/contextBundle.js";
+import { listProjectBriefings } from "../../src/briefing/projectBriefingStore.js";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { addMemory } from "../../src/memory/memoryStore.js";
@@ -43,6 +44,8 @@ describe("context bundle", () => {
     const bundle = buildContextBundle(database, project.id, { query: "Mira" });
 
     expect(bundle).toContain("# Mira Context Bundle");
+    expect(bundle.indexOf("## Working Memory")).toBeLessThan(bundle.indexOf("## Project Briefing"));
+    expect(bundle.indexOf("## Project Briefing")).toBeLessThan(bundle.indexOf("## Long-Term Memory"));
     expect(bundle.indexOf("## Working Memory")).toBeLessThan(bundle.indexOf("## Long-Term Memory"));
     expect(bundle).toContain("### current_task");
     expect(bundle).toContain("Implement Working Memory and Context Bundle.");
@@ -152,6 +155,7 @@ describe("context bundle", () => {
     const bundle = buildContextBundle(database, project.id, { query: "Mira unsafe" });
 
     expect(bundle.indexOf("## Warnings")).toBeLessThan(bundle.indexOf("## Long-Term Memory"));
+    expect(bundle.indexOf("## Project Briefing")).toBeLessThan(bundle.indexOf("## Warnings"));
     expect(bundle).toContain("Failed browser import");
     expect(bundle).toContain("Normal note");
   });
@@ -254,5 +258,53 @@ describe("context bundle", () => {
     expect(bundle).toContain("First memory should fit.");
     expect(bundle).not.toContain("Second memory should be skipped");
     expect(bundle).toContain("Some long-term memories were omitted due to maxCharacters.");
+  });
+
+  test("rebuilds a stale Project Briefing while building the next context bundle", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Build Phase 4." });
+
+    const first = buildContextBundle(database, project.id);
+    expect(first).toContain("Build Phase 4.");
+    expect(listProjectBriefings(database, project.id).map((item) => item.version)).toEqual([1]);
+
+    setWorkingMemory(database, { projectId: project.id, kind: "next_step", content: "Verify token budgets." });
+    const second = buildContextBundle(database, project.id);
+    expect(second).toContain("Verify token budgets.");
+    expect(listProjectBriefings(database, project.id).map((item) => item.version)).toEqual([2, 1]);
+    expect(listProjectBriefings(database, project.id)[1]?.staleAt).toEqual(expect.any(String));
+  });
+
+  test("uses the stricter character estimate when maxTokens and maxCharacters are both set", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    setWorkingMemory(database, {
+      projectId: project.id,
+      kind: "current_task",
+      content: "Keep token-budgeted context concise."
+    });
+
+    const bundle = buildContextBundle(database, project.id, { maxTokens: 50, maxCharacters: 500 });
+    expect(bundle.length).toBeLessThanOrEqual(200);
+    expect(bundle).toContain("Keep token-budgeted context concise.");
+    expect(() => buildContextBundle(database, project.id, { maxTokens: 24 })).toThrow(/maxTokens/);
+  });
+
+  test("includes warning Memory independently of the search query", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
+    addMemory(database, {
+      projectId: project.id, title: "Unsafe import", kind: "failed_attempt",
+      content: "Browser credential import is unsafe.", source: "manual", confidence: 1, importance: 8
+    });
+    addMemory(database, {
+      projectId: project.id, title: "SQLite note", kind: "note",
+      content: "SQLite keeps project data local.", source: "manual", confidence: 1, importance: 5
+    });
+
+    const bundle = buildContextBundle(database, project.id, { query: "SQLite" });
+    expect(bundle).toContain("Unsafe import");
+    expect(bundle).toContain("SQLite note");
   });
 });

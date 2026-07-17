@@ -143,7 +143,11 @@ mira working set --kind current_task --content "Continue Phase 4."
 mira working list
 mira working clear --kind blocker
 mira wm list
+mira briefing show
+mira briefing rebuild
+mira briefing history --limit 20
 mira context bundle --query "Mira"
+mira context bundle --max-tokens 1000
 mira export --format json --out ./export
 mira export --format markdown --out ./export
 ```
@@ -161,6 +165,10 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 `mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要，也支持 Codex / Claude Code 的 JSONL transcript。导入后会保存为 Thread；Markdown 未传 `--title` 时优先使用第一个 H1，没有 H1 时使用文件名。JSONL 会被 normalize 成可读 Markdown 后保存，`rawFormat` 保留为 `jsonl`。
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
+
+`mira briefing show` 从 Working Memory、active Memory 和 Thread provenance 确定性生成版本化 Project Briefing。Memory 或 Working Memory 变化后，旧快照自动标记 stale；下一次 `briefing show`、MCP 读取或 Context Bundle 会执行一次本地重建。重建失败时继续使用最后一份 complete 快照。Briefing 是可重建派生数据，SQLite 仍是唯一事实源。
+
+Context Bundle 的顺序是 Working Memory、Project Briefing、Warning Memory、相关长期 Memory。`--max-characters` 与 `--max-tokens` 可同时使用，Mira 按 `1 token ≈ 4 characters` 估算并采用更严格的预算。
 
 Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动一次性 Worker：
 
@@ -235,6 +243,8 @@ Agent 可用工具：
 
 ```text
 get_context_bundle
+get_project_briefing
+rebuild_project_briefing
 search_memory
 set_working_memory
 list_working_memory
@@ -266,6 +276,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 2 Candidate API 契约](specs/015-trusted-memory-distillation/contracts/candidate-api.md)
 - [Phase 3 Memory 生命周期 Spec](specs/016-memory-lifecycle/spec.md)
 - [Phase 3 Lifecycle API 契约](specs/016-memory-lifecycle/contracts/lifecycle-api.md)
+- [Phase 4 Project Briefing Spec](specs/017-project-briefing/spec.md)
+- [Phase 4 Briefing API 契约](specs/017-project-briefing/contracts/briefing-api.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)

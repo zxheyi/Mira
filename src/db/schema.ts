@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -25,6 +25,7 @@ export function migrate(db: Database.Database): void {
     db.prepare("select 1 from sqlite_master where type = 'table' and name = 'memories'").get()
   );
   const requiresV4Setup = existingVersion === undefined || existingVersion < 4;
+  const requiresV5Setup = existingVersion === undefined || existingVersion < 5;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -289,10 +290,88 @@ export function migrate(db: Database.Database): void {
       select id, project_id, title, content from memories where status = 'active';
   `);
 
+  if (requiresV5Setup) db.exec(`
+    create table if not exists project_briefings (
+      id text primary key,
+      project_id text not null,
+      version integer not null check (version > 0),
+      markdown text not null,
+      source_memory_ids text not null default '[]'
+        check (json_valid(source_memory_ids) and json_type(source_memory_ids) = 'array'),
+      source_thread_ids text not null default '[]'
+        check (json_valid(source_thread_ids) and json_type(source_thread_ids) = 'array'),
+      source_working_memory_ids text not null default '[]'
+        check (json_valid(source_working_memory_ids) and json_type(source_working_memory_ids) = 'array'),
+      generation_method text not null check (generation_method in ('deterministic')),
+      character_count integer not null check (character_count >= 0),
+      estimated_tokens integer not null check (estimated_tokens >= 0),
+      status text not null check (status in ('complete', 'failed')),
+      stale_at text,
+      error text,
+      created_at text not null,
+      unique(project_id, version),
+      foreign key (project_id) references projects(id) on delete cascade
+    );
+
+    create index if not exists idx_project_briefings_project_version
+      on project_briefings(project_id, version desc);
+
+    create index if not exists idx_project_briefings_project_status
+      on project_briefings(project_id, status, version desc);
+
+    create trigger if not exists memories_after_insert_stale_briefing
+    after insert on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+    create trigger if not exists memories_after_update_stale_briefing
+    after update on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+    create trigger if not exists memories_after_delete_stale_briefing
+    after delete on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = old.project_id and status = 'complete' and stale_at is null;
+    end;
+
+    create trigger if not exists working_memory_after_insert_stale_briefing
+    after insert on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+    create trigger if not exists working_memory_after_update_stale_briefing
+    after update on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+    create trigger if not exists working_memory_after_delete_stale_briefing
+    after delete on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = old.project_id and status = 'complete' and stale_at is null;
+    end;
+  `);
+
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
 
-  if (requiresV4Setup) {
+  if (requiresV5Setup) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()

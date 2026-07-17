@@ -4,6 +4,11 @@ import type Database from "better-sqlite3";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import {
+  ensureFreshProjectBriefing,
+  listProjectBriefings,
+  rebuildProjectBriefing
+} from "./briefing/projectBriefingStore.js";
 import { buildContextBundle } from "./context/contextBundle.js";
 import { openDatabase } from "./db/client.js";
 import { migrate } from "./db/schema.js";
@@ -722,6 +727,40 @@ registerWorkingCommands(working);
 const wm = program.command("wm").description("Alias for working memory commands");
 registerWorkingCommands(wm);
 
+const briefing = program.command("briefing").description("Manage derived Project Briefings");
+
+briefing
+  .command("show")
+  .description("Show the latest fresh or fallback Project Briefing")
+  .action(async () => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(ensureFreshProjectBriefing(session.db, session.project.id) ?? null);
+    });
+  });
+
+briefing
+  .command("rebuild")
+  .description("Force one deterministic Project Briefing rebuild")
+  .action(async () => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(rebuildProjectBriefing(session.db, session.project.id));
+    });
+  });
+
+briefing
+  .command("history")
+  .description("List Project Briefing versions newest first")
+  .option("--limit <number>", "Maximum Briefing versions", "20")
+  .action(async (options: { limit: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listProjectBriefings(
+        session.db,
+        session.project.id,
+        numberInRange(options.limit, 1, 100, "limit")
+      ));
+    });
+  });
+
 const context = program.command("context").description("Generate agent context");
 
 context
@@ -730,17 +769,24 @@ context
   .option("--query <query>", "Memory search query")
   .option("--memory-limit <number>", "Maximum durable memories", "8")
   .option("--max-characters <number>", "Maximum output characters")
-  .action(async (options: { query?: string; memoryLimit: string; maxCharacters?: string }) => {
+  .option("--max-tokens <number>", "Approximate output token budget")
+  .action(async (options: {
+    query?: string; memoryLimit: string; maxCharacters?: string; maxTokens?: string;
+  }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       const memoryLimit = numberInRange(options.memoryLimit, 1, 50, "memoryLimit");
       const maxCharacters = options.maxCharacters
         ? numberInRange(options.maxCharacters, 1, 1_000_000, "maxCharacters")
         : undefined;
+      const maxTokens = options.maxTokens
+        ? numberInRange(options.maxTokens, 25, 250_000, "maxTokens")
+        : undefined;
       process.stdout.write(
         buildContextBundle(session.db, session.project.id, {
           query: options.query,
           memoryLimit,
-          maxCharacters
+          maxCharacters,
+          maxTokens
         })
       );
     });

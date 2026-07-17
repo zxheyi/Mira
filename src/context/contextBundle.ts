@@ -1,11 +1,18 @@
 import type Database from "better-sqlite3";
-import { listTopMemoriesForProject, searchMemories, type Memory } from "../memory/memoryStore.js";
+import { ensureFreshProjectBriefing } from "../briefing/projectBriefingStore.js";
+import {
+  listTopMemoriesForProject,
+  listTopMemoriesForProjectByKinds,
+  searchMemories,
+  type Memory
+} from "../memory/memoryStore.js";
 import { listWorkingMemory, type WorkingMemory } from "../workingMemory/workingMemoryStore.js";
 
 export type BuildContextBundleOptions = {
   query?: string;
   memoryLimit?: number;
   maxCharacters?: number;
+  maxTokens?: number;
 };
 
 function durableMemories(
@@ -40,6 +47,7 @@ const WORKING_MEMORY_PRIORITY = new Map<string, number>([
 ]);
 
 const WARNING_KINDS = new Set(["failed_attempt", "lesson", "constraint"]);
+const WARNING_MEMORY_KINDS = ["failed_attempt", "lesson", "constraint"] as const;
 
 function sortWorkingMemory(items: WorkingMemory[]): WorkingMemory[] {
   return [...items].sort(
@@ -89,40 +97,83 @@ function pushBudgetedLine(lines: string[], line: string, maxCharacters: number |
   return true;
 }
 
+function contextCharacterBudget(options: BuildContextBundleOptions): number | undefined {
+  if (options.maxTokens !== undefined) {
+    if (!Number.isInteger(options.maxTokens) || options.maxTokens < 25 || options.maxTokens > 250_000) {
+      throw new Error("maxTokens must be an integer between 25 and 250000");
+    }
+  }
+  const tokenCharacters = options.maxTokens === undefined ? undefined : options.maxTokens * 4;
+  if (options.maxCharacters === undefined) return tokenCharacters;
+  if (tokenCharacters === undefined) return options.maxCharacters;
+  return Math.min(options.maxCharacters, tokenCharacters);
+}
+
+function pushBriefing(
+  lines: string[],
+  markdown: string,
+  staleAt: string | undefined,
+  maxCharacters: number | undefined
+): boolean {
+  const block = [
+    "## Project Briefing",
+    ...(staleAt ? [`> Warning: latest complete Briefing is stale since ${staleAt}.`] : []),
+    markdown.trimEnd(),
+    ""
+  ];
+  const candidate = [...lines, ...block].join("\n").trimEnd() + "\n";
+  if (maxCharacters !== undefined && candidate.length > maxCharacters) {
+    return false;
+  }
+  lines.push(...block);
+  return true;
+}
+
 export function buildContextBundle(
   db: Database.Database,
   projectId: string,
   options: BuildContextBundleOptions = {}
 ): string {
+  const maxCharacters = contextCharacterBudget(options);
+  const briefing = ensureFreshProjectBriefing(db, projectId);
   const workingMemory = sortWorkingMemory(listWorkingMemory(db, projectId));
   const memories = durableMemories(db, projectId, options);
-  const warningMemories = memories.filter((memory) => WARNING_KINDS.has(memory.kind));
+  const warningMemories = listTopMemoriesForProjectByKinds(
+    db,
+    projectId,
+    WARNING_MEMORY_KINDS,
+    options.memoryLimit ?? 8
+  );
   const regularMemories = memories.filter((memory) => !WARNING_KINDS.has(memory.kind));
   const lines: string[] = ["# Mira Context Bundle", ""];
 
   lines.push("## Working Memory");
   if (workingMemory.length === 0) {
-    pushBudgetedLine(lines, "No working memory recorded.", options.maxCharacters);
+    pushBudgetedLine(lines, "No working memory recorded.", maxCharacters);
   } else {
     const omitted = pushBudgetedEntries(
       lines,
       workingMemory.map((item) => [`### ${item.kind}`, `- updatedAt: ${item.updatedAt}`, item.content].join("\n")),
-      options.maxCharacters
+      maxCharacters
     );
     if (omitted > 0) {
-      pushBudgetedLine(lines, `Some working memory entries were omitted due to maxCharacters. (${omitted} omitted)`, options.maxCharacters);
+      pushBudgetedLine(lines, `Some working memory entries were omitted due to maxCharacters. (${omitted} omitted)`, maxCharacters);
     }
   }
+
+  const briefingOmitted = briefing
+    ? !pushBriefing(lines, briefing.markdown, briefing.staleAt, maxCharacters)
+    : false;
 
   if (warningMemories.length > 0) {
     lines.push("## Warnings");
     const omitted = pushBudgetedEntries(
       lines,
-      warningMemories.map((memory) => memoryEntry(memory, { includeCreatedAt: !options.maxCharacters })),
-      options.maxCharacters
+      warningMemories.map((memory) => memoryEntry(memory, { includeCreatedAt: !maxCharacters })),
+      maxCharacters
     );
     if (omitted > 0) {
-      pushBudgetedLine(lines, `Some warning memories were omitted due to maxCharacters. (${omitted} omitted)`, options.maxCharacters);
+      pushBudgetedLine(lines, `Some warning memories were omitted due to maxCharacters. (${omitted} omitted)`, maxCharacters);
     }
   }
 
@@ -132,21 +183,25 @@ export function buildContextBundle(
   } else {
     const omitted = pushBudgetedEntries(
       lines,
-      regularMemories.map((memory) => memoryEntry(memory, { includeCreatedAt: !options.maxCharacters })),
-      options.maxCharacters
+      regularMemories.map((memory) => memoryEntry(memory, { includeCreatedAt: !maxCharacters })),
+      maxCharacters
     );
     if (omitted > 0) {
       pushBudgetedLine(
         lines,
         `Some long-term memories were omitted due to maxCharacters. (${omitted} omitted)`,
-        options.maxCharacters
+        maxCharacters
       );
     }
   }
 
+  if (briefingOmitted) {
+    pushBudgetedLine(lines, "Project Briefing omitted due to maxCharacters.", maxCharacters);
+  }
+
   const markdown = lines.join("\n").trimEnd() + "\n";
-  if (options.maxCharacters !== undefined && markdown.length > options.maxCharacters) {
-    return markdown.slice(0, options.maxCharacters);
+  if (maxCharacters !== undefined && markdown.length > maxCharacters) {
+    return markdown.slice(0, maxCharacters);
   }
   return markdown;
 }

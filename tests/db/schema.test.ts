@@ -2,6 +2,9 @@ import { afterEach, describe, expect, test } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
+import { addMemory } from "../../src/memory/memoryStore.js";
+import { createProject } from "../../src/projects/projectStore.js";
+import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
 
 let db: Database.Database | undefined;
 
@@ -44,7 +47,8 @@ describe("database schema", () => {
         ,"memory_events"
       ])
     );
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(4);
+    expect(tableNames(db)).toContain("project_briefings");
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(5);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -109,7 +113,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -158,7 +162,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -213,7 +217,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(4);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -256,5 +260,68 @@ describe("database schema", () => {
     migrate(db);
 
     expect(db.prepare("select count(*) from memory_fts where id = 'sentinel'").pluck().get()).toBe(1);
+  });
+
+  test("upgrades v4 to v5 without rewriting Memory or FTS data", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version values (4, '2026-07-17T00:00:00.000Z');
+      create table projects (id text primary key, name text not null, root_path text not null unique, created_at text not null);
+      create table threads (
+        id text primary key, project_id text not null, title text not null, source text not null,
+        raw_format text not null, raw_text text not null, created_at text not null, updated_at text not null
+      );
+      create table working_memory (
+        id text primary key, project_id text not null, kind text not null, content text not null,
+        updated_at text not null, unique(project_id, kind)
+      );
+      create table memories (
+        id text primary key, project_id text not null, thread_id text, title text not null, kind text not null,
+        content text not null, source text not null, confidence real not null, content_hash text not null,
+        importance integer not null, created_at text not null, status text not null,
+        supersedes_memory_id text, updated_at text not null
+      );
+      create virtual table memory_fts using fts5(id unindexed, project_id unindexed, title, content);
+      insert into projects values ('project_v4', 'V4', '/v4', '2026-07-17T00:00:00.000Z');
+      insert into memories values (
+        'memory_v4', 'project_v4', null, 'Existing V4', 'fact', 'Preserve this V4 fact.',
+        'manual', 1, 'hash-v4', 8, '2026-07-17T00:00:00.000Z', 'active', null, '2026-07-17T00:00:00.000Z'
+      );
+      insert into memory_fts values ('memory_v4', 'project_v4', 'Existing V4', 'Preserve this V4 fact.');
+    `);
+
+    migrate(db);
+
+    expect(db.prepare("select content from memories where id = 'memory_v4'").pluck().get())
+      .toBe("Preserve this V4 fact.");
+    expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
+    expect(tableNames(db)).toContain("project_briefings");
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
+  });
+
+  test("marks complete project briefings stale after Memory or Working Memory changes", () => {
+    db = openDatabase(":memory:");
+    migrate(db);
+    const project = createProject(db, { name: "Mira", rootPath: "/workspace/briefing-stale" });
+    db.prepare(
+      `insert into project_briefings (
+        id, project_id, version, markdown, source_memory_ids, source_thread_ids,
+        source_working_memory_ids, generation_method, character_count, estimated_tokens,
+        status, stale_at, error, created_at
+      ) values (?, ?, 1, '# Briefing', '[]', '[]', '[]', 'deterministic', 10, 3, 'complete', null, null, ?)`
+    ).run("briefing_1", project.id, new Date().toISOString());
+
+    addMemory(db, {
+      projectId: project.id, title: "Decision", kind: "decision", content: "Use SQLite.",
+      source: "manual", confidence: 1, importance: 8
+    });
+    expect(db.prepare("select stale_at from project_briefings where id = 'briefing_1'").pluck().get())
+      .toEqual(expect.any(String));
+
+    db.prepare("update project_briefings set stale_at = null where id = 'briefing_1'").run();
+    setWorkingMemory(db, { projectId: project.id, kind: "blocker", content: "Waiting for review." });
+    expect(db.prepare("select stale_at from project_briefings where id = 'briefing_1'").pluck().get())
+      .toEqual(expect.any(String));
   });
 });

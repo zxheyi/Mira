@@ -2,6 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  ensureFreshProjectBriefing,
+  rebuildProjectBriefing
+} from "../briefing/projectBriefingStore.js";
 import { buildContextBundle } from "../context/contextBundle.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
@@ -25,6 +29,8 @@ import {
 
 export const MIRA_MCP_TOOL_NAMES = [
   "get_context_bundle",
+  "get_project_briefing",
+  "rebuild_project_briefing",
   "search_memory",
   "set_working_memory",
   "list_working_memory",
@@ -43,7 +49,9 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
-  get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory plus relevant long-term memories.",
+  get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory, the latest Project Briefing, warnings, and relevant long-term memories.",
+  get_project_briefing: "Read or deterministically refresh the bound project's latest derived Briefing; returns { briefing } with Markdown, version, provenance ids, stale state, and size estimates.",
+  rebuild_project_briefing: "Force one deterministic rebuild of the bound project's derived Briefing; returns { briefing } while preserving every earlier complete or failed version for audit.",
   search_memory: "Use for targeted historical lookups; defaults to keyword OR matching, supports explicit phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
   set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
@@ -71,8 +79,11 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   get_context_bundle: {
     query: z.string().trim().min(1).max(1_000).optional(),
     memoryLimit: z.number().int().min(1).max(50).optional(),
-    maxCharacters: z.number().int().min(100).max(1_000_000).optional()
+    maxCharacters: z.number().int().min(100).max(1_000_000).optional(),
+    maxTokens: z.number().int().min(25).max(250_000).optional()
   },
+  get_project_briefing: {},
+  rebuild_project_briefing: {},
   search_memory: {
     query: z.string().trim().min(1).max(1_000),
     kind: z.enum(MEMORY_KINDS).optional(),
@@ -247,8 +258,13 @@ function executeMiraTool(
         return buildContextBundle(db, projectId, {
           query: optionalStringArg(args, "query"),
           memoryLimit: numberArg(args, "memoryLimit", 8),
-          maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined
+          maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined,
+          maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : undefined
         });
+      case "get_project_briefing":
+        return { briefing: ensureFreshProjectBriefing(db, projectId) };
+      case "rebuild_project_briefing":
+        return { briefing: rebuildProjectBriefing(db, projectId) };
       case "search_memory":
         return searchMemories(db, projectId, stringArg(args, "query"), {
           kind: optionalMemoryKindArg(args, "kind"),
