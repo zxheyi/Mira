@@ -66,6 +66,7 @@ MVP 包含：
 - 提供 MCP stdio server 给 Agent 使用。
 - 支持 Codex 与 Claude Code 的项目级 Hook/MCP 一键安装。
 - 会话开始自动注入 Context Bundle，会话停止或结束自动保存真实 transcript。
+- 一键扫描并批量导入当前项目的 Codex / Claude Code 历史主会话，支持旧项目路径别名、幂等重跑和失败审计。
 - 提供持久化捕获检查点，避免重复处理未变化 transcript，失败后可在下次 Hook 重试。
 - 提供 Claude Code、Cursor 等接入示例，以及 AGENTS.md 行为引导模板。
 
@@ -129,6 +130,10 @@ mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
+mira history import --dry-run --root-alias /old/path/AnchorMem
+mira history import --root-alias /old/path/AnchorMem --distill --report ./history-import.json
+mira history runs --limit 20
+mira history failures --limit 100
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
 mira thread save --id thread_2 --title "Session File" --source codex --raw-format markdown --file ./session.md
 mira thread delete --id thread_2 --confirm-hard-delete
@@ -170,6 +175,10 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 ```
 
 `mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要，也支持 Codex / Claude Code 的 JSONL transcript。导入后会保存为 Thread；Markdown 未传 `--title` 时优先使用第一个 H1，没有 H1 时使用文件名。JSONL 会被 normalize 成可读 Markdown 后保存，`rawFormat` 保留为 `jsonl`。
+
+`mira history import` 用于补录当前项目的本机历史会话。它扫描 `$CODEX_HOME/sessions`、`$CODEX_HOME/archived_sessions` 与 `$CLAUDE_CONFIG_DIR/projects`，只导入 cwd 等于当前项目或显式 `--root-alias` 的主会话；不会猜测路径，也不会导入 Claude subagent。重复运行会按稳定 Thread ID 与 SHA-256 指纹分类为 `imported`、`updated`、`unchanged`、`skipped` 或 `failed`。默认不调用 LLM，`--distill` 只为新增或更新 Thread 幂等入队 Provider 任务。
+
+首次使用建议先运行 `--dry-run`；如果数据库尚不存在，预览不会创建 `.mira/mira.sqlite`。正式导入始终写入 schema v6 审计批次，单文件失败不会阻断其他文件；命令仍输出完整汇总并返回退出码 `2`，可用 `history failures` 查看路径、阶段与脱敏原因。批次级启动或迁移失败返回 `1`。
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
 
@@ -289,6 +298,8 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 4 Briefing API 契约](specs/017-project-briefing/contracts/briefing-api.md)
 - [Phase 5 Markdown Vault Spec](specs/018-markdown-vault/spec.md)
 - [Phase 5 Vault 布局契约](specs/018-markdown-vault/contracts/vault-layout.md)
+- [历史会话批量导入 Spec](specs/019-history-bulk-import/spec.md)
+- [历史会话批量导入设计](docs/superpowers/specs/2026-07-20-mira-history-bulk-import-design.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)
 - [Mira Agent Context](.agents/agent-context.md)

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -26,6 +26,7 @@ export function migrate(db: Database.Database): void {
   );
   const requiresV4Setup = existingVersion === undefined || existingVersion < 4;
   const requiresV5Setup = existingVersion === undefined || existingVersion < 5;
+  const requiresV6Setup = existingVersion === undefined || existingVersion < 6;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -368,10 +369,64 @@ export function migrate(db: Database.Database): void {
     end;
   `);
 
+  if (requiresV6Setup) db.exec(`
+    create table if not exists history_import_runs (
+      id text primary key,
+      project_id text not null,
+      status text not null
+        check (status in ('running', 'completed', 'completed_with_errors', 'failed', 'interrupted')),
+      agents text not null
+        check (json_valid(agents) and json_type(agents) = 'array'),
+      root_aliases text not null default '[]'
+        check (json_valid(root_aliases) and json_type(root_aliases) = 'array'),
+      options text not null default '{}'
+        check (json_valid(options) and json_type(options) = 'object'),
+      scanned_count integer not null default 0 check (scanned_count >= 0),
+      imported_count integer not null default 0 check (imported_count >= 0),
+      updated_count integer not null default 0 check (updated_count >= 0),
+      unchanged_count integer not null default 0 check (unchanged_count >= 0),
+      skipped_count integer not null default 0 check (skipped_count >= 0),
+      failed_count integer not null default 0 check (failed_count >= 0),
+      started_at text not null,
+      finished_at text,
+      error text,
+      foreign key (project_id) references projects(id) on delete cascade
+    );
+
+    create index if not exists idx_history_import_runs_project_started
+      on history_import_runs(project_id, started_at desc);
+
+    create table if not exists history_import_items (
+      id text primary key,
+      run_id text not null,
+      agent text not null check (agent in ('codex', 'claude-code')),
+      session_id text,
+      file_path text not null,
+      recorded_cwd text,
+      fingerprint text,
+      outcome text not null check (outcome in ('imported', 'updated', 'unchanged', 'skipped', 'failed')),
+      thread_id text,
+      distill_status text not null
+        check (distill_status in ('not_requested', 'not_applicable', 'queued', 'failed')),
+      error_stage text,
+      error_reason text,
+      created_at text not null,
+      unique(run_id, file_path),
+      foreign key (run_id) references history_import_runs(id) on delete cascade,
+      foreign key (thread_id) references threads(id) on delete set null
+    );
+
+    create index if not exists idx_history_import_items_run_outcome
+      on history_import_items(run_id, outcome, created_at);
+
+    create index if not exists idx_history_import_items_thread
+      on history_import_items(thread_id);
+  `);
+
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
 
-  if (requiresV5Setup) {
+  if (requiresV6Setup) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()

@@ -44,11 +44,13 @@ describe("database schema", () => {
         "integration_cursors",
         "distill_jobs",
         "memory_candidates"
-        ,"memory_events"
+        ,"memory_events",
+        "history_import_runs",
+        "history_import_items"
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(5);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(6);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -113,7 +115,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -162,7 +164,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -217,7 +219,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -297,7 +299,40 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(5);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+  });
+
+  test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version values (5, '2026-07-20T00:00:00.000Z');
+      create table projects (
+        id text primary key, name text not null, root_path text not null unique, created_at text not null
+      );
+      create table threads (
+        id text primary key, project_id text not null, title text not null, source text not null,
+        raw_format text not null, raw_text text not null, created_at text not null, updated_at text not null,
+        foreign key (project_id) references projects(id) on delete cascade
+      );
+      insert into projects values ('project_v5', 'Mira', '/workspace/Mira', '2026-07-20T00:00:00.000Z');
+      insert into threads values (
+        'thread_v5', 'project_v5', 'Existing', 'codex', 'jsonl', 'Keep me',
+        '2026-07-20T00:00:00.000Z', '2026-07-20T00:00:00.000Z'
+      );
+    `);
+
+    migrate(db);
+
+    expect(db.prepare("select raw_text from threads where id = 'thread_v5'").pluck().get()).toBe("Keep me");
+    expect(columnNames(db, "history_import_runs")).toEqual(expect.arrayContaining([
+      "project_id", "status", "agents", "root_aliases", "options", "failed_count", "started_at", "finished_at"
+    ]));
+    expect(columnNames(db, "history_import_items")).toEqual(expect.arrayContaining([
+      "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
+      "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
+    ]));
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

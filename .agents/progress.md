@@ -1,6 +1,6 @@
 # Mira Progress
 
-Last updated: 2026-07-17
+Last updated: 2026-07-20
 
 ## Current Status
 
@@ -18,6 +18,7 @@ Phase 2 trusted automatic memory distillation is implemented and locally verifie
 Phase 3 auditable Memory lifecycle is implemented, independently reviewed, and locally verified.
 Phase 4 proactive Project Briefing and Context Planner are implemented, independently reviewed, and locally verified.
 Phase 5 Obsidian-ready Markdown Vault is implemented and locally verified.
+Current-project Codex / Claude Code history bulk import is implemented and locally verified, including a real no-write dry-run.
 
 Completed:
 
@@ -83,12 +84,23 @@ Completed:
 - Phase 56: Deterministic full-lifecycle Vault snapshot and Markdown/WikiLink renderer.
 - Phase 57: Staging/backup atomic sync, rollback, path encoding and protected-target guards.
 - Phase 58: Vault CLI, documentation and end-to-end verification.
+- Phase 59: Schema v6 history import audit, Codex/Claude scanners, project aliases, idempotent bulk service, dry-run, report and CLI failure tracking.
 
 ## Verification Evidence
 
 Latest verified commands:
 
 ```bash
+npm test
+# Test Files 44 passed; Tests 212 passed
+
+npm run build
+# tsc completed successfully
+
+mira history import --dry-run --root-alias /Users/limaolin/Desktop/AnchorMem
+# scanned 487; imported 18; updated 1; skipped 468; failed 0
+# Claude subagent paths 0; real database hash/mtime/size unchanged
+
 npm test
 # Test Files 37 passed; Tests 193 passed
 
@@ -381,6 +393,7 @@ specs/008-deep-audit-remediation/tasks.md
 - Context Bundle proactively refreshes stale Briefings and budgets Working Memory, Briefing, warnings and relevant Memory in that order.
 - Phase 5 materializes the complete project memory as a deterministic Obsidian-ready Markdown Vault with atomic replacement and rollback.
 - Phase 5 safety review added encoded entity paths, protected project/control targets, rollback backup preservation, and a stable timeout budget for the expanded CLI suite.
+- Schema v6 adds auditable history import runs/items. `history import` scans Codex and Claude Code main sessions, matches only the current root or explicit aliases, shares Hook Thread IDs, continues after file failures, supports no-write dry-run and optionally queues changed Threads for distillation.
 - `npm test` runs `pretest: tsc` first so detached-worker integration tests never execute a stale ignored `dist/` artifact.
 - Project-local absolute-path integration configs are protected through a managed `.git/info/exclude` block.
 - Real Mira status reports Codex and Claude Code hooks/MCP installed; SessionStart output, live transcript capture, and static transcript cursor idempotency were smoke-tested with the built CLI.

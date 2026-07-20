@@ -88,6 +88,18 @@ export function listThreadsForProject(db: Database.Database, projectId: string):
     .map((row) => toThread(row as ThreadRow));
 }
 
+export function getThread(
+  db: Database.Database,
+  projectId: string,
+  threadId: string
+): Thread | undefined {
+  const row = db.prepare(
+    `select id, project_id, title, source, raw_format, raw_text, created_at, updated_at
+     from threads where project_id = ? and id = ?`
+  ).get(projectId, threadId) as ThreadRow | undefined;
+  return row ? toThread(row) : undefined;
+}
+
 export function deleteThread(db: Database.Database, projectId: string, threadId: string): void {
   db.prepare("delete from threads where project_id = ? and id = ?").run(projectId, threadId);
 }

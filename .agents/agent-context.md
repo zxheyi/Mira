@@ -1,6 +1,6 @@
 # Mira Agent Context
 
-Last updated: 2026-07-17
+Last updated: 2026-07-20
 
 本文件是开发 Agent 接手 Mira 时的项目入口卡片。Mira 是面向 Codex、Claude Code 等编程 Agent 的本地优先项目记忆层，不是通用 AI 工作台。
 
@@ -13,6 +13,7 @@ Last updated: 2026-07-17
 - Phase 1 项目级自动接入已实现：SessionStart 注入上下文，Stop/SessionEnd 捕获真实 transcript。
 - 自动捕获使用 schema v2 持久化检查点；未变化跳过，失败不推进。
 - Phase 2 可信自动提炼、Phase 3 Memory 生命周期、Phase 4 Project Briefing 与 Phase 5 Markdown Vault 均已实现并验证。
+- 当前项目历史会话批量导入已实现：支持 Codex/Claude Code 扫描、旧根路径别名、幂等分类、schema v6 审计、dry-run、失败查询和可选提炼入队。
 
 ## 事实源
 
@@ -77,6 +78,7 @@ src/distill/            deterministic / reviewed LLM distill
 src/vault/              Obsidian-ready Markdown Vault
 src/importers/          Markdown / JSONL importer
 src/integrations/       Hook、安装器、捕获检查点
+src/history/            历史扫描、项目匹配、批量导入、审计与报告
 src/mcp/                MCP tools 与 stdio transport
 tests/                  单元、集成和 CLI 端到端测试
 specs/                  SDD 规格、计划和任务证据
@@ -107,6 +109,14 @@ specs/                  SDD 规格、计划和任务证据
 - `integration_cursors` 以 project + agent + session 为唯一键。
 - 捕获失败默认不阻塞宿主 Agent，日志不含 transcript 正文。
 
+### 历史批量导入
+
+- `history import` 只导入当前根目录和显式 `--root-alias` 对应的主会话。
+- Codex 包含 sessions 与 archived_sessions；Claude Code 只扫描项目目录直接子文件，排除 subagents 与越界符号链接。
+- 历史导入与 Hook 共享 `stableThreadId`，同一 Agent session 落到同一 Thread。
+- 正式导入在 schema v6 中记录 run/item 审计；单文件失败继续，失败原因脱敏并限长。
+- `--distill` 只为 imported/updated Thread 入队；`--dry-run` 不写 Thread、cursor、job 或 audit，首次运行不创建数据库。
+
 ### 配置安装
 
 - `integration install` 原子合并用户配置，重复执行幂等。
@@ -132,4 +142,4 @@ TDD：写失败测试，确认 RED；最小实现到 GREEN；再重构和扩大�
 
 ## 下一阶段
 
-Phase 2-5 进化路线已完成。下一阶段以真实 Codex / Claude Code 会话验证日常使用质量，重点观察候选准确率、Briefing 可读性、Vault 审核效率和 Context 预算命中率，再用数据决定检索与审核体验的后续投入。
+下一阶段以真实历史批量导入和日常 Hook 会话共同验证使用质量，重点观察失败分布、候选准确率、Briefing 可读性、Vault 审核效率和 Context 预算命中率，再用数据决定检索与审核体验的后续投入。

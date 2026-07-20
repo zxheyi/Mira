@@ -1,0 +1,154 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+import type Database from "better-sqlite3";
+import { openDatabase } from "../../src/db/client.js";
+import { migrate } from "../../src/db/schema.js";
+import { importProjectHistory } from "../../src/history/historyImportService.js";
+import type { HistorySessionCandidate } from "../../src/history/historyTypes.js";
+import { createProject } from "../../src/projects/projectStore.js";
+import { listThreadsForProject } from "../../src/threads/threadStore.js";
+
+let db: Database.Database | undefined;
+afterEach(() => { db?.close(); db = undefined; });
+
+function codexTranscript(sessionId: string, cwd: string, message: string): string {
+  return [
+    JSON.stringify({ type: "session_meta", payload: { id: sessionId, cwd } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: message }] }
+    })
+  ].join("\n");
+}
+
+async function candidate(
+  filePath: string,
+  input: Partial<HistorySessionCandidate> & Pick<HistorySessionCandidate, "agent">
+): Promise<HistorySessionCandidate> {
+  return {
+    filePath,
+    size: 1,
+    mtimeMs: 1,
+    ...input
+  };
+}
+
+async function setup() {
+  const root = await mkdtemp(join(tmpdir(), "mira-history-service-"));
+  db = openDatabase(":memory:");
+  migrate(db);
+  const project = createProject(db, { name: "Mira", rootPath: root });
+  return { root, database: db, project };
+}
+
+describe("history import service", () => {
+  test("classifies all outcomes and continues after one matched transcript fails", async () => {
+    const { root, database, project } = await setup();
+    const oldRoot = join(root, "..", "AnchorMem");
+    const good = join(root, "01-good.jsonl");
+    const alias = join(root, "02-alias.jsonl");
+    const malformed = join(root, "03-malformed.jsonl");
+    const afterFailure = join(root, "04-after.jsonl");
+    await writeFile(good, codexTranscript("good", root, "Good session."));
+    await writeFile(alias, codexTranscript("alias", oldRoot, "Old path session."));
+    await writeFile(malformed, codexTranscript("bad", root, "Before bad line.") + "\n{bad json");
+    await writeFile(afterFailure, codexTranscript("after", root, "Continue after failure."));
+    const candidates = [
+      await candidate(good, { agent: "codex", sessionId: "good", cwd: root }),
+      await candidate(alias, { agent: "codex", sessionId: "alias", cwd: oldRoot }),
+      await candidate(join(root, "foreign.jsonl"), {
+        agent: "codex", sessionId: "foreign", cwd: "/another/project"
+      }),
+      await candidate(join(root, "metadata.jsonl"), {
+        agent: "claude-code", metadataError: "Claude session metadata is missing sessionId or cwd"
+      }),
+      await candidate(join(root, "scan-error.jsonl"), {
+        agent: "codex", discoveryError: "file disappeared during metadata scan"
+      }),
+      await candidate(malformed, { agent: "codex", sessionId: "bad", cwd: root }),
+      await candidate(afterFailure, { agent: "codex", sessionId: "after", cwd: root })
+    ];
+
+    const report = await importProjectHistory({
+      db: database, project, projectRoot: root, agents: ["codex", "claude-code"],
+      rootAliases: [oldRoot], distill: false, dryRun: false,
+      scan: async () => candidates
+    });
+
+    expect(report.counts).toEqual({
+      scanned: 7, imported: 3, updated: 0, unchanged: 0, skipped: 2, failed: 2
+    });
+    expect(report.status).toBe("completed_with_errors");
+    expect(report.items.map((item) => item.filePath)).toEqual(
+      [...candidates.map((item) => item.filePath)].sort()
+    );
+    expect(report.items.find((item) => item.filePath === malformed)).toMatchObject({
+      outcome: "failed", errorStage: "parse", errorReason: expect.stringContaining("line 3")
+    });
+    expect(listThreadsForProject(database, project.id).map((thread) => thread.id)).toEqual([
+      "thread_codex_good", "thread_codex_alias", "thread_codex_after"
+    ]);
+    expect(database.prepare("select count(*) from history_import_items").pluck().get()).toBe(7);
+  });
+
+  test("is idempotent, updates changed sessions, syncs cursor, and queues only changed content", async () => {
+    const { root, database, project } = await setup();
+    const path = join(root, "session.jsonl");
+    await writeFile(path, codexTranscript("repeat", root, "Version one."));
+    const scan = async () => [await candidate(path, {
+      agent: "codex", sessionId: "repeat", cwd: root, size: 100, mtimeMs: 10
+    })];
+    const options = {
+      db: database, project, projectRoot: root, agents: ["codex"] as const,
+      rootAliases: [], distill: true, dryRun: false, scan
+    };
+
+    const first = await importProjectHistory(options);
+    const second = await importProjectHistory(options);
+    await writeFile(path, codexTranscript("repeat", root, "Version two."));
+    const third = await importProjectHistory(options);
+
+    expect(first.items[0]).toMatchObject({
+      outcome: "imported", threadId: "thread_codex_repeat", distillStatus: "queued"
+    });
+    expect(second.items[0]).toMatchObject({ outcome: "unchanged", distillStatus: "not_applicable" });
+    expect(third.items[0]).toMatchObject({ outcome: "updated", distillStatus: "queued" });
+    expect(database.prepare("select count(*) from threads").pluck().get()).toBe(1);
+    expect(database.prepare("select count(*) from integration_cursors").pluck().get()).toBe(1);
+    expect(database.prepare("select count(*) from distill_jobs").pluck().get()).toBe(2);
+  });
+
+  test("dry-run parses and classifies without writing domain or audit rows", async () => {
+    const { root, database, project } = await setup();
+    const path = join(root, "dry.jsonl");
+    await writeFile(path, codexTranscript("dry", root, "Preview only."));
+
+    const report = await importProjectHistory({
+      db: database, project, projectRoot: root, agents: ["codex"], rootAliases: [],
+      distill: true, dryRun: true,
+      scan: async () => [await candidate(path, { agent: "codex", sessionId: "dry", cwd: root })]
+    });
+
+    expect(report).toMatchObject({
+      dryRun: true, runId: undefined, counts: { imported: 1, failed: 0 }
+    });
+    for (const table of ["threads", "integration_cursors", "distill_jobs", "history_import_runs", "history_import_items"]) {
+      expect(database.prepare(`select count(*) from ${table}`).pluck().get()).toBe(0);
+    }
+  });
+
+  test("marks a formal run failed when scanning cannot start", async () => {
+    const { root, database, project } = await setup();
+
+    await expect(importProjectHistory({
+      db: database, project, projectRoot: root, agents: ["codex"], rootAliases: [],
+      dryRun: false, distill: false, scan: async () => { throw new Error("history home unreadable"); }
+    })).rejects.toThrow("history home unreadable");
+
+    expect(database.prepare("select status, error from history_import_runs").get()).toEqual({
+      status: "failed", error: "history home unreadable"
+    });
+  });
+});

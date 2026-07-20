@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import type Database from "better-sqlite3";
-import { readFile } from "node:fs/promises";
+import Database from "better-sqlite3";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -38,6 +39,14 @@ import {
 } from "./distill/openAiCompatibleProvider.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
+import { importProjectHistory } from "./history/historyImportService.js";
+import {
+  listHistoryImportFailures,
+  listHistoryImportRuns,
+  sanitizeHistoryImportError
+} from "./history/historyImportStore.js";
+import { writeHistoryImportReport } from "./history/historyReport.js";
+import type { HistoryAgent } from "./history/historyTypes.js";
 import {
   getIntegrationStatus,
   installAgentIntegration,
@@ -141,6 +150,51 @@ async function withProject<T>(
   });
 }
 
+async function withHistoryProject<T>(
+  options: GlobalOptions,
+  dryRun: boolean,
+  run: (session: ProjectSession) => Promise<T> | T
+): Promise<T> {
+  if (!dryRun) return withProject(options, run);
+
+  const projectRoot = await resolveProjectRoot(options);
+  const dbPath = resolveDbPath(projectRoot, options);
+  try {
+    await access(dbPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const db = openDatabase(":memory:");
+    try {
+      migrate(db);
+      const project = ensureProjectForRoot(db, projectRoot);
+      return await run({ db, dbPath, projectRoot, project });
+    } finally {
+      db.close();
+    }
+  }
+
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "mira-history-dry-run-"));
+  const snapshotPath = join(temporaryRoot, "mira.sqlite");
+  let source: Database.Database | undefined;
+  try {
+    source = new Database(dbPath, { readonly: true, fileMustExist: true });
+    await source.backup(snapshotPath);
+    source.close();
+    source = undefined;
+
+    const db = openMigratedDatabase(snapshotPath);
+    try {
+      const project = ensureProjectForRoot(db, projectRoot);
+      return await run({ db, dbPath, projectRoot, project });
+    } finally {
+      db.close();
+    }
+  } finally {
+    source?.close();
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 function requireNonEmpty(value: string | undefined, label: string): string {
   if (value === undefined || !value.trim()) {
     throw new Error(`${label} is required`);
@@ -170,6 +224,24 @@ function requireWorkingMemoryKind(kind: string): WorkingMemoryKind {
     );
   }
   return kind as WorkingMemoryKind;
+}
+
+function requireHistoryAgents(agent: string): HistoryAgent[] {
+  if (agent === "all") return ["codex", "claude-code"];
+  if (agent === "codex" || agent === "claude-code") return [agent];
+  throw new Error("History agent must be all, codex, or claude-code");
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function integerInRange(value: string, min: number, max: number, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label} must be an integer from ${min} to ${max}`);
+  }
+  return parsed;
 }
 
 function requireDistillJobStatus(status: string): DistillJobStatus {
@@ -905,6 +977,77 @@ program
 
     await withProject(program.opts<GlobalOptions>(), async (session) => {
       printJson(await exportProject(session.db, session.project.id, options.format, options.out));
+    });
+  });
+
+const history = program.command("history").description("Scan and import local coding-agent history");
+
+history
+  .command("import")
+  .description("Import Codex and Claude Code history belonging to the current project")
+  .option("--agent <agent>", "History source: all, codex, or claude-code", "all")
+  .option("--root-alias <path>", "Explicit historical project root; repeat for multiple aliases", collectOption, [])
+  .option("--dry-run", "Scan, parse, and classify without writing Mira data")
+  .option("--distill", "Queue provider distillation for imported or updated threads")
+  .option("--report <file>", "Atomically write the complete JSON report")
+  .action(async (options: {
+    agent: string; rootAlias: string[]; dryRun?: boolean; distill?: boolean; report?: string;
+  }) => {
+    await withHistoryProject(program.opts<GlobalOptions>(), Boolean(options.dryRun), async (session) => {
+      const report = await importProjectHistory({
+        db: session.db,
+        project: session.project,
+        projectRoot: session.projectRoot,
+        agents: requireHistoryAgents(options.agent),
+        rootAliases: options.rootAlias,
+        dryRun: options.dryRun,
+        distill: options.distill
+      });
+      let reportWriteFailed = false;
+      if (options.report) {
+        try {
+          await writeHistoryImportReport(report, options.report);
+        } catch (error) {
+          reportWriteFailed = true;
+          console.error(`History report write failed: ${sanitizeHistoryImportError(error)}`);
+        }
+      }
+      printJson(report);
+      if (
+        reportWriteFailed ||
+        report.counts.failed > 0 ||
+        report.items.some((item) => item.distillStatus === "failed")
+      ) {
+        process.exitCode = 2;
+      }
+    });
+  });
+
+history
+  .command("runs")
+  .description("List history import audit runs for the current project")
+  .option("--limit <n>", "Maximum runs to return", "20")
+  .action(async (options: { limit: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listHistoryImportRuns(
+        session.db,
+        session.project.id,
+        integerInRange(options.limit, 1, 100, "History run limit")
+      ));
+    });
+  });
+
+history
+  .command("failures")
+  .description("List file import and distillation enqueue failures")
+  .option("--run <run-id>", "Limit failures to one audit run")
+  .option("--limit <n>", "Maximum failures to return", "100")
+  .action(async (options: { run?: string; limit: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listHistoryImportFailures(session.db, session.project.id, {
+        runId: options.run,
+        limit: integerInRange(options.limit, 1, 500, "History failure limit")
+      }));
     });
   });
 

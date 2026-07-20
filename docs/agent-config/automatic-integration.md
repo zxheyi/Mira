@@ -36,6 +36,29 @@ mira --project-root /absolute/project integration status
 
 Mira 只接受 Hook 明确提供、位于官方会话目录中的 `.jsonl` transcript，并要求 Hook `cwd` 位于绑定项目内。它不会扫描浏览器、凭据目录、子 Agent 目录或其他项目。
 
+## 批量补录历史会话
+
+Hook 负责接入安装后的新会话；已有历史记录可通过同一套稳定 Thread ID 一次性补录：
+
+```bash
+mira --project-root /absolute/project history import --dry-run
+mira --project-root /absolute/project history import \
+  --root-alias /old/project/path \
+  --report ./history-import.json
+```
+
+Codex 扫描 `$CODEX_HOME/sessions/**/*.jsonl` 与 `archived_sessions/**/*.jsonl`；Claude Code 扫描 `$CLAUDE_CONFIG_DIR/projects/*/*.jsonl`，不进入 `subagents/`。Mira 只接受 transcript 记录的 cwd 等于当前项目或显式旧路径别名，不做模糊匹配。旧路径可以已不存在，别名只对当前命令生效。
+
+默认只保存 Thread，不调用 Provider。加 `--distill` 时也只为新增或更新 Thread 创建幂等任务，不同步等待网络。正式导入会持续处理到末尾；存在单文件或提炼入队失败时返回 `2`：
+
+```bash
+mira --project-root /absolute/project history runs --limit 20
+mira --project-root /absolute/project history failures --limit 100
+mira --project-root /absolute/project history failures --run history_run_123
+```
+
+失败记录只包含 Agent、session ID、路径、阶段与最多 1000 字符的脱敏原因，不保存失败 transcript 正文、提示词或工具参数。首次 `--dry-run` 在数据库不存在时使用内存数据库，不会创建项目数据库。
+
 ## 可选可信自动提炼
 
 默认安装不调用外部模型。需要 Provider 自动提炼时，为启动 Agent 的环境设置：

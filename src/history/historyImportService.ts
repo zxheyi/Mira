@@ -1,0 +1,271 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import type Database from "better-sqlite3";
+import { normalizeJsonlSession } from "../importers/agentSessionImporter.js";
+import { enqueueDistillJob } from "../distill/distillJobStore.js";
+import { saveCaptureCursor } from "../integrations/captureCursorStore.js";
+import { stableThreadId } from "../integrations/threadIdentity.js";
+import type { Project } from "../projects/projectStore.js";
+import { getThread, saveThread } from "../threads/threadStore.js";
+import { scanClaudeHistory } from "./claudeHistoryScanner.js";
+import { scanCodexHistory } from "./codexHistoryScanner.js";
+import {
+  createHistoryImportRun,
+  failHistoryImportRun,
+  findLatestHistoryImportItem,
+  finishHistoryImportRun,
+  recordHistoryImportItem,
+  sanitizeHistoryImportError
+} from "./historyImportStore.js";
+import { createProjectMatcher, normalizeProjectPath } from "./projectMatcher.js";
+import type {
+  HistoryAgent,
+  HistoryDistillStatus,
+  HistoryImportCounts,
+  HistoryImportErrorStage,
+  HistoryImportItem,
+  HistoryImportOutcome,
+  HistoryImportReport,
+  HistorySessionCandidate
+} from "./historyTypes.js";
+
+export type ImportProjectHistoryOptions = {
+  db: Database.Database;
+  project: Project;
+  projectRoot: string;
+  agents: readonly HistoryAgent[];
+  rootAliases?: string[];
+  dryRun?: boolean;
+  distill?: boolean;
+  codexHome?: string;
+  claudeConfigDir?: string;
+  scan?: (agents: readonly HistoryAgent[]) => Promise<HistorySessionCandidate[]>;
+};
+
+function emptyCounts(): HistoryImportCounts {
+  return { scanned: 0, imported: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0 };
+}
+
+async function defaultScan(options: ImportProjectHistoryOptions): Promise<HistorySessionCandidate[]> {
+  const candidates: HistorySessionCandidate[] = [];
+  if (options.agents.includes("codex")) {
+    candidates.push(...await scanCodexHistory({ codexHome: options.codexHome }));
+  }
+  if (options.agents.includes("claude-code")) {
+    candidates.push(...await scanClaudeHistory({ claudeConfigDir: options.claudeConfigDir }));
+  }
+  return candidates;
+}
+
+function equivalentThread(
+  existing: ReturnType<typeof getThread>,
+  normalized: ReturnType<typeof normalizeJsonlSession>
+): boolean {
+  return Boolean(
+    existing &&
+    existing.title === normalized.title &&
+    existing.source === normalized.source &&
+    existing.rawFormat === normalized.rawFormat &&
+    existing.rawText === normalized.rawText
+  );
+}
+
+function increment(counts: HistoryImportCounts, outcome: HistoryImportOutcome): void {
+  counts[outcome] += 1;
+}
+
+export async function importProjectHistory(
+  options: ImportProjectHistoryOptions
+): Promise<HistoryImportReport> {
+  const startedAt = new Date().toISOString();
+  const dryRun = options.dryRun ?? false;
+  const distill = options.distill ?? false;
+  const aliases = (options.rootAliases ?? []).map(normalizeProjectPath);
+  const matcher = createProjectMatcher(options.projectRoot, aliases);
+  const counts = emptyCounts();
+  const items: HistoryImportItem[] = [];
+  const run = dryRun ? undefined : createHistoryImportRun(options.db, {
+    projectId: options.project.id,
+    agents: [...options.agents],
+    rootAliases: aliases,
+    options: { distill }
+  });
+
+  let candidates: HistorySessionCandidate[];
+  try {
+    candidates = await (options.scan ? options.scan(options.agents) : defaultScan(options));
+  } catch (error) {
+    if (run) failHistoryImportRun(options.db, run.id, error, counts);
+    throw error;
+  }
+  candidates.sort((left, right) => left.filePath.localeCompare(right.filePath));
+  counts.scanned = candidates.length;
+
+  const appendItem = (input: Omit<HistoryImportItem, "id" | "runId" | "createdAt">): HistoryImportItem => {
+    const item = run
+      ? recordHistoryImportItem(options.db, { runId: run.id, ...input })
+      : {
+        id: `dry_item_${items.length + 1}`,
+        ...input,
+        createdAt: new Date().toISOString()
+      };
+    items.push(item);
+    increment(counts, item.outcome);
+    return item;
+  };
+
+  for (const candidate of candidates) {
+    const common = {
+      agent: candidate.agent,
+      sessionId: candidate.sessionId,
+      filePath: candidate.filePath,
+      cwd: candidate.cwd
+    };
+    if (candidate.discoveryError) {
+      appendItem({
+        ...common,
+        outcome: "failed",
+        distillStatus: "not_requested",
+        errorStage: "scan",
+        errorReason: sanitizeHistoryImportError(candidate.discoveryError)
+      });
+      continue;
+    }
+    if (candidate.metadataError || !candidate.sessionId || !candidate.cwd) {
+      appendItem({
+        ...common,
+        outcome: "skipped",
+        distillStatus: "not_applicable",
+        errorStage: "metadata",
+        errorReason: candidate.metadataError ?? "Session metadata is missing session id or cwd"
+      });
+      continue;
+    }
+    if (!matcher(candidate.cwd)) {
+      appendItem({
+        ...common,
+        outcome: "skipped",
+        distillStatus: "not_applicable",
+        errorStage: "match",
+        errorReason: "Session cwd does not match the current project or an explicit root alias"
+      });
+      continue;
+    }
+
+    const threadId = stableThreadId(candidate.agent, candidate.sessionId);
+    let rawText: string;
+    try {
+      rawText = await readFile(candidate.filePath, "utf8");
+    } catch (error) {
+      appendItem({
+        ...common, outcome: "failed", distillStatus: "not_requested",
+        errorStage: "read", errorReason: sanitizeHistoryImportError(error)
+      });
+      continue;
+    }
+    const fingerprint = createHash("sha256").update(rawText).digest("hex");
+
+    let normalized: ReturnType<typeof normalizeJsonlSession>;
+    try {
+      normalized = normalizeJsonlSession({
+        source: candidate.agent,
+        inputPath: candidate.filePath,
+        rawText,
+        id: threadId,
+        title: `${candidate.agent} session ${candidate.sessionId}`
+      });
+    } catch (error) {
+      appendItem({
+        ...common, fingerprint, outcome: "failed", distillStatus: "not_requested",
+        errorStage: "parse", errorReason: sanitizeHistoryImportError(error)
+      });
+      continue;
+    }
+
+    const existing = getThread(options.db, options.project.id, threadId);
+    const previous = findLatestHistoryImportItem(
+      options.db, options.project.id, candidate.agent, candidate.sessionId
+    );
+    const sameMetadata = previous?.fingerprint === fingerprint &&
+      previous.filePath === candidate.filePath &&
+      previous.cwd === candidate.cwd;
+    const outcome: HistoryImportOutcome = existing
+      ? sameMetadata && equivalentThread(existing, normalized)
+        ? "unchanged"
+        : equivalentThread(existing, normalized) && !previous
+          ? "unchanged"
+          : "updated"
+      : "imported";
+
+    if (outcome === "unchanged") {
+      appendItem({
+        ...common, fingerprint, threadId, outcome, distillStatus: "not_applicable"
+      });
+      continue;
+    }
+
+    if (!dryRun) {
+      try {
+        options.db.transaction(() => {
+          saveThread(options.db, {
+            id: normalized.id,
+            projectId: options.project.id,
+            title: normalized.title,
+            source: normalized.source,
+            rawFormat: normalized.rawFormat,
+            rawText: normalized.rawText
+          });
+          saveCaptureCursor(options.db, {
+            projectId: options.project.id,
+            agent: candidate.agent,
+            sessionId: candidate.sessionId as string,
+            transcriptPath: candidate.filePath,
+            size: candidate.size,
+            mtimeMs: candidate.mtimeMs
+          });
+        })();
+      } catch (error) {
+        appendItem({
+          ...common, fingerprint, threadId: existing?.id, outcome: "failed", distillStatus: "not_requested",
+          errorStage: "database", errorReason: sanitizeHistoryImportError(error)
+        });
+        continue;
+      }
+    }
+
+    let distillStatus: HistoryDistillStatus = "not_requested";
+    let errorStage: HistoryImportErrorStage | undefined;
+    let errorReason: string | undefined;
+    if (distill && !dryRun) {
+      try {
+        enqueueDistillJob(options.db, options.project.id, threadId, "cli");
+        distillStatus = "queued";
+      } catch (error) {
+        distillStatus = "failed";
+        errorStage = "distill";
+        errorReason = sanitizeHistoryImportError(error);
+      }
+    }
+    appendItem({
+      ...common, fingerprint, threadId, outcome, distillStatus, errorStage, errorReason
+    });
+  }
+
+  const hasErrors = counts.failed > 0 || items.some((item) => item.distillStatus === "failed");
+  const finalRun = run
+    ? finishHistoryImportRun(options.db, run.id, counts, { hasErrors })
+    : undefined;
+  const finishedAt = finalRun?.finishedAt ?? new Date().toISOString();
+  return {
+    runId: run?.id,
+    dryRun,
+    projectRoot: normalizeProjectPath(options.projectRoot),
+    agents: [...options.agents],
+    rootAliases: aliases,
+    status: finalRun?.status ?? (hasErrors ? "completed_with_errors" : "completed"),
+    startedAt,
+    finishedAt,
+    counts,
+    items
+  };
+}
