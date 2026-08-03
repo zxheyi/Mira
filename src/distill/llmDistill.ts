@@ -7,6 +7,7 @@ import {
   type MemoryKind
 } from "../memory/memoryStore.js";
 import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
+import { sanitizeThreadTextForDistill } from "./transcriptSanitizer.js";
 
 type ThreadTextRow = {
   raw_text: string;
@@ -136,7 +137,7 @@ export function buildLlmDistillPrompt(input: LlmDistillPromptInput): string {
     "",
     "Thread text:",
     "```markdown",
-    input.rawText,
+    sanitizeThreadTextForDistill(input.rawText),
     "```"
   ].join("\n");
 }

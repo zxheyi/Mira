@@ -68,6 +68,40 @@ describe("one-shot distill worker", () => {
     expect(provider.distill).not.toHaveBeenCalled();
   });
 
+  test("sends sanitized transcript text to the Provider", async () => {
+    const { database, project } = setup();
+    saveThread(database, {
+      id: "thread_worker", projectId: project.id, title: "Worker", source: "codex",
+      rawFormat: "markdown",
+      rawText: `# codex session
+
+## developer
+Time: 2026-08-03T03:41:29.550Z
+- Platform instruction should stay local.
+
+## user
+Time: 2026-08-03T03:41:29.552Z
+Mira should keep project memory local.
+
+## tool
+{"cmd":"cat CLAUDE.md"}`
+    });
+    enqueueDistillJob(database, project.id, "thread_worker", "cli");
+    let sent = "";
+    const provider = { distill: vi.fn(async (input: { threadId: string; rawText: string }) => {
+      sent = input.rawText;
+      return [];
+    }) };
+
+    const result = await runNextDistillJob(database, project.id, provider, "model");
+
+    expect(result.status).toBe("completed");
+    expect(sent).toContain("Mira should keep project memory local.");
+    expect(sent).not.toContain("Platform instruction should stay local.");
+    expect(sent).not.toContain("cat CLAUDE.md");
+    expect(sent).not.toContain("Time: 2026-08-03");
+  });
+
   test("skips Provider output when the Thread changes during the request", async () => {
     const { database, project } = setup();
     enqueueDistillJob(database, project.id, "thread_worker", "cli");

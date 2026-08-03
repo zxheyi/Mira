@@ -16,48 +16,52 @@ type Section = {
   lines: string[];
 };
 
+const TRANSCRIPT_ROLE_HEADINGS = new Set(["developer", "user", "assistant", "system", "tool", "message"]);
+const MEMORY_HEADING_KINDS = new Map<string, MemoryKind>([
+  ["key decisions", "decision"],
+  ["decisions", "decision"],
+  ["decision log", "decision"],
+  ["conventions", "convention"],
+  ["coding conventions", "convention"],
+  ["project conventions", "convention"],
+  ["architecture", "architecture"],
+  ["architecture decisions", "architecture"],
+  ["system design", "architecture"],
+  ["preferences", "preference"],
+  ["user preferences", "preference"],
+  ["constraints", "constraint"],
+  ["constraint", "constraint"],
+  ["project constraints", "constraint"],
+  ["tasks", "task"],
+  ["task", "task"],
+  ["current tasks", "task"],
+  ["facts", "fact"],
+  ["fact", "fact"],
+  ["project facts", "fact"],
+  ["failed attempts", "failed_attempt"],
+  ["failed attempt", "failed_attempt"],
+  ["failures", "failed_attempt"],
+  ["what failed", "failed_attempt"],
+  ["what we learned", "lesson"],
+  ["lessons", "lesson"],
+  ["lessons learned", "lesson"],
+  ["learned", "lesson"],
+  ["notes", "note"],
+  ["summary", "note"],
+  ["context", "note"],
+  ["next steps", "todo"],
+  ["todos", "todo"],
+  ["todo", "todo"]
+]);
+
 function kindForHeading(heading: string, level: number): MemoryKind | undefined {
   const normalized = heading.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
 
-  if (level === 1 || ["user", "assistant", "system", "tool", "message"].includes(normalized)) {
+  if (level === 1 || TRANSCRIPT_ROLE_HEADINGS.has(normalized)) {
     return undefined;
   }
 
-  if (["key decisions", "decisions", "decision log"].includes(normalized)) {
-    return "decision";
-  }
-  if (["conventions", "coding conventions", "project conventions"].includes(normalized)) {
-    return "convention";
-  }
-  if (["architecture", "architecture decisions", "system design"].includes(normalized)) {
-    return "architecture";
-  }
-  if (["preferences", "user preferences"].includes(normalized)) {
-    return "preference";
-  }
-  if (["constraints", "constraint", "project constraints"].includes(normalized)) {
-    return "constraint";
-  }
-  if (["tasks", "task", "current tasks"].includes(normalized)) {
-    return "task";
-  }
-  if (["facts", "fact", "project facts"].includes(normalized)) {
-    return "fact";
-  }
-  if (["failed attempts", "failed attempt", "failures", "what failed"].includes(normalized)) {
-    return "failed_attempt";
-  }
-  if (["what we learned", "lessons", "lessons learned", "learned"].includes(normalized)) {
-    return "lesson";
-  }
-  if (["notes", "summary", "context"].includes(normalized)) {
-    return "note";
-  }
-  if (["next steps", "todos", "todo"].includes(normalized)) {
-    return "todo";
-  }
-
-  return "note";
+  return MEMORY_HEADING_KINDS.get(normalized);
 }
 
 function importanceForKind(kind: MemoryKind): number {

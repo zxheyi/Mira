@@ -10,6 +10,7 @@ import {
 } from "./distillJobStore.js";
 import type { DistillProvider } from "./openAiCompatibleProvider.js";
 import { assertNoSensitiveInformation } from "./candidatePolicy.js";
+import { sanitizeThreadTextForDistill } from "./transcriptSanitizer.js";
 
 export type DistillWorkerResult =
   | { status: "idle" }
@@ -36,7 +37,8 @@ export async function runNextDistillJob(
     }
 
     assertNoSensitiveInformation(thread.raw_text, "Thread");
-    const candidates = await provider.distill({ threadId: job.threadId, rawText: thread.raw_text });
+    const sanitizedRawText = sanitizeThreadTextForDistill(thread.raw_text);
+    const candidates = await provider.distill({ threadId: job.threadId, rawText: sanitizedRawText });
     const latestThread = db.prepare("select raw_text from threads where project_id = ? and id = ?")
       .get(job.projectId, job.threadId) as { raw_text: string } | undefined;
     const latestHash = latestThread

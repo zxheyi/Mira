@@ -58,6 +58,29 @@ describe("LLM distill", () => {
     expect(prompt).toContain("Mira needs candidate review.");
   });
 
+  test("builds prompts from sanitized transcript text", () => {
+    const prompt = buildLlmDistillPrompt({
+      threadId: "thread_1",
+      rawText: `# codex session
+
+## developer
+Time: 2026-08-03T03:41:29.550Z
+- Do not include platform instructions.
+
+## user
+Time: 2026-08-03T03:41:29.552Z
+Mira should keep project memory local.
+
+## tool
+{"cmd":"cat CLAUDE.md"}`
+    });
+
+    expect(prompt).toContain("Mira should keep project memory local.");
+    expect(prompt).not.toContain("Do not include platform instructions.");
+    expect(prompt).not.toContain("cat CLAUDE.md");
+    expect(prompt).not.toContain("Time: 2026-08-03");
+  });
+
   test("parses candidates from wrapped JSON and applies defaults", () => {
     const candidates = parseLlmMemoryCandidates(
       JSON.stringify({

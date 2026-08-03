@@ -101,7 +101,7 @@ describe("distill thread memories", () => {
     ]);
   });
 
-  test("extracts constraint headings and preserves unmatched headings as notes", () => {
+  test("extracts constraint headings and ignores unsupported headings", () => {
     const memories = distillMemoriesFromText("project_1", "thread_1", `# Session
 
 ## Constraints
@@ -111,8 +111,39 @@ describe("distill thread memories", () => {
 - Local-first memory for coding agents.`);
 
     expect(memories).toEqual([
-      expect.objectContaining({ kind: "constraint", content: "Do not read browser auth databases." }),
-      expect.objectContaining({ kind: "note", content: "Local-first memory for coding agents." })
+      expect.objectContaining({ kind: "constraint", content: "Do not read browser auth databases." })
+    ]);
+  });
+
+  test("ignores agent transcript metadata and system instruction sections", () => {
+    const memories = distillMemoriesFromText("project_1", "thread_1", `# codex session
+
+## developer
+Time: 2026-08-03T03:41:29.550Z
+
+<permissions instructions>
+- Do not save this as memory.
+</permissions instructions>
+
+## user
+Time: 2026-08-03T03:41:29.552Z
+
+# AGENTS.md instructions for /workspace/app
+
+## 必读铁律
+- **命名前缀**: 应用类一律 NM 前缀。
+
+## tool
+{"cmd":"cat CLAUDE.md"}
+
+## Key Decisions
+- Keep Mira memory extraction project-scoped.`);
+
+    expect(memories).toEqual([
+      expect.objectContaining({
+        kind: "decision",
+        content: "Keep Mira memory extraction project-scoped."
+      })
     ]);
   });
 
