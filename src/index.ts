@@ -12,6 +12,7 @@ import {
 } from "./briefing/projectBriefingStore.js";
 import { buildContextBundle } from "./context/contextBundle.js";
 import { openDatabase } from "./db/client.js";
+import { runDoctor } from "./doctor/doctor.js";
 import { migrate } from "./db/schema.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
 import { startDetachedDistillWorker } from "./distill/detachedWorker.js";
@@ -39,7 +40,7 @@ import {
 } from "./distill/openAiCompatibleProvider.js";
 import { exportProject, type ExportFormat } from "./export/exportProject.js";
 import { importAgentSessionFromFile } from "./importers/agentSessionImporter.js";
-import { importProjectHistory } from "./history/historyImportService.js";
+import { importProjectHistory, type HistoryImportFilters } from "./history/historyImportService.js";
 import {
   listHistoryImportFailures,
   listHistoryImportRuns,
@@ -208,6 +209,35 @@ function numberInRange(value: string, min: number, max: number, label: string): 
     throw new Error(`${label} must be a number from ${min} to ${max}`);
   }
   return numberValue;
+}
+
+function dateStartMs(value: string, label: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${label} must use YYYY-MM-DD`);
+  }
+  const ms = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 10) !== value) {
+    throw new Error(`${label} must be a valid calendar date`);
+  }
+  return ms;
+}
+
+function historyImportFilters(options: {
+  since?: string; until?: string; maxFileSize?: string; limit?: string;
+}): HistoryImportFilters | undefined {
+  const filters: HistoryImportFilters = {};
+  if (options.since) filters.sinceMs = dateStartMs(options.since, "--since");
+  if (options.until) filters.untilExclusiveMs = dateStartMs(options.until, "--until") + 24 * 60 * 60 * 1000;
+  if (filters.sinceMs !== undefined && filters.untilExclusiveMs !== undefined && filters.sinceMs >= filters.untilExclusiveMs) {
+    throw new Error("--since must be on or before --until");
+  }
+  if (options.maxFileSize) {
+    filters.maxFileSizeBytes = Math.floor(
+      numberInRange(options.maxFileSize, 0.000001, 1_000_000, "--max-file-size") * 1024 * 1024
+    );
+  }
+  if (options.limit) filters.limit = integerInRange(options.limit, 1, 1_000_000, "--limit");
+  return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
 function requireMemoryKind(kind: string): MemoryKind {
@@ -966,6 +996,16 @@ integration
   });
 
 program
+  .command("doctor")
+  .description("Report Mira database, project, and coding-agent integration status without mutating files")
+  .action(async () => {
+    const globalOptions = program.opts<GlobalOptions>();
+    const projectRoot = await resolveProjectRoot(globalOptions);
+    const dbPath = resolveDbPath(projectRoot, globalOptions);
+    printJson(await runDoctor({ projectRoot, dbPath }));
+  });
+
+program
   .command("export")
   .description("Export project memory as Markdown or JSON")
   .requiredOption("--format <format>", "Export format: json or markdown")
@@ -989,9 +1029,14 @@ history
   .option("--root-alias <path>", "Explicit historical project root; repeat for multiple aliases", collectOption, [])
   .option("--dry-run", "Scan, parse, and classify without writing Mira data")
   .option("--distill", "Queue provider distillation for imported or updated threads")
+  .option("--since <YYYY-MM-DD>", "Only include transcripts modified on or after this date")
+  .option("--until <YYYY-MM-DD>", "Only include transcripts modified on or before this date")
+  .option("--max-file-size <megabytes>", "Skip transcripts larger than this size in MB")
+  .option("--limit <n>", "Import or preview at most this many matched transcripts")
   .option("--report <file>", "Atomically write the complete JSON report")
   .action(async (options: {
-    agent: string; rootAlias: string[]; dryRun?: boolean; distill?: boolean; report?: string;
+    agent: string; rootAlias: string[]; dryRun?: boolean; distill?: boolean;
+    since?: string; until?: string; maxFileSize?: string; limit?: string; report?: string;
   }) => {
     await withHistoryProject(program.opts<GlobalOptions>(), Boolean(options.dryRun), async (session) => {
       const report = await importProjectHistory({
@@ -1001,7 +1046,8 @@ history
         agents: requireHistoryAgents(options.agent),
         rootAliases: options.rootAlias,
         dryRun: options.dryRun,
-        distill: options.distill
+        distill: options.distill,
+        filters: historyImportFilters(options)
       });
       let reportWriteFailed = false;
       if (options.report) {

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -91,6 +91,61 @@ describe("history CLI", () => {
     expect(failures).toEqual([
       expect.objectContaining({ filePath: path, errorStage: "parse", errorReason: expect.stringContaining("line 2") })
     ]);
+  });
+
+  test("bounds history import with date, size, and limit CLI filters", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mira-history-cli-filter-"));
+    const dbPath = join(root, ".mira", "mira.sqlite");
+    const codexHome = await mkdtemp(join(tmpdir(), "mira-history-cli-filter-codex-"));
+    await mkdir(join(root, ".git"));
+    await mkdir(join(codexHome, "sessions"), { recursive: true });
+
+    const small = join(codexHome, "sessions", "01-small.jsonl");
+    const limited = join(codexHome, "sessions", "02-limited.jsonl");
+    const before = join(codexHome, "sessions", "03-before.jsonl");
+    const after = join(codexHome, "sessions", "04-after.jsonl");
+    const large = join(codexHome, "sessions", "05-large.jsonl");
+    await writeFile(small, jsonl([
+      { type: "session_meta", payload: { id: "small", cwd: root } },
+      { type: "response_item", payload: { role: "user", content: "Small July session." } }
+    ]));
+    await writeFile(limited, jsonl([
+      { type: "session_meta", payload: { id: "limited", cwd: root } },
+      { type: "response_item", payload: { role: "user", content: "Second July session." } }
+    ]));
+    await writeFile(before, jsonl([
+      { type: "session_meta", payload: { id: "before", cwd: root } },
+      { type: "response_item", payload: { role: "user", content: "June session." } }
+    ]));
+    await writeFile(after, jsonl([
+      { type: "session_meta", payload: { id: "after", cwd: root } },
+      { type: "response_item", payload: { role: "user", content: "August session." } }
+    ]));
+    await writeFile(large, jsonl([
+      { type: "session_meta", payload: { id: "large", cwd: root } },
+      { type: "response_item", payload: { role: "user", content: "x".repeat(4_000) } }
+    ]));
+    await utimes(small, new Date("2026-07-10T00:00:00.000Z"), new Date("2026-07-10T00:00:00.000Z"));
+    await utimes(limited, new Date("2026-07-11T00:00:00.000Z"), new Date("2026-07-11T00:00:00.000Z"));
+    await utimes(before, new Date("2026-06-30T00:00:00.000Z"), new Date("2026-06-30T00:00:00.000Z"));
+    await utimes(after, new Date("2026-08-01T00:00:00.000Z"), new Date("2026-08-01T00:00:00.000Z"));
+    await utimes(large, new Date("2026-07-12T00:00:00.000Z"), new Date("2026-07-12T00:00:00.000Z"));
+
+    const result = parseLastJson<{
+      dryRun: boolean;
+      counts: { imported: number; skipped: number };
+      summary: { matchedCount: number; skippedByDateCount: number; skippedBySizeCount: number; limitedCount: number };
+    }>((await runMira([
+      "history", "import", "--agent", "codex", "--dry-run",
+      "--since", "2026-07-01", "--until", "2026-07-31", "--max-file-size", "0.001", "--limit", "1"
+    ], root, dbPath, { CODEX_HOME: codexHome })).stdout);
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      counts: { imported: 1, skipped: 4 },
+      summary: { matchedCount: 2, skippedByDateCount: 2, skippedBySizeCount: 1, limitedCount: 1 }
+    });
+    await expect(access(dbPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("does not create a database during a first-run dry-run", async () => {

@@ -23,7 +23,7 @@ export type HistoryImportRunStatus = (typeof HISTORY_IMPORT_RUN_STATUSES)[number
 
 export type HistoryDistillStatus = "not_requested" | "not_applicable" | "queued" | "failed";
 export type HistoryImportErrorStage =
-  | "scan" | "metadata" | "match" | "read" | "parse" | "normalize" | "database" | "distill" | "report";
+  | "scan" | "metadata" | "match" | "filter" | "read" | "parse" | "normalize" | "database" | "distill" | "report";
 
 export type HistoryImportCounts = {
   scanned: number;
@@ -68,6 +68,25 @@ export type HistoryImportItem = {
   createdAt: string;
 };
 
+export type HistoryImportCapacityCandidate = {
+  agent: HistoryAgent;
+  sessionId?: string;
+  cwd?: string;
+  filePath: string;
+  size: number;
+  mtimeMs: number;
+};
+
+export type HistoryImportSummary = {
+  matchedCount: number;
+  matchedBytes: number;
+  matchedMegabytes: number;
+  skippedByDateCount: number;
+  skippedBySizeCount: number;
+  limitedCount: number;
+  largestCandidates: HistoryImportCapacityCandidate[];
+};
+
 export type HistoryImportReport = {
   runId?: string;
   dryRun: boolean;
@@ -78,5 +97,6 @@ export type HistoryImportReport = {
   startedAt: string;
   finishedAt: string;
   counts: HistoryImportCounts;
+  summary: HistoryImportSummary;
   items: HistoryImportItem[];
 };

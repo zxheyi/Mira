@@ -16,6 +16,15 @@ function report(): HistoryImportReport {
     startedAt: "2026-07-20T00:00:00.000Z",
     finishedAt: "2026-07-20T00:00:01.000Z",
     counts: { scanned: 1, imported: 1, updated: 0, unchanged: 0, skipped: 0, failed: 0 },
+    summary: {
+      matchedCount: 1,
+      matchedBytes: 1234,
+      matchedMegabytes: 0,
+      skippedByDateCount: 0,
+      skippedBySizeCount: 0,
+      limitedCount: 0,
+      largestCandidates: []
+    },
     items: [{
       id: "history_item_1",
       runId: "history_run_1",

@@ -21,13 +21,22 @@ import { createProjectMatcher, normalizeProjectPath } from "./projectMatcher.js"
 import type {
   HistoryAgent,
   HistoryDistillStatus,
+  HistoryImportCapacityCandidate,
   HistoryImportCounts,
   HistoryImportErrorStage,
   HistoryImportItem,
   HistoryImportOutcome,
   HistoryImportReport,
+  HistoryImportSummary,
   HistorySessionCandidate
 } from "./historyTypes.js";
+
+export type HistoryImportFilters = {
+  sinceMs?: number;
+  untilExclusiveMs?: number;
+  maxFileSizeBytes?: number;
+  limit?: number;
+};
 
 export type ImportProjectHistoryOptions = {
   db: Database.Database;
@@ -39,11 +48,45 @@ export type ImportProjectHistoryOptions = {
   distill?: boolean;
   codexHome?: string;
   claudeConfigDir?: string;
+  filters?: HistoryImportFilters;
   scan?: (agents: readonly HistoryAgent[]) => Promise<HistorySessionCandidate[]>;
 };
 
 function emptyCounts(): HistoryImportCounts {
   return { scanned: 0, imported: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0 };
+}
+
+function emptySummary(): HistoryImportSummary {
+  return {
+    matchedCount: 0,
+    matchedBytes: 0,
+    matchedMegabytes: 0,
+    skippedByDateCount: 0,
+    skippedBySizeCount: 0,
+    limitedCount: 0,
+    largestCandidates: []
+  };
+}
+
+function summarizeCandidate(candidate: HistorySessionCandidate): HistoryImportCapacityCandidate {
+  return {
+    agent: candidate.agent,
+    sessionId: candidate.sessionId,
+    cwd: candidate.cwd,
+    filePath: candidate.filePath,
+    size: candidate.size,
+    mtimeMs: candidate.mtimeMs
+  };
+}
+
+function finalizeSummary(summary: HistoryImportSummary): HistoryImportSummary {
+  return {
+    ...summary,
+    matchedMegabytes: Number((summary.matchedBytes / (1024 * 1024)).toFixed(2)),
+    largestCandidates: [...summary.largestCandidates]
+      .sort((left, right) => right.size - left.size || left.filePath.localeCompare(right.filePath))
+      .slice(0, 10)
+  };
 }
 
 async function defaultScan(options: ImportProjectHistoryOptions): Promise<HistorySessionCandidate[]> {
@@ -83,6 +126,8 @@ export async function importProjectHistory(
   const aliases = (options.rootAliases ?? []).map(normalizeProjectPath);
   const matcher = createProjectMatcher(options.projectRoot, aliases);
   const counts = emptyCounts();
+  const summary = emptySummary();
+  let acceptedMatchedCount = 0;
   const items: HistoryImportItem[] = [];
   const run = dryRun ? undefined : createHistoryImportRun(options.db, {
     projectId: options.project.id,
@@ -151,6 +196,50 @@ export async function importProjectHistory(
       });
       continue;
     }
+
+    summary.largestCandidates.push(summarizeCandidate(candidate));
+    const filters = options.filters;
+    const skippedBySince = filters?.sinceMs !== undefined && candidate.mtimeMs < filters.sinceMs;
+    const skippedByUntil = filters?.untilExclusiveMs !== undefined && candidate.mtimeMs >= filters.untilExclusiveMs;
+    if (skippedBySince || skippedByUntil) {
+      summary.skippedByDateCount += 1;
+      appendItem({
+        ...common,
+        outcome: "skipped",
+        distillStatus: "not_applicable",
+        errorStage: "filter",
+        errorReason: skippedBySince
+          ? "Session transcript mtime is before --since"
+          : "Session transcript mtime is after --until"
+      });
+      continue;
+    }
+    if (filters?.maxFileSizeBytes !== undefined && candidate.size > filters.maxFileSizeBytes) {
+      summary.skippedBySizeCount += 1;
+      appendItem({
+        ...common,
+        outcome: "skipped",
+        distillStatus: "not_applicable",
+        errorStage: "filter",
+        errorReason: "Session transcript size exceeds --max-file-size"
+      });
+      continue;
+    }
+
+    summary.matchedCount += 1;
+    summary.matchedBytes += candidate.size;
+    if (filters?.limit !== undefined && acceptedMatchedCount >= filters.limit) {
+      summary.limitedCount += 1;
+      appendItem({
+        ...common,
+        outcome: "skipped",
+        distillStatus: "not_applicable",
+        errorStage: "filter",
+        errorReason: "Session skipped by --limit"
+      });
+      continue;
+    }
+    acceptedMatchedCount += 1;
 
     const threadId = stableThreadId(candidate.agent, candidate.sessionId);
     let rawText: string;
@@ -266,6 +355,7 @@ export async function importProjectHistory(
     startedAt,
     finishedAt,
     counts,
+    summary: finalizeSummary(summary),
     items
   };
 }

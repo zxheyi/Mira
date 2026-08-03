@@ -124,14 +124,15 @@ Phase 4 已提供本地 CLI 闭环。常用命令示例：
 
 ```bash
 mira init
+mira doctor
 mira project list
 mira project delete --id project_123 --confirm-hard-delete
 mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
-mira history import --dry-run --root-alias /old/path/AnchorMem
-mira history import --root-alias /old/path/AnchorMem --distill --report ./history-import.json
+mira history import --dry-run --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/AnchorMem
+mira history import --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/AnchorMem --distill --report ./history-import.json
 mira history runs --limit 20
 mira history failures --limit 100
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
@@ -168,6 +169,8 @@ mira export --format markdown --out ./export
 
 全局选项需要放在子命令前：`--db` 与 `--project-root` 需要写在子命令前，例如 `mira --project-root /path --db /path/.mira/mira.sqlite memory search "Mira"`。
 
+`mira doctor` 是只读诊断命令：它报告当前项目根目录、数据库路径、schema 版本、项目/Thread/Memory/候选/历史导入批次数量、Codex / Claude Code 集成状态，以及 `.mira/integrations.log` 的最新时间戳。数据库不存在时它不会创建 `.mira` 或初始化 schema，适合在真实接入前先确认 Mira 是否看得到当前项目。
+
 默认数据库为当前项目的 `.mira/mira.sqlite`。脚本和测试也可以显式传入：
 
 ```bash
@@ -178,7 +181,22 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 
 `mira history import` 用于补录当前项目的本机历史会话。它扫描 `$CODEX_HOME/sessions`、`$CODEX_HOME/archived_sessions` 与 `$CLAUDE_CONFIG_DIR/projects`，只导入 cwd 等于当前项目或显式 `--root-alias` 的主会话；不会猜测路径，也不会导入 Claude subagent。重复运行会按稳定 Thread ID 与 SHA-256 指纹分类为 `imported`、`updated`、`unchanged`、`skipped` 或 `failed`。默认不调用 LLM，`--distill` 只为新增或更新 Thread 幂等入队 Provider 任务。
 
+容量治理参数会在读取 transcript 正文前生效：`--since YYYY-MM-DD`、`--until YYYY-MM-DD` 按文件 mtime 限定日期范围，`--max-file-size <MB>` 跳过超大文件，`--limit <N>` 只预览或导入前 N 个匹配会话。报告里的 `summary` 会展示匹配数量、匹配字节数、按日期/大小/limit 跳过的数量，以及最多 10 个最大的项目候选文件，方便先估算数据库增长。
+
 首次使用建议先运行 `--dry-run`；如果数据库尚不存在，预览不会创建 `.mira/mira.sqlite`。正式导入始终写入 schema v6 审计批次，单文件失败不会阻断其他文件；命令仍输出完整汇总并返回退出码 `2`，可用 `history failures` 查看路径、阶段与脱敏原因。批次级启动或迁移失败返回 `1`。
+
+真实项目建议先跑一条最小闭环：
+
+```bash
+mira doctor
+mira history import --dry-run --since 2026-07-01 --max-file-size 20 --limit 20 --report ./history-dry-run.json
+mira history import --since 2026-07-01 --max-file-size 20 --limit 20 --report ./history-import.json
+mira briefing rebuild
+mira vault sync
+mira context bundle --max-tokens 1000
+```
+
+这条闭环只接入一个受限批次，确认数据库统计、历史导入、Briefing、Vault 和 Context Bundle 都能跑通后，再逐步扩大日期范围或提高 limit。
 
 `mira memory llm-prompt` 和 `mira memory apply-candidates` 提供可审查的 LLM 提炼流程：先生成提示词，再把审查后的候选记忆 JSON 写入 Memory。
 
