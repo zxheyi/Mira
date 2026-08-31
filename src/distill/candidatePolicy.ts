@@ -10,8 +10,7 @@ const LOW_RISK_KINDS = new Set<MemoryKind>([
   "fact",
   "convention",
   "lesson",
-  "failed_attempt",
-  "constraint"
+  "failed_attempt"
 ]);
 
 const SENSITIVE_PATTERNS = [
