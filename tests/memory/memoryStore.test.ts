@@ -30,6 +30,16 @@ function setupDb(): Database.Database {
 }
 
 describe("memory store", () => {
+  test("finds a Chinese phrase inside a longer sentence without cross-project leakage", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Chinese", rootPath: "/chinese" });
+    const other = createProject(database, { name: "Other", rootPath: "/other-chinese" });
+    const input = { title: "Architecture", kind: "fact" as const, content: "项目采用单向数据流架构", source: "manual", confidence: 1, importance: 5 };
+    const expected = addMemory(database, { ...input, projectId: project.id });
+    addMemory(database, { ...input, projectId: other.id });
+    expect(searchMemories(database, project.id, "单向数据流").map(item => item.memory.id)).toEqual([expected.id]);
+  });
+
   test("defines the MVP memory kinds", () => {
     expect(MEMORY_KINDS).toEqual(
       expect.arrayContaining([

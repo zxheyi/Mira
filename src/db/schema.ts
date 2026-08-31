@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -28,6 +28,7 @@ export function migrate(db: Database.Database): void {
   const requiresV5Setup = existingVersion === undefined || existingVersion < 5;
   const requiresV6Setup = existingVersion === undefined || existingVersion < 6;
   const requiresV7Setup = existingVersion === undefined || existingVersion < 7;
+  const requiresV8Setup = existingVersion === undefined || existingVersion < 8;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -441,6 +442,17 @@ export function migrate(db: Database.Database): void {
       updated_at text not null,
       unique(project_id, task_id, kind)
     );
+  `);
+
+  if (requiresV8Setup) db.exec(`
+    create table recall_events (
+      id text primary key,
+      project_id text not null references projects(id) on delete cascade,
+      task_id text,
+      receipt text not null check(json_valid(receipt)),
+      created_at text not null
+    );
+    create index idx_recall_events_project_task on recall_events(project_id, task_id, created_at desc);
   `);
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();

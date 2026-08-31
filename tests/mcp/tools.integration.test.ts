@@ -26,6 +26,8 @@ describe("Mira MCP tools", () => {
 
     expect(created.toolNames).toEqual([
       "get_context_bundle",
+      "prepare_context",
+      "list_recall_events",
       "get_project_briefing",
       "rebuild_project_briefing",
       "search_memory",
@@ -48,6 +50,8 @@ describe("Mira MCP tools", () => {
   test("defines precise agent-facing descriptions for every MCP tool", () => {
     expect(Object.keys(MIRA_MCP_TOOL_DESCRIPTIONS)).toEqual([
       "get_context_bundle",
+      "prepare_context",
+      "list_recall_events",
       "get_project_briefing",
       "rebuild_project_briefing",
       "search_memory",
@@ -103,9 +107,9 @@ describe("Mira MCP tools", () => {
       importance: 1
     });
 
-    const bundle = callMiraTool(options, "get_context_bundle", { memoryLimit: 1, maxCharacters: 220 }) as string;
+    const bundle = callMiraTool(options, "get_context_bundle", { memoryLimit: 1, maxCharacters: 450 }) as string;
 
-    expect(bundle.length).toBeLessThanOrEqual(220);
+    expect(bundle.length).toBeLessThanOrEqual(450);
     expect(bundle).toContain("High priority");
     expect(bundle).not.toContain("Low priority");
   });

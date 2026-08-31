@@ -11,6 +11,8 @@ import {
   rebuildProjectBriefing
 } from "./briefing/projectBriefingStore.js";
 import { buildContextBundle } from "./context/contextBundle.js";
+import { prepareContext } from "./context/contextPreparation.js";
+import { listRecallEvents } from "./context/recallAuditStore.js";
 import { openDatabase } from "./db/client.js";
 import { runDoctor } from "./doctor/doctor.js";
 import { migrate } from "./db/schema.js";
@@ -882,6 +884,36 @@ briefing
   });
 
 const context = program.command("context").description("Generate agent context");
+
+context.command("prepare")
+  .description("Return bounded context and its recall receipt as JSON")
+  .option("--query <query>", "Memory search query")
+  .option("--memory-limit <number>", "Maximum durable memories", "8")
+  .option("--max-characters <number>", "Maximum output characters")
+  .option("--max-tokens <number>", "Conservative UTF-8 byte token upper bound")
+  .option("--preview", "Do not record recall or refresh Briefing")
+  .action(async (options) => {
+    await withProject(program.opts<GlobalOptions>(), session => {
+      printJson(prepareContext(session.db, session.project.id, {
+        taskId: selectedTask(session.projectRoot), query: options.query,
+        memoryLimit: numberInRange(options.memoryLimit, 1, 50, "memoryLimit"),
+        maxCharacters: options.maxCharacters ? numberInRange(options.maxCharacters, 1, 1_000_000, "maxCharacters") : undefined,
+        maxTokens: options.maxTokens ? numberInRange(options.maxTokens, 25, 250_000, "maxTokens") : undefined,
+        recordAudit: !options.preview
+      }));
+    });
+  });
+
+context.command("recalls")
+  .description("List recent recall receipts for this project/task")
+  .option("--limit <number>", "Maximum receipts", "20")
+  .action(async (options) => {
+    await withProject(program.opts<GlobalOptions>(), session => {
+      printJson(listRecallEvents(session.db, session.project.id, {
+        taskId: selectedTask(session.projectRoot), limit: numberInRange(options.limit, 1, 100, "limit")
+      }));
+    });
+  });
 
 context
   .command("bundle")

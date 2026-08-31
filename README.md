@@ -212,7 +212,9 @@ mira context bundle --max-tokens 1000
 
 `mira briefing show` 从 Working Memory、active Memory 和 Thread provenance 确定性生成版本化 Project Briefing。Memory 或 Working Memory 变化后，旧快照自动标记 stale；下一次 `briefing show`、MCP 读取或 Context Bundle 会执行一次本地重建。重建失败时继续使用最后一份 complete 快照。Briefing 是可重建派生数据，SQLite 仍是唯一事实源。
 
-Context Bundle 的顺序是 Working Memory、Project Briefing、Warning Memory、相关长期 Memory。`--max-characters` 与 `--max-tokens` 可同时使用，Mira 按 `1 token ≈ 4 characters` 估算并采用更严格的预算。
+Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关 Warning Memory、相关长期 Memory。Briefing 全文单独读取，避免再次混入不相关记忆。显式 query 下警告也必须匹配；支持中文子串检索。超长记忆整条跳过，并继续尝试后续短记忆。
+
+`--max-characters` 与 `--max-tokens` 可同时使用；后者使用保守的 UTF-8 字节数上界（适用于 byte-level tokenizer），不是模型专属 token 实测值。`mira context prepare` / MCP `prepare_context` 返回 `{markdown, receipt}`；原 `context bundle` 保持 Markdown 输出。默认记录候选、完整注入、预算省略的记忆 ID、项目/任务、输出 hash 和耗时；用 `mira context recalls` / MCP `list_recall_events` 查询。注入不等于成功使用。`context prepare --preview` / MCP `preview: true` 不记录召回，也不重建 Briefing。
 
 `mira vault sync` 默认完整重建 `<project>/.mira/vault/`，也可通过 `--out` 指定相对项目根目录或绝对路径。Vault 包含索引、Project Briefing、Working Memory、每条 Memory、每个 Thread 和待审核候选；全生命周期状态、来源和前驱/后继关系均可追溯。同步先写 staging，再原子替换目标，失败会恢复上一版。SQLite 始终是唯一事实源，Vault 中的手动编辑不会回写，并会在下次同步时被覆盖。为保护项目，输出目标不能是项目根目录、其祖先、`.git` 或 `.mira` 控制目录。
 
@@ -289,6 +291,8 @@ Agent 可用工具：
 
 ```text
 get_context_bundle
+prepare_context
+list_recall_events
 get_project_briefing
 rebuild_project_briefing
 search_memory

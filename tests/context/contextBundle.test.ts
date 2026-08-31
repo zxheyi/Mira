@@ -95,10 +95,10 @@ describe("context bundle", () => {
     const bundle = buildContextBundle(database, project.id, {
       query: "Mira",
       memoryLimit: 1,
-      maxCharacters: 220
+      maxCharacters: 450
     });
 
-    expect(bundle.length).toBeLessThanOrEqual(220);
+    expect(bundle.length).toBeLessThanOrEqual(450);
     expect(bundle).toContain("Start Phase 4 after this.");
     expect(bundle).toContain("Important memory");
     expect(bundle).not.toContain("Second memory");
@@ -200,10 +200,10 @@ describe("context bundle", () => {
 
     expect(bundle.length).toBeLessThanOrEqual(220);
     expect(bundle).not.toContain("Oversized warning");
-    expect(bundle).toContain("Some warning memories were omitted due to maxCharacters.");
+    expect(bundle).not.toContain("This warning is intentionally");
   });
 
-  test("stops adding budgeted memories after the first oversized entry", () => {
+  test("skips oversized memories and continues with later short entries", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     setWorkingMemory(database, { projectId: project.id, kind: "current_task", content: "Keep this working memory." });
@@ -229,17 +229,17 @@ describe("context bundle", () => {
       projectId: project.id,
       title: "Would fit third",
       kind: "note",
-      content: "This lower-priority memory would fit but should not leapfrog.",
+      content: "This lower-priority memory can fit.",
       source: "manual",
       confidence: 1,
       importance: 1
     });
 
-    const bundle = buildContextBundle(database, project.id, { maxCharacters: 260 });
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 600 });
 
     expect(bundle).toContain("The first memory fits.");
     expect(bundle).not.toContain("Too large second");
-    expect(bundle).not.toContain("Would fit third");
+    expect(bundle).toContain("Would fit third");
   });
 
   test("keeps long-term memory entries whole when applying character budgets", () => {
@@ -265,12 +265,12 @@ describe("context bundle", () => {
       importance: 8
     });
 
-    const bundle = buildContextBundle(database, project.id, { maxCharacters: 285 });
+    const bundle = buildContextBundle(database, project.id, { maxCharacters: 420 });
 
     expect(bundle).toContain("Keep this working memory.");
     expect(bundle).toContain("First memory should fit.");
     expect(bundle).not.toContain("Second memory should be skipped");
-    expect(bundle).toContain("Some long-term memories were omitted due to maxCharacters.");
+    expect(bundle.length).toBeLessThanOrEqual(420);
   });
 
   test("rebuilds a stale Project Briefing while building the next context bundle", () => {
@@ -289,7 +289,7 @@ describe("context bundle", () => {
     expect(listProjectBriefings(database, project.id)[1]?.staleAt).toEqual(expect.any(String));
   });
 
-  test("uses the stricter character estimate when maxTokens and maxCharacters are both set", () => {
+  test("uses a conservative UTF-8 byte token upper bound alongside character budgets", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     setWorkingMemory(database, {
@@ -298,13 +298,13 @@ describe("context bundle", () => {
       content: "Keep token-budgeted context concise."
     });
 
-    const bundle = buildContextBundle(database, project.id, { maxTokens: 50, maxCharacters: 500 });
-    expect(bundle.length).toBeLessThanOrEqual(200);
+    const bundle = buildContextBundle(database, project.id, { maxTokens: 250, maxCharacters: 500 });
+    expect(Buffer.byteLength(bundle, "utf8")).toBeLessThanOrEqual(250);
     expect(bundle).toContain("Keep token-budgeted context concise.");
     expect(() => buildContextBundle(database, project.id, { maxTokens: 24 })).toThrow(/maxTokens/);
   });
 
-  test("includes warning Memory independently of the search query", () => {
+  test("includes only query-relevant warning memories for explicit searches", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });
     addMemory(database, {
@@ -317,7 +317,7 @@ describe("context bundle", () => {
     });
 
     const bundle = buildContextBundle(database, project.id, { query: "SQLite" });
-    expect(bundle).toContain("Unsafe import");
+    expect(bundle).not.toContain("Unsafe import");
     expect(bundle).toContain("SQLite note");
   });
 });

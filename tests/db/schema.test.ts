@@ -28,6 +28,17 @@ function columnNames(database: Database.Database, table: string): string[] {
 }
 
 describe("database schema", () => {
+  test("v7 migration adds recall audit without changing task or memory state", () => {
+    db = openDatabase(":memory:"); migrate(db);
+    const project = createProject(db, {name: "Audit", rootPath: "/v7-audit"});
+    const memory = addMemory(db, {projectId: project.id, title: "Preserved", content: "Evidence", kind: "fact", source: "manual", confidence: 1, importance: 5});
+    setWorkingMemory(db, {projectId: project.id, taskId: "a", kind: "next_step", content: "Preserve task"});
+    db.exec("drop table recall_events; delete from schema_version where version = 8; insert or ignore into schema_version values (7, '2026-08-01');");
+    migrate(db); migrate(db);
+    expect(tableNames(db)).toContain("recall_events");
+    expect(db.prepare("select content from memories where id = ?").pluck().get(memory.id)).toBe("Evidence");
+    expect(listWorkingMemory(db, project.id, "a")[0].content).toBe("Preserve task");
+  });
   test("v6 project and working state remain readable across the identity migration", () => {
     db = openDatabase(":memory:");
     db.exec(`
@@ -68,7 +79,7 @@ describe("database schema", () => {
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(7);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(8);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -133,7 +144,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -182,7 +193,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -237,7 +248,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -317,7 +328,7 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -350,7 +361,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

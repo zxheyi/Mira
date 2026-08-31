@@ -426,7 +426,7 @@ export function searchMemories(
     ? [toFtsQuery(trimmedQuery, options.queryMode), projectId, options.kind, limit]
     : [toFtsQuery(trimmedQuery, options.queryMode), projectId, limit];
 
-  return db
+  const results = db
     .prepare(
       `select
          memories.id,
@@ -453,4 +453,14 @@ export function searchMemories(
     )
     .all(...params)
     .map((row) => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));
+  if (!/\p{Script=Han}/u.test(trimmedQuery) || results.length >= limit) return results;
+  const terms = options.queryMode === "phrase" ? [trimmedQuery] : trimmedQuery.split(/\s+/).slice(0, 20);
+  const predicates = terms.map(() => "(instr(lower(title), lower(?)) > 0 or instr(lower(content), lower(?)) > 0)").join(" or ");
+  const fallback = db.prepare(`select * from memories where project_id = ? and status = 'active'
+    ${options.kind ? "and kind = ?" : ""} and (${predicates})
+    order by importance desc, confidence desc, created_at desc, id asc limit ?`)
+    .all(projectId, ...(options.kind ? [options.kind] : []), ...terms.flatMap(term => [term, term]), limit)
+    .map(row => ({ memory: toMemory(row as MemoryRow), score: 0 }));
+  const seen = new Set(results.map(item => item.memory.id));
+  return [...results, ...fallback.filter(item => !seen.has(item.memory.id))].slice(0, limit);
 }

@@ -7,6 +7,8 @@ import {
   rebuildProjectBriefing
 } from "../briefing/projectBriefingStore.js";
 import { buildContextBundle } from "../context/contextBundle.js";
+import { prepareContext } from "../context/contextPreparation.js";
+import { listRecallEvents } from "../context/recallAuditStore.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import {
@@ -30,6 +32,8 @@ import {
 
 export const MIRA_MCP_TOOL_NAMES = [
   "get_context_bundle",
+  "prepare_context",
+  "list_recall_events",
   "get_project_briefing",
   "rebuild_project_briefing",
   "search_memory",
@@ -50,7 +54,9 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
-  get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory, the latest Project Briefing, warnings, and relevant long-term memories.",
+  get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory, the latest Project Briefing metadata, and query-relevant memories with an audited receipt.",
+  prepare_context: "Prepare bounded context and return { markdown, receipt } with candidate, injected and omitted memory IDs. Preview mode records neither recall nor Briefing writes.",
+  list_recall_events: "Inspect recent context injection receipts for the bound project and optional task; receipt means injected, not proven useful.",
   get_project_briefing: "Read or deterministically refresh the bound project's latest derived Briefing; returns { briefing } with Markdown, version, provenance ids, stale state, and size estimates.",
   rebuild_project_briefing: "Force one deterministic rebuild of the bound project's derived Briefing; returns { briefing } while preserving every earlier complete or failed version for audit.",
   search_memory: "Use for targeted historical lookups; defaults to keyword OR matching, supports explicit phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
@@ -78,6 +84,18 @@ export type MiraMcpOptions = {
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
+  prepare_context: {
+    taskId: z.string().trim().min(1).max(500).optional(),
+    query: z.string().trim().min(1).max(1_000).optional(),
+    memoryLimit: z.number().int().min(1).max(50).optional(),
+    maxCharacters: z.number().int().min(1).max(1_000_000).optional(),
+    maxTokens: z.number().int().min(25).max(250_000).optional(),
+    preview: z.boolean().optional()
+  },
+  list_recall_events: {
+    taskId: z.string().trim().min(1).max(500).optional(),
+    limit: z.number().int().min(1).max(100).optional()
+  },
   get_context_bundle: {
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
@@ -261,6 +279,16 @@ function executeMiraTool(
   const { db, projectId } = session;
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
+      case "prepare_context":
+        return prepareContext(db, projectId, {
+          taskId, query: optionalStringArg(args, "query"),
+          memoryLimit: numberArg(args, "memoryLimit", 8),
+          maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined,
+          maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : undefined,
+          recordAudit: args.preview !== true
+        });
+      case "list_recall_events":
+        return listRecallEvents(db, projectId, {taskId, limit: numberArg(args, "limit", 20)});
       case "get_context_bundle":
         return buildContextBundle(db, projectId, {
           taskId,
