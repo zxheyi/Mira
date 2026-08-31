@@ -1,11 +1,11 @@
 import type Database from "better-sqlite3";
 import {
-  addMemory,
   type AddMemoryInput,
   type Memory,
   type MemoryKind
 } from "../memory/memoryStore.js";
 import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
+import { curateMemory } from "../memory/curationService.js";
 
 type ThreadTextRow = {
   raw_text: string;
@@ -187,6 +187,6 @@ export function distillThreadMemories(
       `distill:${threadId}`,
       "Replaced by a newer deterministic distill result"
     );
-    return inputs.map((memory) => addMemory(db, memory));
+    return inputs.map((memory) => curateMemory(db, {operation: "add", input: memory}));
   })();
 }

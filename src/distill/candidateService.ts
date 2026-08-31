@@ -136,7 +136,8 @@ function acceptCandidate(
   db: Database.Database,
   candidate: MemoryCandidate,
   reason?: string,
-  supersedesMemoryId?: string
+  supersedesMemoryId?: string,
+  actor?: string
 ): MemoryCandidateResult {
   const source = `candidate:${candidate.id}`;
   const memory = supersedesMemoryId
@@ -149,7 +150,7 @@ function acceptCandidate(
       source,
       confidence: candidate.confidence,
       importance: Math.max(1, Math.round(candidate.importance * 10)),
-      actor: source,
+      actor: actor ?? source,
       reason
     })
     : addMemory(db, {
@@ -159,7 +160,7 @@ function acceptCandidate(
       kind: candidate.kind,
       content: candidate.content,
       source,
-      actor: source,
+      actor: actor ?? source,
       confidence: candidate.confidence,
       importance: Math.max(1, Math.round(candidate.importance * 10))
     });
@@ -294,8 +295,10 @@ export function reviewMemoryCandidate(
   candidateId: string,
   decision: "accept" | "reject",
   reason?: string,
-  supersedesMemoryId?: string
+  supersedesMemoryId?: string,
+  actor?: string
 ): MemoryCandidateResult {
+  if (decision !== "accept" && decision !== "reject") throw new Error("Review decision must be accept or reject");
   const normalizedReason = reason?.trim();
   if (normalizedReason && normalizedReason.length > 1000) throw new Error("Review reason must be at most 1000 characters");
   if (decision === "reject" && supersedesMemoryId) {
@@ -326,7 +329,7 @@ export function reviewMemoryCandidate(
       if (!thread.raw_text.includes(candidate.evidence)) {
         throw new Error(`Memory candidate evidence is no longer present; resubmit the candidate: ${candidateId}`);
       }
-      return acceptCandidate(db, candidate, normalizedReason, supersedesMemoryId);
+      return acceptCandidate(db, candidate, normalizedReason, supersedesMemoryId, actor);
     }
 
     const reviewedAt = new Date().toISOString();

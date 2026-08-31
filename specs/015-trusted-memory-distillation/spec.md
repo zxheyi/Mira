@@ -3,6 +3,8 @@
 Feature ID: `015-trusted-memory-distillation`
 Status: Complete
 
+2026-08-31 边界补充：以 [统一记忆治理](../024-memory-curation/spec.md) 为准。自动接受要求归纳内容在原文 evidence 中逐字存在（忽略空白差异）；非原文声明使用 `non_verbatim_claim` 进入待审。置信度仍是提取方自报分数，不等同于真实性或投资 thesis 批准。
+
 ## 目标
 
 让 Mira 在 Codex 与 Claude Code 会话被自动捕获后，能够异步生成带原文证据的记忆候选，并依据确定性策略自动接受低风险、高置信候选；其余候选进入人工审核队列。整个链路必须可追溯、幂等、可重试，并且 Hook 不能等待外部模型。

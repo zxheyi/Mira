@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { createHash } from "node:crypto";
-import { submitMemoryCandidates } from "./candidateService.js";
+import { curateMemory } from "../memory/curationService.js";
 import {
   claimNextDistillJob,
   completeDistillJob,
@@ -49,7 +49,7 @@ export async function runNextDistillJob(
       return { status: "skipped_stale", job, candidateCount: 0 };
     }
     if (candidates.length > 0) {
-      submitMemoryCandidates(db, {
+      curateMemory(db, {operation: "propose", input: {
         projectId: job.projectId,
         threadId: job.threadId,
         jobId: job.id,
@@ -58,7 +58,7 @@ export async function runNextDistillJob(
         sourceModel,
         extractionMethod: "provider",
         candidates
-      });
+      }});
     }
     completeDistillJob(db, job.id);
     return { status: "completed", job, candidateCount: candidates.length };

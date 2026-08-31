@@ -13,12 +13,11 @@ import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import {
   listMemoryCandidates,
-  reviewMemoryCandidate,
-  submitMemoryCandidates
 } from "../distill/candidateService.js";
 import { CANDIDATE_STATUSES, type MemoryCandidateInput } from "../distill/candidateTypes.js";
-import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
-import { archiveMemory, getMemory, getMemoryHistory, updateMemory } from "../memory/memoryLifecycleStore.js";
+import { MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
+import { getMemory, getMemoryHistory } from "../memory/memoryLifecycleStore.js";
+import { curateMemory } from "../memory/curationService.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { repositoryLocation } from "../projects/projectIdentity.js";
 import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
@@ -63,9 +62,9 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
   clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
-  add_memory: "Write a stable long-term memory; returns the Memory object and de-duplicates by projectId, kind, threadId, and content hash.",
+  add_memory: "Write an explicitly user/protocol-confirmed memory, never an automatic inference (use submit_memory_candidates instead); returns Memory and de-duplicates by projectId, kind, threadId and content hash.",
   save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object.",
-  submit_memory_candidates: "Submit evidence-backed memory candidates after important work; Mira validates provenance and either auto-accepts trusted low-risk items or queues them for review.",
+  submit_memory_candidates: "Submit inferred candidates after important work; exact provenance, verbatim content, low risk and confidence gates allow automatic memory acceptance, otherwise require review. Never updates thesis state.",
   list_memory_candidates: "List memory candidates for the bound project, optionally filtered by review status; use this to inspect items awaiting human or Agent confirmation.",
   review_memory_candidate: "Accept or reject one pending memory candidate; only acceptance may provide supersedesMemoryId to create a traceable successor of an active predecessor.",
   get_memory: "Read one Memory by id including inactive lifecycle state, provenance, predecessor link, and timestamps for audit or update preparation.",
@@ -320,7 +319,7 @@ function executeMiraTool(
         clearWorkingMemory(db, projectId, optionalWorkingMemoryKindArg(args, "kind"), taskId);
         return { ok: true };
       case "add_memory":
-        return addMemory(db, {
+        return curateMemory(db, {operation: "add", input: {
           projectId,
           threadId: optionalStringArg(args, "threadId"),
           title: stringArg(args, "title"),
@@ -330,7 +329,7 @@ function executeMiraTool(
           actor: "mcp",
           confidence: numberArg(args, "confidence", 1),
           importance: numberArg(args, "importance", 5)
-        });
+        }});
       case "save_thread":
         return saveThread(db, {
           id: optionalStringArg(args, "id") ?? `thread_${randomUUID()}`,
@@ -342,14 +341,14 @@ function executeMiraTool(
         });
       case "submit_memory_candidates":
         return {
-          results: submitMemoryCandidates(db, {
+          results: curateMemory(db, {operation: "propose", input: {
             projectId,
             threadId: stringArg(args, "threadId"),
             sourceAgent: stringArg(args, "sourceAgent"),
             sourceModel: optionalStringArg(args, "sourceModel"),
             extractionMethod: "agent",
             candidates: args.candidates as MemoryCandidateInput[]
-          })
+          }})
         };
       case "list_memory_candidates":
         return {
@@ -361,21 +360,16 @@ function executeMiraTool(
           )
         };
       case "review_memory_candidate":
-        return reviewMemoryCandidate(
-          db,
-          projectId,
-          stringArg(args, "candidateId"),
-          stringArg(args, "decision") as "accept" | "reject",
-          optionalStringArg(args, "reason"),
-          optionalStringArg(args, "supersedesMemoryId")
-        );
+        return curateMemory(db, {operation: "review", projectId, actor: "mcp",
+          candidateId: stringArg(args, "candidateId"), decision: stringArg(args, "decision") as "accept" | "reject",
+          reason: optionalStringArg(args, "reason"), supersedesMemoryId: optionalStringArg(args, "supersedesMemoryId")});
       case "get_memory": {
         const memory = getMemory(db, projectId, stringArg(args, "memoryId"));
         if (!memory) throw new Error(`Memory not found: ${stringArg(args, "memoryId")}`);
         return memory;
       }
       case "update_memory":
-        return updateMemory(db, {
+        return curateMemory(db, {operation: "correct", input: {
           projectId,
           memoryId: stringArg(args, "memoryId"),
           content: stringArg(args, "content"),
@@ -386,11 +380,9 @@ function executeMiraTool(
           source: optionalStringArg(args, "source"),
           actor: "mcp",
           reason: optionalStringArg(args, "reason")
-        });
+        }});
       case "archive_memory":
-        return archiveMemory(
-          db, projectId, stringArg(args, "memoryId"), "mcp", optionalStringArg(args, "reason")
-        );
+        return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")});
       case "get_memory_history":
         return getMemoryHistory(db, projectId, stringArg(args, "memoryId"));
       default: {

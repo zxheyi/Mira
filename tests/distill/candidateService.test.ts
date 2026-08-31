@@ -42,6 +42,17 @@ function setup() {
 }
 
 describe("trusted memory candidate service", () => {
+  test("high self-reported confidence does not approve a claim absent from the evidence", () => {
+    const { database, project, thread } = setup();
+    const [result] = submitMemoryCandidates(database, {
+      projectId: project.id, threadId: thread.id, sourceAgent: "provider", extractionMethod: "provider",
+      candidates: [{title: "Unsupported conclusion", kind: "fact", content: "Mira guarantees profitable investment returns.",
+        evidence: "Mira stores durable project memory in local SQLite.", confidence: 1, importance: 0.9}]
+    });
+    expect(result.outcome).toBe("pending_review");
+    expect(result.reasons).toContain("non_verbatim_claim");
+    expect(listMemoriesForProject(database, project.id)).toEqual([]);
+  });
   test("auto-accepts high-confidence low-risk candidates with exact evidence", () => {
     const { database, project, thread } = setup();
 

@@ -1,12 +1,12 @@
 import type Database from "better-sqlite3";
 import {
-  addMemory,
   MEMORY_KINDS,
   type AddMemoryInput,
   type Memory,
   type MemoryKind
 } from "../memory/memoryStore.js";
 import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
+import { curateMemory } from "../memory/curationService.js";
 import { sanitizeThreadTextForDistill } from "./transcriptSanitizer.js";
 
 type ThreadTextRow = {
@@ -197,7 +197,7 @@ export function applyLlmDistillCandidates(
         confidence: candidate.confidence,
         importance: candidate.importance
       };
-      return addMemory(db, input);
+      return curateMemory(db, {operation: "add", input});
     });
   })();
 }

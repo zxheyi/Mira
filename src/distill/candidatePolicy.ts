@@ -95,6 +95,8 @@ export function candidateReviewReasons(
   hasConflict: boolean
 ): CandidateReviewReason[] {
   const reasons: CandidateReviewReason[] = [];
+  const normalize = (text: string) => text.trim().replace(/\s+/g, " ");
+  if (!normalize(candidate.evidence).includes(normalize(candidate.content))) reasons.push("non_verbatim_claim");
   if (candidate.confidence < 0.9) reasons.push("low_confidence");
   if (candidate.riskLevel === "high") reasons.push("high_impact_kind");
   if (hasConflict) reasons.push("conflict");

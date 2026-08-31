@@ -4,6 +4,7 @@ export const CANDIDATE_STATUSES = ["pending_review", "accepted", "rejected"] as 
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
 
 export const CANDIDATE_REVIEW_REASONS = [
+  "non_verbatim_claim",
   "low_confidence",
   "high_impact_kind",
   "conflict",

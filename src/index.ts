@@ -19,8 +19,7 @@ import { migrate } from "./db/schema.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
 import { startDetachedDistillWorker } from "./distill/detachedWorker.js";
 import {
-  listMemoryCandidates,
-  reviewMemoryCandidate
+  listMemoryCandidates
 } from "./distill/candidateService.js";
 import { CANDIDATE_STATUSES, type CandidateStatus } from "./distill/candidateTypes.js";
 import {
@@ -59,13 +58,11 @@ import {
   type IntegrationRuntime
 } from "./integrations/configInstaller.js";
 import { runIntegrationHook } from "./integrations/hookRuntime.js";
-import { addMemory, clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
+import { clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
+import { curateMemory } from "./memory/curationService.js";
 import {
-  archiveMemory,
   getMemory,
-  getMemoryHistory,
-  restoreMemory,
-  updateMemory
+  getMemoryHistory
 } from "./memory/memoryLifecycleStore.js";
 import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
 import { defaultProjectDatabase, repositoryLocation } from "./projects/projectIdentity.js";
@@ -549,7 +546,7 @@ memory
 
       await withProject(program.opts<GlobalOptions>(), (session) => {
         printJson(
-          addMemory(session.db, {
+          curateMemory(session.db, {operation: "add", input: {
             projectId: session.project.id,
             threadId: options.threadId ?? options.thread,
             title: options.title,
@@ -559,7 +556,7 @@ memory
             actor: "cli",
             confidence,
             importance
-          })
+          }})
         );
       });
     }
@@ -631,7 +628,7 @@ memory
     importance?: string; source?: string; reason?: string;
   }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(updateMemory(session.db, {
+      printJson(curateMemory(session.db, {operation: "correct", input: {
         projectId: session.project.id,
         memoryId: options.id,
         content: options.content,
@@ -642,7 +639,7 @@ memory
         source: options.source,
         actor: "cli",
         reason: options.reason
-      }));
+      }}));
     });
   });
 
@@ -653,7 +650,7 @@ memory
   .option("--reason <reason>", "Archive reason")
   .action(async (options: { id: string; reason?: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(archiveMemory(session.db, session.project.id, options.id, "cli", options.reason));
+      printJson(curateMemory(session.db, {operation: "archive", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}));
     });
   });
 
@@ -664,7 +661,7 @@ memory
   .option("--reason <reason>", "Restore reason")
   .action(async (options: { id: string; reason?: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(restoreMemory(session.db, session.project.id, options.id, "cli", options.reason));
+      printJson(curateMemory(session.db, {operation: "restore", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}));
     });
   });
 
@@ -735,9 +732,8 @@ memoryCandidate
   .action(async (options: { id: string; decision: string; reason?: string; supersedes?: string }) => {
     const decision = requireReviewDecision(options.decision);
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(reviewMemoryCandidate(
-        session.db, session.project.id, options.id, decision, options.reason, options.supersedes
-      ));
+      printJson(curateMemory(session.db, {operation: "review", projectId: session.project.id, candidateId: options.id,
+        decision, actor: "cli", reason: options.reason, supersedesMemoryId: options.supersedes}));
     });
   });
 

@@ -234,6 +234,8 @@ Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模�
 
 Memory 内容不原地覆盖。更新会创建 active successor，并在同一事务中把 predecessor 标记为 superseded；历史内容和事件账本始终可审计。归档会让 Memory 退出默认搜索和 Context Bundle，合法恢复后重新进入：
 
+CLI、MCP 与管理 UI 的写入统一经过记忆治理服务。`add/update/archive/restore` 是用户或协议已确认的操作；自动归纳只能提交 candidate。除来源片段必须存在、低风险、高置信度、无冲突外，自动接受还要求内容在 evidence 中逐字出现（忽略空白差异）。改写或推论标记 `non_verbatim_claim`，留待显式审核。这个保守规则不是语义真实性证明；Mira 记忆层不因此获得修改投资 thesis 的权限。写入内容、来源、审核/归档理由含可识别密钥时，整次操作拒绝且不改变旧记忆。已审核的 `apply-candidates` 和手动 `memory distill` 仍为显式批量写入，也经过相同检查。
+
 ```bash
 mira memory get --id memory_123
 mira memory update --id memory_123 --content "Updated durable fact" --reason "Decision changed"

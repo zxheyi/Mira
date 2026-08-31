@@ -25,6 +25,9 @@ describe("memory lifecycle CLI", () => {
 
     expect(json<{ status: string }>((await run(["memory", "get", "--id", first.id], root, db)).stdout).status)
       .toBe("active");
+    await expect(run(["memory", "update", "--id", first.id, "--content", "api_key=privatevalue123456"], root, db))
+      .rejects.toMatchObject({stderr: expect.stringContaining("sensitive")});
+    expect(json<{status: string}>((await run(["memory", "get", "--id", first.id], root, db)).stdout).status).toBe("active");
     const successor = json<{ id: string; supersedesMemoryId: string }>((await run([
       "memory", "update", "--id", first.id,
       "--content", "Use lifecycle-aware local SQLite.", "--reason", "Approved"

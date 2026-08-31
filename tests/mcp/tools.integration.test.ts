@@ -20,6 +20,13 @@ async function setupMcpOptions() {
 }
 
 describe("Mira MCP tools", () => {
+  test("confirmed corrections reject secrets without superseding the predecessor", async () => {
+    const options = await setupMcpOptions();
+    const memory = callMiraTool(options, "add_memory", {title: "Safe", kind: "fact", content: "Confirmed fact", source: "manual"}) as {id: string};
+    expect(() => callMiraTool(options, "update_memory", {memoryId: memory.id, content: "api_key=privatevalue123456"})).toThrow(/sensitive/);
+    expect(callMiraTool(options, "get_memory", {memoryId: memory.id})).toMatchObject({status: "active", content: "Confirmed fact"});
+    expect(() => callMiraTool(options, "archive_memory", {memoryId: memory.id, reason: "password=privatevalue123456"})).toThrow(/sensitive/);
+  });
   test("creates the MCP server factory with the expected tool names", async () => {
     const options = await setupMcpOptions();
     const created = createMiraMcpServer(options);
