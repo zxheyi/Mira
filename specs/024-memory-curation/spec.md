@@ -17,3 +17,12 @@
 - The v9-to-v10 migration adds audit storage without rewriting existing memory. Before migrating a real database, back it up. Older runtimes reject schema v10; rollback requires restoring a matching backup, not reducing the version marker.
 
 Implementation: [curation interface](../../src/memory/curationService.ts), [MCP adapter](../../src/mcp/server.ts). Tests: [curation](../../tests/memory/curationService.test.ts), [MCP](../../tests/mcp/tools.integration.test.ts), [CLI](../../tests/cli/memory-lifecycle-cli.test.ts).
+
+## Reviewed batch lifecycle
+
+- Deterministic extraction and reviewed JSON application both call `curateMemory` with `replace_thread`. They supply content and extraction method, not archive lists or lifecycle policy. The interface verifies authority, source-project ownership and the complete batch before committing any change.
+- Only memories belonging to the selected project and Thread with `distill:<thread>` or `llm-distill:<thread>` sources are managed by a batch. Manual and candidate-derived records are preserved. An explicit correction defaults to `manual` source unless its caller explicitly supplies another source, so later batches do not silently archive a human correction; its predecessor remains traceable.
+- Exact kind/content duplicates keep their identity. A unique same-kind, normalized-title match creates an immutable successor; ambiguous matches fail and roll back. Entries omitted from a non-empty reviewed batch are archived with reviewer attribution. No semantic matching is claimed.
+- Empty batches are no-ops, not erase instructions. Invalid, sensitive, ambiguous or failed batches preserve all prior memory and success-audit state. All adds, corrections and archives are committed atomically through the same curation operations and audit policy.
+
+Adapters: [deterministic extraction](../../src/distill/distillThread.ts), [reviewed file](../../src/distill/llmDistill.ts). Public batch coverage lives in the curation tests above.

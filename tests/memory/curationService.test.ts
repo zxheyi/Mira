@@ -3,9 +3,51 @@ import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
-import { authorizeCuration, curateMemory, listCurationEvents } from "../../src/memory/curationService.js";
+import { authorizeCuration, curateMemory, listCurationEvents, type ReplaceThreadCommand } from "../../src/memory/curationService.js";
 import { getMemory, getMemoryHistory } from "../../src/memory/memoryLifecycleStore.js";
 import { prepareContext } from "../../src/context/contextPreparation.js";
+
+test("confirmed batch replacement keeps an immutable successor and leaves unrelated memory active", () => {
+  const db = openDatabase(":memory:"); migrate(db);
+  const project = createProject(db, {name: "Batch", rootPath: "/batch"});
+  const authority = authorizeCuration(db, project.id, {actor: "reviewer", reason: "Reviewed batch"});
+  try {
+    saveThread(db, {id: "batch-source", projectId: project.id, title: "Batch", source: "codex", rawFormat: "markdown", rawText: "Reviewed session"});
+    const manual = curateMemory(db, {operation: "add", input: {projectId: project.id, threadId: "batch-source", title: "Manual", content: "Preserve a manually confirmed constraint.", kind: "constraint", source: "manual", confidence: 1, importance: 9}}, authority);
+    const command: ReplaceThreadCommand = {operation: "replace_thread", projectId: project.id, threadId: "batch-source", method: "deterministic", memories: [{title: "Storage", kind: "decision", content: "Use SQLite.", confidence: 1, importance: 8}]};
+    const [first] = curateMemory(db, command, authority);
+    const [next] = curateMemory(db, {...command, method: "reviewed-file", memories: [{...command.memories[0], content: "Use SQLite with WAL."}]}, authority);
+    expect(next.supersedesMemoryId).toBe(first.id);
+    expect(getMemoryHistory(db, project.id, first.id).memories.map(memory => memory.status)).toEqual(["superseded", "active"]);
+    expect(getMemory(db, project.id, manual.id)?.status).toBe("active");
+    expect(listCurationEvents(db, project.id)[0]).toMatchObject({operation: "correct", actor: "reviewer", memoryId: next.id});
+  } finally { db.close(); }
+});
+
+test.each(["deterministic", "reviewed-file"] as const)("%s batch validates atomically, deduplicates and preserves empty-batch state", (method) => {
+  const db = openDatabase(":memory:"); migrate(db);
+  const project = createProject(db, {name: "Atomic batch", rootPath: "/atomic-batch"});
+  const authority = authorizeCuration(db, project.id, {actor: "reviewer", reason: "Reviewed batch"});
+  try {
+    saveThread(db, {id: "batch", projectId: project.id, title: "Batch", source: "codex", rawFormat: "markdown", rawText: "Approved source"});
+    const input = {title: "Storage", kind: "decision" as const, content: "SQLite", confidence: 1, importance: 8};
+    const command: ReplaceThreadCommand = {operation: "replace_thread", projectId: project.id, threadId: "batch", method, memories: [input, input]};
+    expect(() => curateMemory(db, command)).toThrow(/authority/);
+    const first = curateMemory(db, command, authority);
+    expect(first).toHaveLength(1);
+    const before = listCurationEvents(db, project.id);
+    expect(() => curateMemory(db, {...command, memories: [{...input, content: "Replacement"}, {...input, title: "Secret", content: "api_key=privatevalue123456"}]}, authority)).toThrow(/sensitive/);
+    expect(() => curateMemory(db, {...command, memories: [{...input, content: "Replacement"}, {...input, title: "Invalid", confidence: 2}]}, authority)).toThrow();
+    expect(() => curateMemory(db, {...command, memories: [input, {...input, content: "Ambiguous second conclusion"}]}, authority)).toThrow(/Ambiguous/);
+    expect(curateMemory(db, {...command, memories: []}, authority)).toEqual([]);
+    expect(getMemoryHistory(db, project.id, first[0].id).memories).toEqual(first);
+    expect(listCurationEvents(db, project.id)).toEqual(before);
+    expect(curateMemory(db, command, authority).map(memory => memory.id)).toEqual([first[0].id]);
+    const corrected = curateMemory(db, {operation: "correct", input: {projectId: project.id, memoryId: first[0].id, content: "Human correction"}}, authority);
+    curateMemory(db, {...command, memories: [{...input, title: "Another entry", content: "New batch output"}]}, authority);
+    expect(getMemory(db, project.id, corrected.id)).toMatchObject({status: "active", source: "manual"});
+  } finally { db.close(); }
+});
 
 test("automatic callers cannot self-authorize a confirmed write", () => {
   const db = openDatabase(":memory:"); migrate(db);

@@ -216,8 +216,8 @@ Mira should keep project memory local.
       expect.arrayContaining([
         expect.objectContaining({
           eventType: "archived",
-          actor: "llm-distill:thread_1",
-          reason: "Replaced by a newer LLM distill result"
+          actor: "test:user",
+          reason: "Replaced by an explicitly reviewed thread batch"
         })
       ])
     );

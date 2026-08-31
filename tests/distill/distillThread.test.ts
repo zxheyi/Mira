@@ -228,8 +228,8 @@ Time: 2026-08-03T03:41:29.552Z
       expect.arrayContaining([
         expect.objectContaining({
           eventType: "archived",
-          actor: "distill:thread_1",
-          reason: "Replaced by a newer deterministic distill result"
+          actor: "test:user",
+          reason: "Replaced by an explicitly reviewed thread batch"
         })
       ])
     );

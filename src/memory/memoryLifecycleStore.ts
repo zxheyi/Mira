@@ -50,30 +50,6 @@ export function archiveMemory(
   })();
 }
 
-export type DesiredMemoryIdentity = Pick<Memory, "kind" | "content">;
-
-export function archiveStaleMemoriesForThread(
-  db: Database.Database,
-  projectId: string,
-  threadId: string,
-  desired: readonly DesiredMemoryIdentity[],
-  managedSources: readonly string[],
-  actor: string,
-  reason: string
-): Memory[] {
-  return db.transaction(() => {
-    const desiredKeys = new Set(desired.map((memory) => `${memory.kind}\u0000${memory.content}`));
-    const sources = new Set(managedSources);
-    const active = db.prepare(
-      "select id, kind, content, source from memories where project_id = ? and thread_id = ? and status = 'active'"
-    ).all(projectId, threadId) as Array<{ id: string; kind: Memory["kind"]; content: string; source: string }>;
-
-    return active
-      .filter((memory) => sources.has(memory.source) && !desiredKeys.has(`${memory.kind}\u0000${memory.content}`))
-      .map((memory) => archiveMemory(db, projectId, memory.id, actor, reason));
-  })();
-}
-
 export function restoreMemory(
   db: Database.Database, projectId: string, memoryId: string, actor: string, reason?: string
 ): Memory {

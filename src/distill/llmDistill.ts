@@ -1,12 +1,10 @@
 import type Database from "better-sqlite3";
 import {
   MEMORY_KINDS,
-  type AddMemoryInput,
   type Memory,
   type MemoryKind
 } from "../memory/memoryStore.js";
-import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
-import { curateMemory, requireCurationAuthority, type CurationAuthority } from "../memory/curationService.js";
+import { curateMemory, type CurationAuthority } from "../memory/curationService.js";
 import { sanitizeThreadTextForDistill } from "./transcriptSanitizer.js";
 
 type ThreadTextRow = {
@@ -171,35 +169,5 @@ export function applyLlmDistillCandidates(
   candidates: LlmMemoryCandidate[],
   authority?: CurationAuthority
 ): Memory[] {
-  getThreadRawText(db, projectId, threadId);
-  requireCurationAuthority(db, projectId, authority);
-  if (candidates.length === 0) {
-    return [];
-  }
-
-  return db.transaction(() => {
-    archiveStaleMemoriesForThread(
-      db,
-      projectId,
-      threadId,
-      candidates,
-      [`distill:${threadId}`, `llm-distill:${threadId}`],
-      `llm-distill:${threadId}`,
-      "Replaced by a newer LLM distill result"
-    );
-
-    return candidates.map((candidate) => {
-      const input: AddMemoryInput = {
-        projectId,
-        threadId,
-        title: candidate.title,
-        kind: candidate.kind,
-        content: candidate.content,
-        source: `llm-distill:${threadId}`,
-        confidence: candidate.confidence,
-        importance: candidate.importance
-      };
-      return curateMemory(db, {operation: "add", input}, authority);
-    });
-  })();
+  return curateMemory(db, {operation: "replace_thread", projectId, threadId, method: "reviewed-file", memories: candidates}, authority);
 }
