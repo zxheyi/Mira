@@ -181,6 +181,12 @@ describe("history CLI", () => {
       insert into schema_version values (5, '2026-07-20T00:00:00.000Z');
       create table projects (id text primary key, name text not null, root_path text not null unique, created_at text not null);
       insert into projects values ('project_legacy', 'Mira', '${root.replaceAll("'", "''")}', '2026-07-20T00:00:00.000Z');
+      create table distill_jobs (
+        id text primary key, project_id text not null, thread_id text not null, trigger text not null,
+        channel text not null, input_hash text not null, status text not null, attempts integer not null default 0,
+        last_error text, created_at text not null, updated_at text not null,
+        unique(project_id, thread_id, channel, input_hash)
+      );
     `);
     legacy.close();
 

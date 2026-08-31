@@ -29,7 +29,7 @@ import {
   retryDistillJob,
   type DistillJobStatus
 } from "./distill/distillJobStore.js";
-import { runNextDistillJob } from "./distill/distillWorker.js";
+import { drainDistillJobs, runNextDistillJob } from "./distill/distillWorker.js";
 import {
   applyLlmDistillCandidates,
   buildLlmDistillPromptForThread,
@@ -85,6 +85,7 @@ import {
   type WorkingMemoryKind
 } from "./workingMemory/workingMemoryStore.js";
 import { syncMarkdownVault } from "./vault/markdownVault.js";
+import { startViewerServer } from "./ui/viewerServer.js";
 
 type GlobalOptions = {
   db?: string;
@@ -346,6 +347,10 @@ async function enqueueHookDistill(input: {
     db.close();
   }
 
+  await resumeHookDistill(input);
+}
+
+async function resumeHookDistill(input: {projectRoot: string; dbPath: string}): Promise<void> {
   const runtime = integrationRuntime();
   await startDetachedDistillWorker({
     nodePath: runtime.nodePath,
@@ -768,15 +773,17 @@ distillJobs
 
 distillJobs
   .command("run")
-  .description("Run one pending distillation job")
-  .option("--once", "Run one job and exit", true)
-  .action(async () => {
+  .description("Run pending distillation work with expired-lease recovery")
+  .option("--once", "Run one job and exit (default)")
+  .option("--drain", "Drain pending work and scheduled retries before exiting")
+  .action(async (options: {once?: boolean; drain?: boolean}) => {
+    if (options.once && options.drain) throw new Error("Choose --once or --drain");
     const config = providerConfigFromEnv(process.env);
     if (!config) {
       throw new Error("Provider is not configured; set MIRA_LLM_BASE_URL and MIRA_LLM_MODEL");
     }
     await withProject(program.opts<GlobalOptions>(), async (session) => {
-      printJson(await runNextDistillJob(
+      printJson(await (options.drain ? drainDistillJobs : runNextDistillJob)(
         session.db,
         session.project.id,
         createOpenAiCompatibleProvider(config),
@@ -1032,7 +1039,8 @@ integration
         agent: requireIntegrationAgent(options.agent),
         projectRoot,
         dbPath,
-        onThreadCaptured: providerConfigFromEnv(process.env) ? enqueueHookDistill : undefined
+        onThreadCaptured: providerConfigFromEnv(process.env) ? enqueueHookDistill : undefined,
+        onSessionStarted: providerConfigFromEnv(process.env) ? resumeHookDistill : undefined
       },
       await readStdinJson()
     );
@@ -1049,6 +1057,30 @@ program
     const projectRoot = await resolveProjectRoot(globalOptions);
     const dbPath = resolveDbPath(projectRoot, globalOptions);
     printJson(await runDoctor({ projectRoot, dbPath }));
+  });
+
+program
+  .command("ui")
+  .description("Start the local Mira memory management viewer")
+  .option("--host <host>", "Loopback host to bind", "127.0.0.1")
+  .option("--port <port>", "Port to bind", "4317")
+  .action(async (options: { host: string; port: string }) => {
+    const globalOptions = program.opts<GlobalOptions>();
+    const projectRoot = await resolveProjectRoot(globalOptions);
+    const dbPath = resolveDbPath(projectRoot, globalOptions);
+    const server = await startViewerServer({
+      projectRoot,
+      dbPath,
+      host: options.host,
+      port: integerInRange(options.port, 0, 65_535, "UI port")
+    });
+    printJson({
+      url: server.url,
+      host: server.host,
+      port: server.port,
+      projectRoot,
+      dbPath
+    });
   });
 
 program

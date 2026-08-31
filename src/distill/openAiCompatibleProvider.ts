@@ -5,6 +5,7 @@ import { assertNoSensitiveInformation } from "./candidatePolicy.js";
 export type DistillProviderConfig = { baseUrl: string; model: string; apiKey?: string };
 export type DistillProviderInput = { threadId: string; rawText: string };
 export interface DistillProvider { distill(input: DistillProviderInput): Promise<MemoryCandidateInput[]>; }
+export class RetryableProviderError extends Error {}
 
 type RawCandidate = Record<string, unknown>;
 
@@ -97,13 +98,17 @@ export function createOpenAiCompatibleProvider(
             messages: [{ role: "user", content: buildPrompt(input) }]
           })
         });
+      } catch {
+        throw new RetryableProviderError("Provider request failed or timed out");
       } finally {
         clearTimeout(timeout);
       }
       if (!response.ok) {
         let body = (await response.text()).slice(0, 500);
         if (config.apiKey) body = body.split(config.apiKey).join("[REDACTED]");
-        throw new Error(`Provider HTTP ${response.status}: ${body}`);
+        const message = `Provider HTTP ${response.status}: ${body}`;
+        if (response.status === 429 || response.status >= 500) throw new RetryableProviderError(message);
+        throw new Error(message);
       }
       const payload = await response.json() as {
         choices?: Array<{ message?: { content?: unknown } }>;

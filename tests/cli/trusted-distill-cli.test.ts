@@ -49,7 +49,7 @@ describe("trusted distill CLI", () => {
     const project = ensureProjectForRoot(db, root);
     const claimed = claimNextDistillJob(db, project.id);
     if (!claimed) throw new Error("Expected queued job");
-    failDistillJob(db, claimed.id, "retry from CLI");
+    failDistillJob(db, claimed.id, "retry from CLI", claimed.attempts);
     db.close();
     const retried = json<{ status: string }>((await runMira([
       "distill", "jobs", "retry", "--id", claimed.id

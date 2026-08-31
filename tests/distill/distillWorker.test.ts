@@ -2,14 +2,15 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
-import { enqueueDistillJob, listDistillJobs } from "../../src/distill/distillJobStore.js";
-import { runNextDistillJob } from "../../src/distill/distillWorker.js";
+import { claimNextDistillJob, enqueueDistillJob, listDistillJobs } from "../../src/distill/distillJobStore.js";
+import { drainDistillJobs, runNextDistillJob } from "../../src/distill/distillWorker.js";
+import { RetryableProviderError } from "../../src/distill/openAiCompatibleProvider.js";
 import { listMemoriesForProject } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
-afterEach(() => { db?.close(); db = undefined; });
+afterEach(() => { db?.close(); db = undefined; vi.useRealTimers(); });
 
 function setup() {
   db = openDatabase(":memory:");
@@ -23,6 +24,47 @@ function setup() {
 }
 
 describe("one-shot distill worker", () => {
+  test("drain waits for a scheduled retry and exits when work completes", async () => {
+    vi.useFakeTimers();
+    const {database, project} = setup();
+    enqueueDistillJob(database, project.id, "thread_worker", "cli");
+    let requests = 0;
+    const draining = drainDistillJobs(database, project.id, {distill: async () => {
+      if (++requests === 1) throw new RetryableProviderError("Transient failure");
+      return [];
+    }}, "model");
+    await vi.runAllTimersAsync();
+    expect(await draining).toEqual({processed:2});
+    expect(listDistillJobs(database, project.id)[0]).toMatchObject({status:"completed",attempts:2});
+  });
+  test("late provider output cannot write candidates after another attempt acquires the lease", async () => {
+    vi.useFakeTimers();
+    const {database, project} = setup();
+    enqueueDistillJob(database, project.id, "thread_worker", "cli");
+    const result = await runNextDistillJob(database, project.id, {distill: async () => {
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
+      claimNextDistillJob(database, project.id);
+      return [{title: "Late", kind: "fact", content: "Use a one-shot worker for trusted distillation.", evidence: "Use a one-shot worker for trusted distillation.", confidence: 1, importance: 0.5}];
+    }}, "model");
+    expect(result.status).toBe("lease_lost");
+    expect(listMemoriesForProject(database, project.id)).toEqual([]);
+    expect(listDistillJobs(database, project.id)[0]).toMatchObject({status: "running", attempts: 2});
+  });
+
+  test("provider failures back off and stop after three attempts", async () => {
+    vi.useFakeTimers();
+    const {database, project} = setup();
+    enqueueDistillJob(database, project.id, "thread_worker", "cli");
+    const provider = {distill: async () => { throw new RetryableProviderError("provider unavailable"); }};
+    await runNextDistillJob(database, project.id, provider, "model");
+    expect(listDistillJobs(database, project.id)[0]).toMatchObject({status: "pending", attempts: 1});
+    expect((await runNextDistillJob(database, project.id, provider, "model")).status).toBe("idle");
+    vi.setSystemTime(Date.now() + 1001);
+    await runNextDistillJob(database, project.id, provider, "model");
+    vi.setSystemTime(Date.now() + 2001);
+    await runNextDistillJob(database, project.id, provider, "model");
+    expect(listDistillJobs(database, project.id)[0]).toMatchObject({status: "failed", attempts: 3});
+  });
   test("submits provider candidates through the trusted service and completes", async () => {
     const { database, project } = setup();
     enqueueDistillJob(database, project.id, "thread_worker", "cli");

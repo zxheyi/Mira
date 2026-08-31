@@ -5,6 +5,8 @@ import { migrate } from "../../src/db/schema.js";
 import { addMemory } from "../../src/memory/memoryStore.js";
 import { createProject, findProjectByRoot } from "../../src/projects/projectStore.js";
 import { listWorkingMemory, setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
+import { enqueueDistillJob, listDistillJobs } from "../../src/distill/distillJobStore.js";
+import { saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
 
@@ -27,13 +29,34 @@ function columnNames(database: Database.Database, table: string): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
+// Older focused migration fixtures need the pre-v9 queue table now that v9 alters it.
+function addLegacyQueueFixture(database: Database.Database): void {
+  database.exec(`create table distill_jobs (
+    id text primary key, project_id text not null, thread_id text not null, trigger text not null,
+    channel text not null, input_hash text not null, status text not null, attempts integer not null default 0,
+    last_error text, created_at text not null, updated_at text not null,
+    unique(project_id, thread_id, channel, input_hash),
+    foreign key(project_id) references projects(id) on delete cascade,
+    foreign key(thread_id) references threads(id) on delete cascade
+  )`);
+}
+
 describe("database schema", () => {
+  test("v8 queue migration preserves existing work and adds a finite retry budget", () => {
+    db = openDatabase(":memory:"); migrate(db);
+    const project = createProject(db, {name:"Queue migration",rootPath:"/queue-v8"});
+    saveThread(db, {id:"queued-thread",projectId:project.id,title:"Source",source:"test",rawFormat:"markdown",rawText:"Preserve queued work."});
+    const job = enqueueDistillJob(db, project.id, "queued-thread", "cli");
+    db.exec("alter table distill_jobs drop column next_attempt_at; alter table distill_jobs drop column max_attempts; delete from schema_version where version = 9; insert or ignore into schema_version values (8, '2026-08-01');");
+    migrate(db); migrate(db);
+    expect(listDistillJobs(db, project.id)[0]).toMatchObject({id:job.id,status:"pending",attempts:0,maxAttempts:3});
+  });
   test("v7 migration adds recall audit without changing task or memory state", () => {
     db = openDatabase(":memory:"); migrate(db);
     const project = createProject(db, {name: "Audit", rootPath: "/v7-audit"});
     const memory = addMemory(db, {projectId: project.id, title: "Preserved", content: "Evidence", kind: "fact", source: "manual", confidence: 1, importance: 5});
     setWorkingMemory(db, {projectId: project.id, taskId: "a", kind: "next_step", content: "Preserve task"});
-    db.exec("drop table recall_events; delete from schema_version where version = 8; insert or ignore into schema_version values (7, '2026-08-01');");
+    db.exec("drop table recall_events; delete from schema_version where version >= 8; insert or ignore into schema_version values (7, '2026-08-01');");
     migrate(db); migrate(db);
     expect(tableNames(db)).toContain("recall_events");
     expect(db.prepare("select content from memories where id = ?").pluck().get(memory.id)).toBe("Evidence");
@@ -50,6 +73,7 @@ describe("database schema", () => {
       insert into working_memory values ('legacy-work', 'legacy-project', 'next_step', 'Preserve this next step', '2026-08-01');
     `);
     expect(findProjectByRoot(db, '/legacy')?.id).toBe('legacy-project');
+    addLegacyQueueFixture(db);
     migrate(db); migrate(db);
     expect(findProjectByRoot(db, '/legacy')?.id).toBe('legacy-project');
     expect(listWorkingMemory(db, 'legacy-project')).toEqual([expect.objectContaining({id: 'legacy-work', content: 'Preserve this next step'})]);
@@ -79,7 +103,7 @@ describe("database schema", () => {
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(8);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(9);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -144,7 +168,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -193,7 +217,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -248,7 +272,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -322,13 +346,14 @@ describe("database schema", () => {
       insert into memory_fts values ('memory_v4', 'project_v4', 'Existing V4', 'Preserve this V4 fact.');
     `);
 
+    addLegacyQueueFixture(db);
     migrate(db);
 
     expect(db.prepare("select content from memories where id = 'memory_v4'").pluck().get())
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -351,6 +376,7 @@ describe("database schema", () => {
       );
     `);
 
+    addLegacyQueueFixture(db);
     migrate(db);
 
     expect(db.prepare("select raw_text from threads where id = 'thread_v5'").pluck().get()).toBe("Keep me");
@@ -361,7 +387,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(8);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

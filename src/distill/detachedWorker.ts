@@ -13,7 +13,7 @@ export async function startDetachedDistillWorker(options: DetachedDistillWorkerO
     options.entryPath,
     "--db", options.dbPath,
     "--project-root", options.projectRoot,
-    "distill", "jobs", "run", "--once"
+    "distill", "jobs", "run", "--drain"
   ], {
     detached: true,
     stdio: "ignore",

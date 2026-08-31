@@ -21,6 +21,15 @@ function jsonl(records: unknown[]): string {
 }
 
 describe("integration hook runtime", () => {
+  test("SessionStart resumes optional work but preserves context if launching fails", async () => {
+    const options = await setup();
+    let launches = 0;
+    const result = await runIntegrationHook({agent:"codex",projectRoot:options.projectRoot,dbPath:options.dbPath,
+      onSessionStarted: async () => { launches += 1; throw new Error("spawn failed"); }
+    }, {session_id:"resume",cwd:options.projectRoot,hook_event_name:"SessionStart"});
+    expect(launches).toBe(1);
+    expect(result).toMatchObject({status:"context",stdout:expect.stringContaining("# Mira Context Bundle")});
+  });
   test("notifies optional distill integration only after a successful changed capture", async () => {
     const options = await setup();
     const transcriptPath = join(options.transcriptRoot, "distill.jsonl");

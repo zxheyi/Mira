@@ -135,6 +135,7 @@ Phase 4 已提供本地 CLI 闭环。常用命令示例：
 ```bash
 mira init
 mira doctor
+mira ui
 mira project list
 mira project delete --id project_123 --confirm-hard-delete
 mira import --source codex --path ./codex-session.md
@@ -181,6 +182,13 @@ mira export --format markdown --out ./export
 
 `mira doctor` 是只读诊断命令：它报告当前项目根目录、数据库路径、schema 版本、项目/Thread/Memory/候选/历史导入批次数量、Codex / Claude Code 集成状态，以及 `.mira/integrations.log` 的最新时间戳。数据库不存在时它不会创建 `.mira` 或初始化 schema，适合在真实接入前先确认 Mira 是否看得到当前项目。
 
+`mira ui` 启动本地记忆管理 Viewer，默认绑定 `127.0.0.1:4317` 并输出 JSON URL。中文界面展示总览、会话、导入批次、简报/上下文预览、记忆、候选审核、召回审计和后台任务。支持明确确认后的候选批准/拒绝、记忆纠正/归档/恢复、历史查看和失败任务重新排队；不提供永久删除、导入、调用模型或安装集成按钮。预览不刷新 Briefing、不生成召回审计。只允许 loopback 绑定，写入校验 Host、Origin、JSON 和每次启动生成的防跨站令牌；未提供远程访问模式。
+
+```bash
+mira --project-root /path/to/project ui
+mira --project-root /path/to/project ui --port 4318
+```
+
 默认数据库为当前项目的 `.mira/mira.sqlite`。脚本和测试也可以显式传入：
 
 ```bash
@@ -218,7 +226,9 @@ Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关
 
 `mira vault sync` 默认完整重建 `<project>/.mira/vault/`，也可通过 `--out` 指定相对项目根目录或绝对路径。Vault 包含索引、Project Briefing、Working Memory、每条 Memory、每个 Thread 和待审核候选；全生命周期状态、来源和前驱/后继关系均可追溯。同步先写 staging，再原子替换目标，失败会恢复上一版。SQLite 始终是唯一事实源，Vault 中的手动编辑不会回写，并会在下次同步时被覆盖。为保护项目，输出目标不能是项目根目录、其祖先、`.git` 或 `.mira` 控制目录。
 
-Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动一次性 Worker：
+Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动后台 Worker：
+
+后台 Worker 会排空待处理任务及调度重试后退出，不安装常驻服务。五分钟租约过期后，下次启动自动回收；旧尝试不能提交迟到结果。网络错误、HTTP 429/5xx 按退避最多尝试三次，非法候选/敏感信息/其他 HTTP 错误直接终止。`mira distill jobs run --once` 只处理一个任务，`--drain` 连同待重试任务一起处理；`jobs retry --id ...` 显式增加三次预算。配置 Provider 的 SessionStart 可唤醒历史队列，Hook 不等待模型返回。中断后恢复需要下一次会话、捕获或手动启动，并非 OS 级自动唤醒。
 
 ```bash
 export MIRA_LLM_BASE_URL="https://provider.example/v1"

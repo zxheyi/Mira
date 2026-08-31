@@ -12,7 +12,7 @@ Status: Complete
 ## 用户闭环
 
 1. Phase 1 Hook 保存或更新稳定 Thread。
-2. 配置了外部 Provider 时，Hook 幂等创建提炼任务并启动一次性后台 Worker。
+2. 配置了外部 Provider 时，Hook 幂等创建提炼任务并启动后台 Worker；[025](../025-recovery-and-management-ui/spec.md) 增加租约恢复、有限退避重试和排空后退出。
 3. Worker 调用 OpenAI-compatible Chat Completions 接口，取得结构化候选。
 4. Agent 也可通过 MCP 直接提交自己生成的候选，不依赖外部 Provider。
 5. Mira 校验证据、字段、安全性、重复与冲突后执行策略：
@@ -91,7 +91,7 @@ SQLite schema 升级到 v3。
 
 - Hook 成功保存 Thread 后才入队。
 - 同一 Thread 正文版本重复 Hook 不重复创建任务。
-- Hook 只启动 detached、stdio ignore 的一次性 Worker，不等待网络调用。
+- Hook 只启动 detached、stdio ignore 的 Worker，不等待网络调用；Worker 排空任务及有限重试后退出。
 - Worker 原子领取一个 pending job；failed 可立即 retry，running 只有超过 5 分钟租约后才可恢复，避免双 Worker。
 - CLI 提供 enqueue、list、run-once 和 retry，确保无 Hook 环境也可运维。
 

@@ -29,6 +29,7 @@ export type HookRuntimeOptions = {
   dbPath: string;
   allowedTranscriptRoots?: string[];
   contextMaxCharacters?: number;
+  onSessionStarted?: (input: {projectRoot: string; dbPath: string}) => void | Promise<void>;
   onThreadCaptured?: (input: {
     projectId: string;
     threadId: string;
@@ -232,7 +233,10 @@ export async function runIntegrationHook(
 
   try {
     if (input.hook_event_name === "SessionStart") {
-      return await contextResult(options, input.session_id);
+      const result = await contextResult(options, input.session_id);
+      try { await options.onSessionStarted?.({projectRoot: options.projectRoot, dbPath: options.dbPath}); }
+      catch (error) { await appendDiagnostic(options, input, "worker-resume-failed", error); }
+      return result;
     }
     if (isCaptureEvent(options.agent, input.hook_event_name)) {
       return await captureTranscript(options, input);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
@@ -14,7 +14,7 @@ import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
-afterEach(() => { db?.close(); db = undefined; });
+afterEach(() => { db?.close(); db = undefined; vi.useRealTimers(); });
 
 function setup() {
   db = openDatabase(":memory:");
@@ -28,6 +28,18 @@ function setup() {
 }
 
 describe("distill job store", () => {
+  test("automatically reclaims expired work and fences the old attempt", () => {
+    vi.useFakeTimers();
+    const { database, project } = setup();
+    enqueueDistillJob(database, project.id, "thread_jobs", "cli");
+    const first = claimNextDistillJob(database, project.id)!;
+    vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
+    const replacement = claimNextDistillJob(database, project.id);
+    expect(replacement).toMatchObject({id: first.id, attempts: 2, status: "running"});
+    expect(() => completeDistillJob(database, first.id, first.attempts)).toThrow(/lease lost/);
+    expect(() => failDistillJob(database, first.id, "Old failure", first.attempts)).toThrow(/lease lost/);
+    completeDistillJob(database, first.id, replacement!.attempts);
+  });
   test("enqueues one job per thread content version", () => {
     const { database, project } = setup();
     const first = enqueueDistillJob(database, project.id, "thread_jobs", "hook");
@@ -53,7 +65,8 @@ describe("distill job store", () => {
     failDistillJob(
       database,
       queued.id,
-      "Bearer secret-token-that-must-not-survive sk-proj-123456789012345678901234567890 " + "x".repeat(2_000)
+      "Bearer secret-token-that-must-not-survive sk-proj-123456789012345678901234567890 " + "x".repeat(2_000),
+      claimed!.attempts
     );
     const failed = listDistillJobs(database, project.id, "failed")[0];
     expect(failed?.lastError).not.toContain("secret-token");
@@ -62,7 +75,7 @@ describe("distill job store", () => {
 
     retryDistillJob(database, project.id, queued.id);
     expect(claimNextDistillJob(database, project.id)?.attempts).toBe(2);
-    completeDistillJob(database, queued.id);
+    completeDistillJob(database, queued.id, 2);
     expect(listDistillJobs(database, project.id, "completed")[0]?.id).toBe(queued.id);
   });
 

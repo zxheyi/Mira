@@ -1,0 +1,519 @@
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { resolve } from "node:path";
+import { randomBytes } from "node:crypto";
+import { listMemoryCandidates } from "../distill/candidateService.js";
+import { listDistillJobs, sanitizeDistillError } from "../distill/distillJobStore.js";
+import { getMemoryHistory } from "../memory/memoryLifecycleStore.js";
+import { listRecallEvents } from "../context/recallAuditStore.js";
+import { applyViewerAction } from "./viewerActions.js";
+import { openDatabase } from "../db/client.js";
+import { migrate } from "../db/schema.js";
+import { ensureProjectForRoot } from "../projects/projectStore.js";
+import {
+  getViewerBriefing,
+  getViewerContextBundle,
+  getViewerMemorySnapshot,
+  getViewerOverview,
+  getViewerThread,
+  listViewerImportRuns,
+  listViewerThreads
+} from "./viewerData.js";
+
+export type ViewerServerOptions = {
+  projectRoot: string;
+  dbPath: string;
+  host?: string;
+  port?: number;
+};
+
+export type ViewerServerHandle = {
+  server: Server;
+  host: string;
+  port: number;
+  url: string;
+  close: () => Promise<void>;
+};
+
+type RuntimeOptions = Required<ViewerServerOptions> & {csrfToken: string; origin: string; authority: string};
+
+function dashboardHtml(): string {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mira 本地 Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8dde6;
+      --soft: #f6f8fb;
+      --panel: #ffffff;
+      --accent: #2f7d68;
+      --accent-strong: #1f604f;
+      --amber: #a16207;
+      --danger: #b42318;
+      --code: #253048;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--soft);
+      letter-spacing: 0;
+    }
+    button, pre, input, textarea, select { font: inherit; }
+    input, textarea, select { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+    textarea { width: 100%; min-height: 130px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .actions button, dialog button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; background: white; color: var(--accent-strong); cursor: pointer; }
+    .actions button.primary, dialog button[type=submit] { background: var(--accent); color: white; }
+    .memory-card { margin-bottom: 14px; overflow-wrap: anywhere; }
+    dialog { border: 1px solid var(--line); border-radius: 12px; width: min(640px, 92vw); max-height: 90vh; padding: 24px; }
+    dialog::backdrop { background: #17203377; }
+    dialog label { display: block; margin: 14px 0; }
+    dialog input { display: block; width: 100%; margin-top: 6px; }
+    #feedback { margin-bottom: 12px; overflow-wrap: anywhere; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+    .sidebar { background: #172033; color: white; padding: 20px 14px; display: flex; flex-direction: column; gap: 18px; }
+    .brand { font-weight: 800; font-size: 20px; line-height: 1.1; padding: 0 8px; }
+    .project-pill { font-size: 12px; color: #d7dee8; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 8px; overflow-wrap: anywhere; }
+    .nav { display: grid; gap: 6px; }
+    .nav button { width: 100%; border: 0; border-radius: 6px; padding: 10px 11px; color: #e7edf5; background: transparent; text-align: left; cursor: pointer; }
+    .nav button.active { background: var(--accent); color: white; }
+    .main { min-width: 0; padding: 22px; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    h1 { font-size: 24px; line-height: 1.2; margin: 0 0 4px; }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .status { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; background: var(--panel); color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .badge.ok { color: var(--accent-strong); border-color: #9bd4c0; background: #edf8f4; }
+    .badge.warn { color: var(--amber); border-color: #f0cc80; background: #fff8e8; }
+    .grid { display: grid; gap: 14px; }
+    .stats { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+    .card, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .card { padding: 14px; min-height: 86px; }
+    .stat-value { font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 8px; }
+    .stat-label { color: var(--muted); font-size: 12px; }
+    .content-grid { grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); align-items: start; margin-top: 14px; }
+    .panel { padding: 16px; min-width: 0; }
+    .table { display: grid; border-top: 1px solid var(--line); }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid #edf0f4; align-items: center; }
+    .row button { border: 0; background: transparent; color: var(--accent-strong); cursor: pointer; padding: 0; text-align: left; font-weight: 700; overflow-wrap: anywhere; }
+    .split { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .list { display: grid; gap: 8px; }
+    .list button { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 12px; cursor: pointer; min-height: 84px; }
+    .list button.active { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+    .title { font-weight: 750; overflow-wrap: anywhere; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--code); color: #f7fafc; border-radius: 8px; padding: 14px; max-height: 62vh; overflow: auto; line-height: 1.5; }
+    .markdown { background: #fbfcfe; border: 1px solid #e5e9f0; border-radius: 8px; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; max-height: 62vh; overflow: auto; }
+    .empty { color: var(--muted); background: #fbfcfe; border: 1px dashed #cfd6e2; border-radius: 8px; padding: 24px; text-align: center; }
+    .error { color: var(--danger); }
+    .view { display: none; }
+    .view.active { display: block; }
+    @media (max-width: 920px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stats, .content-grid, .split { grid-template-columns: 1fr; }
+      .topbar { flex-direction: column; }
+      .status { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="sidebar">
+      <div class="brand">Mira</div>
+      <div id="project-pill" class="project-pill">正在加载项目</div>
+      <nav class="nav" aria-label="Viewer 导航">
+        <button class="active" data-view="overview">总览</button>
+        <button data-view="threads">会话</button>
+        <button data-view="runs">导入批次</button>
+        <button data-view="briefing">简报</button>
+        <button data-view="memory">记忆</button>
+        <button data-view="candidates">候选审核</button>
+        <button data-view="recalls">召回审计</button>
+        <button data-view="jobs">后台任务</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>Mira 本地 Viewer</h1>
+          <div id="db-path" class="muted"></div>
+        </div>
+        <div id="integration-status" class="status"></div>
+      </div>
+      <div id="feedback" role="status" aria-live="polite"></div>
+      <section id="overview" class="view active"></section>
+      <section id="threads" class="view"></section>
+      <section id="runs" class="view"></section>
+      <section id="briefing" class="view"></section>
+      <section id="memory" class="view"></section>
+      <section id="candidates" class="view"></section>
+      <section id="recalls" class="view"></section>
+      <section id="jobs" class="view"></section>
+    </main>
+  </div>
+  <dialog id="editor">
+    <form id="edit-form">
+      <h2 id="edit-title"></h2>
+      <div id="edit-preview" class="markdown"></div>
+      <label id="content-field">更正内容<textarea id="edit-content"></textarea></label>
+      <label id="replacement-field">替换的 active 记忆 ID（可选）<input id="edit-replacement" maxlength="500"></label>
+      <label id="reason-field">操作原因（可选）<input id="edit-reason" maxlength="1000"></label>
+      <p id="edit-error" class="error" role="alert"></p>
+      <div class="actions"><button type="button" id="edit-cancel">取消</button><button type="submit">确认提交</button></div>
+    </form>
+  </dialog>
+  <script>
+    const state = { overview: null, threads: [], memories: [], candidates: [], selectedThreadId: null, csrfToken: null, editing: null };
+    const fmt = new Intl.NumberFormat();
+    const bytes = (value) => {
+      if (!value) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let size = value;
+      let index = 0;
+      while (size >= 1024 && index < units.length - 1) { size /= 1024; index += 1; }
+      return \`\${size.toFixed(index === 0 ? 0 : 1)} \${units[index]}\`;
+    };
+    async function api(path, body) {
+      const response = await fetch(path, body === undefined ? {} : {method: 'POST', headers: {'content-type': 'application/json', 'x-mira-csrf': state.csrfToken}, body: JSON.stringify(body)});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || \`Request 失败: \${response.status}\`);
+      return data;
+    }
+    function text(value) { return value === undefined || value === null || value === '' ? '无' : String(value); }
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+    function stat(label, value) {
+      return \`<div class="card"><div class="stat-value">\${escapeHtml(value)}</div><div class="stat-label">\${escapeHtml(label)}</div></div>\`;
+    }
+    function renderShell(overview) {
+      document.getElementById('project-pill').textContent = overview.project.rootPath;
+      document.getElementById('db-path').textContent = overview.database.path;
+      const codex = overview.integrations.codex.installed;
+      const claude = overview.integrations.claudeCode.installed;
+      document.getElementById('integration-status').innerHTML = \`
+        <span class="badge \${codex ? 'ok' : 'warn'}">Codex \${codex ? '已接入' : '未安装'}</span>
+        <span class="badge \${claude ? 'ok' : 'warn'}">Claude Code \${claude ? '已接入' : '未安装'}</span>\`;
+    }
+    function renderOverview() {
+      const overview = state.overview;
+      const latest = overview.latestImportRun;
+      document.getElementById('overview').innerHTML = \`
+        <div class="grid stats">
+          \${stat('会话', fmt.format(overview.counts.threads))}
+          \${stat('记忆', fmt.format(overview.counts.memories))}
+          \${stat('候选', fmt.format(overview.counts.memoryCandidates))}
+          \${stat('导入批次', fmt.format(overview.counts.historyImportRuns))}
+          \${stat('数据库', bytes(overview.database.sizeBytes))}
+        </div>
+        <div class="grid content-grid">
+          <div class="panel">
+            <h2>最近会话</h2>
+            <div id="overview-threads" class="table"></div>
+          </div>
+          <div class="panel">
+            <h2>最近导入</h2>
+            \${latest ? \`<div class="row"><span>状态</span><b>\${escapeHtml(latest.status)}</b></div>
+              <div class="row"><span>已导入</span><b>\${fmt.format(latest.importedCount)}</b></div>
+              <div class="row"><span>已跳过</span><b>\${fmt.format(latest.skippedCount)}</b></div>
+              <div class="row"><span>失败</span><b>\${fmt.format(latest.failedCount)}</b></div>\` : '<div class="empty">暂无导入批次</div>'}
+            <h2 style="margin-top:18px">简报</h2>
+            \${overview.latestBriefing ? \`<div class="row"><span>版本</span><b>\${overview.latestBriefing.version}</b></div>
+              <div class="row"><span>Token 估算</span><b>\${fmt.format(overview.latestBriefing.estimatedTokens)}</b></div>\` : '<div class="empty">暂无简报</div>'}
+          </div>
+        </div>\`;
+      document.getElementById('overview-threads').innerHTML = state.threads.slice(0, 5).map((thread) => \`
+        <div class="row"><button data-open-thread="\${escapeHtml(thread.id)}">\${escapeHtml(thread.title)}</button><span class="muted">\${escapeHtml(thread.source)} · \${fmt.format(thread.rawCharacters)} 字符</span></div>\`).join('') || '<div class="empty">暂无会话</div>';
+    }
+    async function renderThreads() {
+      const list = state.threads.map((thread) => \`<button class="\${thread.id === state.selectedThreadId ? 'active' : ''}" data-thread-id="\${escapeHtml(thread.id)}"><div class="title">\${escapeHtml(thread.title)}</div><div class="meta">\${escapeHtml(thread.source)} · \${escapeHtml(thread.rawFormat)} · \${fmt.format(thread.rawCharacters)} 字符</div><div class="meta">\${escapeHtml(thread.preview)}</div></button>\`).join('');
+      document.getElementById('threads').innerHTML = \`<div class="split"><div class="list">\${list || '<div class="empty">暂无会话</div>'}</div><div id="thread-detail" class="panel"><div class="empty">请选择一条会话</div></div></div>\`;
+      if (!state.selectedThreadId && state.threads[0]) state.selectedThreadId = state.threads[0].id;
+      if (state.selectedThreadId) await loadThread(state.selectedThreadId);
+    }
+    async function loadThread(id) {
+      state.selectedThreadId = id;
+      document.querySelectorAll('[data-thread-id]').forEach((button) => button.classList.toggle('active', button.dataset.threadId === id));
+      const thread = await api(\`/api/threads/\${encodeURIComponent(id)}\`);
+      document.getElementById('thread-detail').innerHTML = \`<h2>\${escapeHtml(thread.title)}</h2><div class="muted">\${escapeHtml(thread.source)} · \${escapeHtml(thread.rawFormat)} · \${escapeHtml(thread.updatedAt)}</div><pre>\${escapeHtml(thread.rawText)}</pre>\`;
+    }
+    async function renderRuns() {
+      const runs = await api('/api/import-runs');
+      document.getElementById('runs').innerHTML = \`<div class="panel"><h2>导入批次</h2><div class="table">\${runs.map((run) => \`<div class="row"><span><b>\${escapeHtml(run.status)}</b><br><span class="muted">\${escapeHtml(run.startedAt)}</span></span><span class="muted">\${fmt.format(run.importedCount)} 已导入 · \${fmt.format(run.skippedCount)} 已跳过 · \${fmt.format(run.failedCount)} 失败</span></div>\`).join('') || '<div class="empty">暂无导入批次</div>'}</div></div>\`;
+    }
+    async function renderBriefing() {
+      const [briefing, bundle] = await Promise.all([api('/api/briefing'), api('/api/context-bundle')]);
+      document.getElementById('briefing').innerHTML = \`<div class="grid content-grid"><div class="panel"><h2>项目简报\${briefing?.staleAt ? '（已过期）' : ''}</h2><div class="markdown">\${escapeHtml(briefing?.markdown || '暂无简报；可通过 CLI briefing show 生成')}</div></div><div class="panel"><h2>上下文包预览（不记录召回）</h2><div class="markdown">\${escapeHtml(bundle.markdown)}</div></div></div>\`;
+    }
+    async function renderMemory() {
+      const snapshot = await api('/api/memory');
+      state.memories = snapshot.memories;
+      document.getElementById('memory').innerHTML = '<h2>长期记忆 · 纠正保留历史</h2><label>搜索记忆 <input id="memory-filter" placeholder="标题、内容或状态"></label><div id="memory-cards" style="margin-top:14px"></div><div id="memory-history"></div><h2>项目共享工作记忆</h2><pre>' + escapeHtml(snapshot.workingMemory.map(item => item.kind + ': ' + item.content).join('\\n') || '暂无工作记忆') + '</pre>';
+      renderMemoryCards('');
+      document.getElementById('memory-filter').addEventListener('input', event => renderMemoryCards(event.target.value));
+    }
+    function actionButton(resource, id, action, label) {
+      return '<button data-resource="' + resource + '" data-id="' + escapeHtml(id) + '" data-action="' + action + '">' + label + '</button>';
+    }
+    function renderMemoryCards(query) {
+      const memories = state.memories.filter(memory => (memory.title + memory.content + memory.status).toLowerCase().includes(query.toLowerCase()));
+      document.getElementById('memory-cards').innerHTML = memories.map(memory => '<article class="panel memory-card"><h2>' + escapeHtml(memory.title) + '</h2><div class="muted">' + escapeHtml(memory.id + ' · ' + memory.kind + ' · ' + memory.status) + '</div><p>' + escapeHtml(memory.content) + '</p><div class="muted">来源：' + escapeHtml(memory.source) + '</div><div class="actions">' + (memory.status === 'active' ? actionButton('memory', memory.id, 'correct', '纠正') + actionButton('memory', memory.id, 'archive', '归档') : memory.status === 'archived' ? actionButton('memory', memory.id, 'restore', '恢复') : '') + actionButton('memory', memory.id, 'history', '查看历史') + '</div></article>').join('') || '<div class="empty">暂无匹配记忆</div>';
+    }
+    async function renderCandidates() {
+      state.candidates = await api('/api/candidates');
+      document.getElementById('candidates').innerHTML = '<h2>候选审核 · 先核对证据，再批准</h2><p class="muted">展示最近 100 条。批准仅影响记忆，不更新投资 thesis。</p>' + state.candidates.map(candidate => '<article class="panel memory-card"><h2>' + escapeHtml(candidate.title) + '</h2><p>' + escapeHtml(candidate.content) + '</p><div class="muted">' + escapeHtml(candidate.status + ' · ' + candidate.riskLevel + ' · ' + (candidate.reviewReason || '无待审原因')) + '</div><h3>原文证据</h3><div class="markdown">' + escapeHtml(candidate.evidence) + '</div><div class="actions"><button data-open-thread="' + escapeHtml(candidate.threadId) + '">查看来源会话</button>' + (candidate.status === 'pending_review' ? actionButton('candidates', candidate.id, 'accept', '批准') + actionButton('candidates', candidate.id, 'reject', '拒绝') : '') + '</div></article>').join('') + (!state.candidates.length ? '<div class="empty">暂无候选记忆</div>' : '');
+    }
+    async function renderRecalls() {
+      const receipts = await api('/api/recalls');
+      document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2>' + receipts.map(receipt => '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>').join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
+    }
+    async function renderJobs() {
+      const jobs = await api('/api/jobs');
+      document.getElementById('jobs').innerHTML = '<h2>后台任务</h2><p class="muted">重试仅重新排队；由下一次后台启动或 CLI distill jobs run --drain 执行。</p>' + jobs.map(job => '<article class="panel memory-card"><b>' + escapeHtml(job.status + ' · ' + job.threadId) + '</b><p>尝试 ' + job.attempts + ' / ' + job.maxAttempts + '</p><div class="muted">下次重试：' + escapeHtml(job.nextAttemptAt || '无') + '</div><p class="error">' + escapeHtml(job.lastError || '') + '</p>' + (job.status === 'failed' || (job.status === 'running' && Date.parse(job.updatedAt) <= Date.now() - 300000) ? '<div class="actions">' + actionButton('jobs', job.id, 'retry', '重新排队') + '</div>' : '') + '</article>').join('') + (!jobs.length ? '<div class="empty">暂无后台任务</div>' : '');
+    }
+    function openEditor(resource, id, action) {
+      state.editing = {resource, id, action};
+      const item = resource === 'memory' ? state.memories.find(memory => memory.id === id) : state.candidates.find(candidate => candidate.id === id);
+      document.getElementById('edit-title').textContent = ({correct:'纠正记忆', archive:'归档记忆', restore:'恢复记忆', accept:'批准候选', reject:'拒绝候选', retry:'重新排队'})[action];
+      document.getElementById('edit-preview').textContent = item ? item.title + '\\n' + item.content : id;
+      document.getElementById('content-field').hidden = action !== 'correct';
+      document.getElementById('replacement-field').hidden = action !== 'accept';
+      document.getElementById('reason-field').hidden = resource === 'jobs';
+      document.getElementById('edit-content').value = item?.content || '';
+      document.getElementById('edit-content').required = action === 'correct';
+      document.getElementById('edit-reason').value = '';
+      document.getElementById('edit-replacement').value = '';
+      document.getElementById('edit-error').textContent = '';
+      document.getElementById('editor').showModal();
+    }
+    async function show(view) {
+      document.querySelectorAll('.view').forEach((node) => node.classList.toggle('active', node.id === view));
+      document.querySelectorAll('.nav button').forEach((button) => button.classList.toggle('active', button.dataset.view === view));
+      if (view === 'threads') await renderThreads();
+      if (view === 'runs') await renderRuns();
+      if (view === 'briefing') await renderBriefing();
+      if (view === 'memory') await renderMemory();
+      if (view === 'candidates') await renderCandidates();
+      if (view === 'recalls') await renderRecalls();
+      if (view === 'jobs') await renderJobs();
+      if (view === 'overview') { state.overview = await api('/api/overview'); renderOverview(); }
+    }
+    document.addEventListener('click', async (event) => {
+      try {
+      const nav = event.target.closest('[data-view]');
+      if (nav) await show(nav.dataset.view);
+      const thread = event.target.closest('[data-thread-id]');
+      if (thread) await loadThread(thread.dataset.threadId);
+      const openThread = event.target.closest('[data-open-thread]');
+      if (openThread) { state.selectedThreadId = openThread.dataset.openThread; await show('threads'); }
+      const action = event.target.closest('[data-action]');
+      if (action?.dataset.action === 'history') {
+        const history = await api('/api/memory/' + encodeURIComponent(action.dataset.id) + '/history');
+        document.getElementById('memory-history').innerHTML = '<h2>记忆历史</h2><pre>' + escapeHtml(JSON.stringify(history, null, 2)) + '</pre>';
+        document.getElementById('memory-history').scrollIntoView({block:'nearest'});
+      } else if (action) openEditor(action.dataset.resource, action.dataset.id, action.dataset.action);
+      } catch (error) { document.getElementById('feedback').textContent = error.message; }
+    });
+    document.getElementById('edit-cancel').addEventListener('click', () => document.getElementById('editor').close());
+    document.getElementById('edit-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = event.target.querySelector('[type=submit]');
+      button.disabled = true;
+      try {
+        const {resource, id, action} = state.editing;
+        const body = resource === 'candidates' ? {decision: action} : {action};
+        const reason = document.getElementById('edit-reason').value.trim();
+        if (reason && resource !== 'jobs') body.reason = reason;
+        if (action === 'correct') body.content = document.getElementById('edit-content').value;
+        const replacement = document.getElementById('edit-replacement').value.trim();
+        if (action === 'accept' && replacement) body.supersedesMemoryId = replacement;
+        await api('/api/' + resource + '/' + encodeURIComponent(id), body);
+        document.getElementById('editor').close();
+        document.getElementById('feedback').textContent = '已保存；历史记录保留。';
+        await show(resource);
+      } catch (error) { document.getElementById('edit-error').textContent = error.message; }
+      finally { button.disabled = false; }
+    });
+    async function boot() {
+      try {
+        const [overview, threads, session] = await Promise.all([api('/api/overview'), api('/api/threads'), api('/api/session')]);
+        state.csrfToken = session.csrfToken;
+        state.overview = overview;
+        state.threads = threads;
+        renderShell(overview);
+        renderOverview();
+      } catch (error) {
+        document.querySelector('.main').innerHTML = \`<div class="panel error">\${escapeHtml(error.message)}</div>\`;
+      }
+    }
+    boot();
+  </script>
+</body>
+</html>`;
+}
+
+function send(res: ServerResponse, status: number, contentType: string, body: string): void {
+  res.writeHead(status, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  });
+  res.end(body);
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  send(res, status, "application/json; charset=utf-8", `${JSON.stringify(body ?? null)}\n`);
+}
+
+async function withProject<T>(options: Required<ViewerServerOptions>, run: (input: {
+  db: ReturnType<typeof openDatabase>;
+  project: ReturnType<typeof ensureProjectForRoot>;
+}) => T | Promise<T>): Promise<T> {
+  const db = openDatabase(options.dbPath);
+  try {
+    migrate(db);
+    const project = ensureProjectForRoot(db, options.projectRoot);
+    return await run({ db, project });
+  } finally {
+    db.close();
+  }
+}
+
+async function routeRequest(
+  options: RuntimeOptions,
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  if (req.headers.host !== options.authority) {
+    sendJson(res, 403, {error: "Host not allowed"}); return;
+  }
+  if (req.method !== "GET" && req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed" });
+    return;
+  }
+  const url = new URL(req.url ?? "/", options.origin);
+  const pathname = url.pathname;
+  if (req.method === "POST") {
+    if (req.headers.origin !== options.origin || req.headers["x-mira-csrf"] !== options.csrfToken) {
+      sendJson(res, 403, {error: "Same-origin confirmation token required"}); return;
+    }
+    if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") {
+      sendJson(res, 415, {error: "JSON required"}); return;
+    }
+    const match = pathname.match(/^\/api\/(memory|candidates|jobs)\/([^/]+)$/);
+    if (!match) { sendJson(res, 404, {error: "Not found"}); return; }
+    if (Number(req.headers["content-length"] ?? 0) > 65_536) { sendJson(res, 413, {error: "Body too large"}); return; }
+    try {
+      let size = 0;
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > 65_536) { sendJson(res, 413, {error: "Body too large"}); return; }
+        chunks.push(Buffer.from(chunk));
+      }
+      const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const result = await withProject(options, ({db, project}) => applyViewerAction(db, project.id, match[1], decodeURIComponent(match[2]), body));
+      sendJson(res, 200, result);
+    } catch (error) { sendJson(res, 400, {error: sanitizeDistillError(error)}); }
+    return;
+  }
+  if (pathname === "/api/session") { sendJson(res, 200, {csrfToken: options.csrfToken}); return; }
+  if (pathname === "/" || pathname === "/index.html") {
+    send(res, 200, "text/html; charset=utf-8", dashboardHtml());
+    return;
+  }
+
+  await withProject(options, async ({ db, project }) => {
+    if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
+    if (pathname === "/api/recalls") { sendJson(res, 200, listRecallEvents(db, project.id, {taskId: url.searchParams.get("taskId") ?? undefined})); return; }
+    if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
+    if (pathname.startsWith("/api/memory/") && pathname.endsWith("/history")) {
+      const id = decodeURIComponent(pathname.slice("/api/memory/".length, -"/history".length));
+      sendJson(res, 200, getMemoryHistory(db, project.id, id)); return;
+    }
+    if (pathname === "/api/overview") {
+      sendJson(res, 200, await getViewerOverview({ db, project, projectRoot: options.projectRoot, dbPath: options.dbPath }));
+      return;
+    }
+    if (pathname === "/api/threads") {
+      sendJson(res, 200, listViewerThreads(db, project.id));
+      return;
+    }
+    if (pathname.startsWith("/api/threads/")) {
+      const id = decodeURIComponent(pathname.slice("/api/threads/".length));
+      const thread = getViewerThread(db, project.id, id);
+      if (!thread) sendJson(res, 404, { error: "Thread not found" });
+      else sendJson(res, 200, thread);
+      return;
+    }
+    if (pathname === "/api/import-runs") {
+      sendJson(res, 200, listViewerImportRuns(db, project.id));
+      return;
+    }
+    if (pathname === "/api/briefing") {
+      sendJson(res, 200, getViewerBriefing(db, project.id));
+      return;
+    }
+    if (pathname === "/api/context-bundle") {
+      sendJson(res, 200, { markdown: getViewerContextBundle(db, project.id) });
+      return;
+    }
+    if (pathname === "/api/memory") {
+      sendJson(res, 200, getViewerMemorySnapshot(db, project.id));
+      return;
+    }
+    sendJson(res, 404, { error: "Not found" });
+  });
+}
+
+export async function startViewerServer(options: ViewerServerOptions): Promise<ViewerServerHandle> {
+  const required: RuntimeOptions = {
+    projectRoot: resolve(options.projectRoot),
+    dbPath: resolve(options.dbPath),
+    host: options.host ?? "127.0.0.1",
+    port: options.port ?? 4317,
+    csrfToken: randomBytes(32).toString("hex"), origin: "", authority: ""
+  };
+  if (!["127.0.0.1", "localhost", "::1"].includes(required.host)) throw new Error("Mira UI is loopback-only; remote binding requires authentication");
+  const server = createServer((req, res) => {
+    routeRequest(required, req, res).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!res.headersSent) sendJson(res, 500, { error: message });
+      else res.end();
+    });
+  });
+  await new Promise<void>((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(required.port, required.host, () => {
+      server.off("error", rejectListen);
+      resolveListen();
+    });
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : required.port;
+  const hostForUrl = required.host === "::1" ? "[::1]" : required.host;
+  required.port = port;
+  required.authority = `${hostForUrl}:${port}`;
+  required.origin = `http://${required.authority}`;
+  return {
+    server,
+    host: required.host,
+    port,
+    url: `http://${hostForUrl}:${port}`,
+    close: () => new Promise<void>((resolveClose, rejectClose) => {
+      server.close((error) => error ? rejectClose(error) : resolveClose());
+    })
+  };
+}

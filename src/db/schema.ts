@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -29,6 +29,7 @@ export function migrate(db: Database.Database): void {
   const requiresV6Setup = existingVersion === undefined || existingVersion < 6;
   const requiresV7Setup = existingVersion === undefined || existingVersion < 7;
   const requiresV8Setup = existingVersion === undefined || existingVersion < 8;
+  const requiresV9Setup = existingVersion === undefined || existingVersion < 9;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -454,6 +455,12 @@ export function migrate(db: Database.Database): void {
     );
     create index idx_recall_events_project_task on recall_events(project_id, task_id, created_at desc);
   `);
+
+  if (requiresV9Setup) {
+    const columns = db.prepare("pragma table_info(distill_jobs)").all() as Array<{name: string}>;
+    if (!columns.some(column => column.name === "next_attempt_at")) db.exec("alter table distill_jobs add column next_attempt_at text");
+    if (!columns.some(column => column.name === "max_attempts")) db.exec("alter table distill_jobs add column max_attempts integer not null default 3");
+  }
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
