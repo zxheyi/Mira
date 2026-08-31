@@ -15,11 +15,29 @@ async function setupMcpOptions() {
   const projectRoot = await mkdtemp(join(tmpdir(), "mira-mcp-project-"));
   return {
     projectRoot,
+    confirmationPolicy: {actor: "mcp:test-protocol", reason: "Test host delegates confirmed memory operations"},
     dbPath: join(projectRoot, ".mira", "mira.sqlite")
   };
 }
 
 describe("Mira MCP tools", () => {
+  test("default MCP may propose but cannot approve, update or self-grant authority", async () => {
+    const trusted = await setupMcpOptions();
+    const options = {...trusted, confirmationPolicy: undefined};
+    const memory = callMiraTool(trusted, "add_memory", {title: "Chosen design", kind: "decision", content: "Keep SQLite.", source: "manual"}) as {id: string};
+    callMiraTool(options, "save_thread", {id: "untrusted-source", title: "Proposal", source: "codex", rawFormat: "markdown", rawText: "Require explicit migrations."});
+    const result = callMiraTool(options, "submit_memory_candidates", {threadId: "untrusted-source", sourceAgent: "codex", candidates: [{title: "Migration", kind: "constraint", content: "Require explicit migrations.", evidence: "Require explicit migrations.", confidence: 1, importance: 0.9}]}) as {results: Array<{candidate: {id: string}; outcome: string}>};
+    expect(result.results[0].outcome).toBe("pending_review");
+    for (const [name, args] of [
+      ["add_memory", {title: "Fake approval", kind: "fact", content: "Approved", source: "user"}],
+      ["update_memory", {memoryId: memory.id, content: "Use a remote database."}],
+      ["archive_memory", {memoryId: memory.id}],
+      ["review_memory_candidate", {candidateId: result.results[0].candidate.id, decision: "accept"}],
+      ["review_memory_candidate", {candidateId: result.results[0].candidate.id, decision: "reject"}]
+    ] as const) expect(() => callMiraTool(options, name, args)).toThrow(/authority/i);
+    expect(() => callMiraTool(options, "update_memory", {memoryId: memory.id, content: "Fake approval", confirmed: true, confirmationPolicy: trusted.confirmationPolicy})).toThrow(/Invalid MCP arguments/);
+    expect(callMiraTool(options, "get_memory", {memoryId: memory.id})).toMatchObject({status: "active", content: "Keep SQLite."});
+  });
   test("confirmed corrections reject secrets without superseding the predecessor", async () => {
     const options = await setupMcpOptions();
     const memory = callMiraTool(options, "add_memory", {title: "Safe", kind: "fact", content: "Confirmed fact", source: "manual"}) as {id: string};
@@ -286,7 +304,7 @@ describe("Mira MCP tools", () => {
     expect(await callMiraTool(options, "get_memory_history", { memoryId: successor.id }))
       .toMatchObject({ memories: [{ id: first.id }, { id: successor.id }] });
     expect(await callMiraTool(options, "get_memory_history", { memoryId: first.id }))
-      .toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "accepted", actor: "mcp" })]) });
+      .toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventType: "accepted", actor: "mcp:test-protocol" })]) });
     expect(await callMiraTool(options, "archive_memory", { memoryId: successor.id, reason: "Paused" }))
       .toMatchObject({ status: "archived" });
     expect(await callMiraTool(options, "search_memory", { query: "lifecycle-aware" })).toEqual([]);
@@ -411,6 +429,7 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer({
       projectRoot: "/workspace/mira",
       dbPath: ":memory:",
+      confirmationPolicy: {actor: "test:host", reason: "Trusted protocol test"},
       db
     });
     const tools = (created.server as unknown as {
@@ -473,18 +492,20 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer({
       projectRoot: "/workspace/mira",
       dbPath: ":memory:",
+      confirmationPolicy: {actor: "test:host", reason: "Trusted protocol test"},
       db
     });
     const tools = (created.server as unknown as {
       _registeredTools: Record<string, { handler: (args: unknown) => Promise<unknown> }>;
     })._registeredTools;
 
-    await tools.add_memory.handler({
+    const written = await tools.add_memory.handler({
       title: "Shared DB",
       kind: "decision",
       content: "Registered tools should share one database session.",
       source: "mcp-test"
-    });
+    }) as {isError?: boolean};
+    expect(written.isError).not.toBe(true);
     const searchResult = (await tools.search_memory.handler({ query: "Shared" })) as {
       content: Array<{ text: string }>;
     };

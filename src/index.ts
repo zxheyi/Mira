@@ -59,7 +59,7 @@ import {
 } from "./integrations/configInstaller.js";
 import { runIntegrationHook } from "./integrations/hookRuntime.js";
 import { clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
-import { curateMemory } from "./memory/curationService.js";
+import { authorizeCuration, curateMemory, listCurationEvents } from "./memory/curationService.js";
 import {
   getMemory,
   getMemoryHistory
@@ -101,6 +101,10 @@ type ProjectSession = {
 };
 
 const program = new Command();
+
+function cliAuthority(session: ProjectSession) {
+  return authorizeCuration(session.db, session.project.id, {actor: "cli", reason: "Explicit local CLI memory operation"});
+}
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value));
@@ -522,6 +526,14 @@ thread
 
 const memory = program.command("memory").description("Manage long-term memory");
 
+memory.command("audit").description("List confirmed memory operation authority and outcomes")
+  .option("--limit <number>", "Maximum audit events", "50")
+  .action(async (options: {limit: string}) => {
+    await withProject(program.opts<GlobalOptions>(), session => {
+      printJson(listCurationEvents(session.db, session.project.id, numberInRange(options.limit, 1, 100, "limit")));
+    });
+  });
+
 memory
   .command("add")
   .description("Add a memory manually")
@@ -561,7 +573,7 @@ memory
             actor: "cli",
             confidence,
             importance
-          }})
+          }}, cliAuthority(session))
         );
       });
     }
@@ -589,7 +601,7 @@ memory
   .requiredOption("--thread <id>", "Thread id")
   .action(async (options: { thread: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(distillThreadMemories(session.db, session.project.id, options.thread));
+      printJson(distillThreadMemories(session.db, session.project.id, options.thread, cliAuthority(session)));
     });
   });
 
@@ -644,7 +656,7 @@ memory
         source: options.source,
         actor: "cli",
         reason: options.reason
-      }}));
+      }}, cliAuthority(session)));
     });
   });
 
@@ -655,7 +667,7 @@ memory
   .option("--reason <reason>", "Archive reason")
   .action(async (options: { id: string; reason?: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(curateMemory(session.db, {operation: "archive", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}));
+      printJson(curateMemory(session.db, {operation: "archive", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}, cliAuthority(session)));
     });
   });
 
@@ -666,7 +678,7 @@ memory
   .option("--reason <reason>", "Restore reason")
   .action(async (options: { id: string; reason?: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(curateMemory(session.db, {operation: "restore", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}));
+      printJson(curateMemory(session.db, {operation: "restore", projectId: session.project.id, memoryId: options.id, actor: "cli", reason: options.reason}, cliAuthority(session)));
     });
   });
 
@@ -703,7 +715,8 @@ memory
           session.db,
           session.project.id,
           options.thread,
-          parseLlmMemoryCandidates(rawCandidates)
+          parseLlmMemoryCandidates(rawCandidates),
+          cliAuthority(session)
         )
       );
     });
@@ -738,7 +751,7 @@ memoryCandidate
     const decision = requireReviewDecision(options.decision);
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(curateMemory(session.db, {operation: "review", projectId: session.project.id, candidateId: options.id,
-        decision, actor: "cli", reason: options.reason, supersedesMemoryId: options.supersedes}));
+        decision, actor: "cli", reason: options.reason, supersedesMemoryId: options.supersedes}, cliAuthority(session)));
     });
   });
 
@@ -969,13 +982,15 @@ const mcp = program.command("mcp").description("Run the Mira MCP server");
 mcp
   .command("serve")
   .description("Start the Mira MCP stdio server")
+  .option("--confirmation-policy <reason>", "Explicitly delegate formal memory writes to this trusted protocol (disabled by default)")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
-  .action(async (options: GlobalOptions) => {
+  .action(async (options: GlobalOptions & {confirmationPolicy?: string}) => {
     const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
-    await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task });
+    await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task,
+      confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy} });
   });
 
 const integration = program.command("integration").description("Manage automatic coding-agent integration");

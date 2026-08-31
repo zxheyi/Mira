@@ -12,6 +12,11 @@ import { addMemory, searchMemories } from "../../src/memory/memoryStore.js";
 import { getMemory, listMemoryEvents } from "../../src/memory/memoryLifecycleStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
+import { authorizeCuration } from "../../src/memory/curationService.js";
+
+function confirmation(database: Database.Database, projectId: string) {
+  return authorizeCuration(database, projectId, {actor: "test:user", reason: "Reviewed file contents"});
+}
 
 let db: Database.Database | undefined;
 
@@ -194,7 +199,7 @@ Mira should keep project memory local.
         confidence: 0.9,
         importance: 8
       }
-    ]);
+    ], confirmation(database, project.id));
 
     expect(memories).toEqual([
       expect.objectContaining({
@@ -240,7 +245,7 @@ Mira should keep project memory local.
       importance: 4
     });
 
-    expect(applyLlmDistillCandidates(database, project.id, "thread_1", [])).toEqual([]);
+    expect(applyLlmDistillCandidates(database, project.id, "thread_1", [], confirmation(database, project.id))).toEqual([]);
     expect(searchMemories(database, project.id, "remain")[0]?.memory.content).toBe("This memory should remain.");
   });
 

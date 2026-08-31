@@ -10,7 +10,7 @@
 
 ## 进行任务
 
-- 做出稳定决策时调用 `add_memory`。
+- 产生稳定决策时，先保存来源 Thread，再调用 `submit_memory_candidates` 提交带原文 evidence 的候选；架构、决策和约束候选需要审核。
 - 当前任务、阻塞点、下一步变化时调用 `set_working_memory`。
 - 阻塞点解决后调用 `clear_working_memory` 或写入更新后的列表。
 - 不要写入 token、密钥、cookie、私人凭据、临时日志噪音或未经确认的推测。
@@ -19,10 +19,13 @@
 
 - 真实 transcript 由 Mira `Stop` / `SessionEnd` Hook 自动保存；只在自动接入不可用或需要独立摘要时调用 `save_thread`。
 - 更新 Working Memory，明确当前状态和下一步。
-- 确认稳定决策和失败经验已写入长期 Memory；不要重复保存 Hook 已捕获的完整 transcript。
+- 检查候选结果并区分 accepted 与 pending_review；不要把待审候选报告为正式记忆，也不要重复保存 Hook 已捕获的完整 transcript。
 
 
 ## MCP 参数要求
+
+- 默认 MCP 的正式记忆写入只允许候选提交。确认写入及审核需要宿主启动时的 `--confirmation-policy` 授权；权限不足时保留候选供本地 CLI/UI 审核，不自行修改启动配置或改用 CLI 绕过。
+- `submit_memory_candidates` 必填：`threadId`、`sourceAgent`、`candidates`。候选字段为 `title`、`kind`、`content`、`evidence`、`confidence`、`importance`；后两者为 0–1。
 
 - `add_memory` 必填：`title`、`kind`、`content`、`source`；可选：`threadId`、`confidence`、`importance`。
 - `save_thread` 必填：`title`、`source`、`rawFormat`、`rawText`；可选：`id`。MVP 中 `rawText` 通常是 Agent 生成的会话摘要。
@@ -53,7 +56,7 @@ mira memory llm-prompt --thread <thread_id>
 }
 ```
 
-审查 JSON 后再应用：
+由人类或宿主授权协议审查 JSON，并获得明确执行授权后再应用：
 
 ```bash
 mira memory apply-candidates --thread <thread_id> --path ./candidates.json

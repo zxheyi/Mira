@@ -47,7 +47,7 @@ describe("database schema", () => {
     const project = createProject(db, {name:"Queue migration",rootPath:"/queue-v8"});
     saveThread(db, {id:"queued-thread",projectId:project.id,title:"Source",source:"test",rawFormat:"markdown",rawText:"Preserve queued work."});
     const job = enqueueDistillJob(db, project.id, "queued-thread", "cli");
-    db.exec("alter table distill_jobs drop column next_attempt_at; alter table distill_jobs drop column max_attempts; delete from schema_version where version = 9; insert or ignore into schema_version values (8, '2026-08-01');");
+    db.exec("alter table distill_jobs drop column next_attempt_at; alter table distill_jobs drop column max_attempts; delete from schema_version where version >= 9; insert or ignore into schema_version values (8, '2026-08-01');");
     migrate(db); migrate(db);
     expect(listDistillJobs(db, project.id)[0]).toMatchObject({id:job.id,status:"pending",attempts:0,maxAttempts:3});
   });
@@ -103,7 +103,7 @@ describe("database schema", () => {
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(9);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(10);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -168,7 +168,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(10);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -217,7 +217,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(10);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -272,7 +272,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(10);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -353,7 +353,7 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(10);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -387,7 +387,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(9);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(10);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

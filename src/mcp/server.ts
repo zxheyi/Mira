@@ -17,7 +17,7 @@ import {
 import { CANDIDATE_STATUSES, type MemoryCandidateInput } from "../distill/candidateTypes.js";
 import { MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
 import { getMemory, getMemoryHistory } from "../memory/memoryLifecycleStore.js";
-import { curateMemory } from "../memory/curationService.js";
+import { authorizeCuration, curateMemory, type CurationAuthority, type ConfirmationPolicy } from "../memory/curationService.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { repositoryLocation } from "../projects/projectIdentity.js";
 import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
@@ -62,18 +62,20 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
   clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
-  add_memory: "Write an explicitly user/protocol-confirmed memory, never an automatic inference (use submit_memory_candidates instead); returns Memory and de-duplicates by projectId, kind, threadId and content hash.",
+  add_memory: "Requires host confirmation policy (disabled by default). Write a protocol-confirmed memory; automatic inference uses submit_memory_candidates. Returns Memory, de-duplicated by projectId, kind, threadId and content hash.",
   save_thread: "Save an agent-generated session summary; rawFormat must be markdown or jsonl, and the tool returns the Thread object.",
   submit_memory_candidates: "Submit inferred candidates after important work; exact provenance, verbatim content, low risk and confidence gates allow automatic memory acceptance, otherwise require review. Never updates thesis state.",
   list_memory_candidates: "List memory candidates for the bound project, optionally filtered by review status; use this to inspect items awaiting human or Agent confirmation.",
-  review_memory_candidate: "Accept or reject one pending memory candidate; only acceptance may provide supersedesMemoryId to create a traceable successor of an active predecessor.",
+  review_memory_candidate: "Requires host confirmation policy (disabled by default). Accept or reject a pending candidate; acceptance may provide supersedesMemoryId for a traceable successor. Without authority, leave it for local CLI/UI review.",
   get_memory: "Read one Memory by id including inactive lifecycle state, provenance, predecessor link, and timestamps for audit or update preparation.",
-  update_memory: "Create an immutable active successor and atomically supersede its active predecessor; returns the new Memory without overwriting history.",
-  archive_memory: "Archive one active Memory so it leaves default search and Context Bundle results while remaining available in auditable history.",
+  update_memory: "Requires host confirmation policy (disabled by default). Create an immutable active successor and atomically supersede its active predecessor; returns Memory without overwriting history.",
+  archive_memory: "Requires host confirmation policy (disabled by default). Archive an active Memory so it leaves search and Context Bundle results while remaining in auditable history.",
   get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
+  /** Trusted host configuration, never a tool argument. Absent means proposal-only formal memory writes. */
+  confirmationPolicy?: ConfirmationPolicy;
   projectRoot: string;
   dbPath: string;
   db?: Database.Database;
@@ -183,6 +185,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 
 type ToolSession = {
+  authority?: CurationAuthority;
   taskId?: string;
   db: Database.Database;
   projectId: string;
@@ -262,7 +265,8 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
 
   try {
     const project = ensureProjectForRoot(db, options.projectRoot);
-    return run({ db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId });
+    return run({ db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
+      authority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy) });
   } finally {
     if (!options.db) {
       db.close();
@@ -329,7 +333,7 @@ function executeMiraTool(
           actor: "mcp",
           confidence: numberArg(args, "confidence", 1),
           importance: numberArg(args, "importance", 5)
-        }});
+        }}, session.authority);
       case "save_thread":
         return saveThread(db, {
           id: optionalStringArg(args, "id") ?? `thread_${randomUUID()}`,
@@ -362,7 +366,7 @@ function executeMiraTool(
       case "review_memory_candidate":
         return curateMemory(db, {operation: "review", projectId, actor: "mcp",
           candidateId: stringArg(args, "candidateId"), decision: stringArg(args, "decision") as "accept" | "reject",
-          reason: optionalStringArg(args, "reason"), supersedesMemoryId: optionalStringArg(args, "supersedesMemoryId")});
+          reason: optionalStringArg(args, "reason"), supersedesMemoryId: optionalStringArg(args, "supersedesMemoryId")}, session.authority);
       case "get_memory": {
         const memory = getMemory(db, projectId, stringArg(args, "memoryId"));
         if (!memory) throw new Error(`Memory not found: ${stringArg(args, "memoryId")}`);
@@ -380,9 +384,9 @@ function executeMiraTool(
           source: optionalStringArg(args, "source"),
           actor: "mcp",
           reason: optionalStringArg(args, "reason")
-        }});
+        }}, session.authority);
       case "archive_memory":
-        return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")});
+        return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")}, session.authority);
       case "get_memory_history":
         return getMemoryHistory(db, projectId, stringArg(args, "memoryId"));
       default: {
@@ -452,7 +456,8 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   const db = options.db ?? openDatabase(options.dbPath);
   migrate(db);
   const project = ensureProjectForRoot(db, options.projectRoot);
-  const session = { db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId };
+  const session = { db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
+    authority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy) };
   const originalClose = server.close.bind(server);
   server.close = async () => {
     await originalClose();

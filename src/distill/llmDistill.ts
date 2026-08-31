@@ -6,7 +6,7 @@ import {
   type MemoryKind
 } from "../memory/memoryStore.js";
 import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
-import { curateMemory } from "../memory/curationService.js";
+import { curateMemory, requireCurationAuthority, type CurationAuthority } from "../memory/curationService.js";
 import { sanitizeThreadTextForDistill } from "./transcriptSanitizer.js";
 
 type ThreadTextRow = {
@@ -168,9 +168,11 @@ export function applyLlmDistillCandidates(
   db: Database.Database,
   projectId: string,
   threadId: string,
-  candidates: LlmMemoryCandidate[]
+  candidates: LlmMemoryCandidate[],
+  authority?: CurationAuthority
 ): Memory[] {
   getThreadRawText(db, projectId, threadId);
+  requireCurationAuthority(db, projectId, authority);
   if (candidates.length === 0) {
     return [];
   }
@@ -197,7 +199,7 @@ export function applyLlmDistillCandidates(
         confidence: candidate.confidence,
         importance: candidate.importance
       };
-      return curateMemory(db, {operation: "add", input});
+      return curateMemory(db, {operation: "add", input}, authority);
     });
   })();
 }

@@ -13,7 +13,7 @@ import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 import { startViewerServer, type ViewerServerHandle } from "../../src/ui/viewerServer.js";
 import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
-import { curateMemory } from "../../src/memory/curationService.js";
+import { authorizeCuration, curateMemory } from "../../src/memory/curationService.js";
 import { getMemory } from "../../src/memory/memoryLifecycleStore.js";
 import { listRecallEvents } from "../../src/context/recallAuditStore.js";
 
@@ -73,7 +73,7 @@ async function json<T>(url: string): Promise<T> {
 describe("viewer server", () => {
   test("authenticated same-origin corrections use immutable history; previews create no recalls", async () => {
     const {url, project} = await setupServer();
-    const memory = curateMemory(db!, {operation: "add", input: {projectId: project.id, title: "Old", content: "Original", kind: "fact", source: "manual", confidence: 1, importance: 5}});
+    const memory = curateMemory(db!, {operation: "add", input: {projectId: project.id, title: "Old", content: "Original", kind: "fact", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db!, project.id, {actor: "test", reason: "Fixture setup"}));
     const session = await json<{csrfToken: string}>(`${url}/api/session`);
     const path = `${url}/api/memory/${memory.id}`;
     const body = JSON.stringify({action: "correct", content: "Approved replacement", reason: "User corrected"});

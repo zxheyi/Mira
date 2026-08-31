@@ -7,6 +7,11 @@ import { getMemory, listMemoryEvents } from "../../src/memory/memoryLifecycleSto
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 import { distillMemoriesFromText, distillThreadMemories } from "../../src/distill/distillThread.js";
+import { authorizeCuration } from "../../src/memory/curationService.js";
+
+function confirmation(database: Database.Database, projectId: string) {
+  return authorizeCuration(database, projectId, {actor: "test:user", reason: "Reviewed deterministic extraction"});
+}
 
 let db: Database.Database | undefined;
 
@@ -210,7 +215,7 @@ Time: 2026-08-03T03:41:29.552Z
       rawFormat: "markdown",
       rawText: "## Key Decisions\n- New decision."
     });
-    const distilled = distillThreadMemories(database, project.id, "thread_1");
+    const distilled = distillThreadMemories(database, project.id, "thread_1", confirmation(database, project.id));
 
     expect(distilled.map((memory) => memory.content)).toEqual(["New decision."]);
     expect(listMemoriesForProject(database, project.id).map((memory) => memory.content)).toEqual(
@@ -259,7 +264,7 @@ Time: 2026-08-03T03:41:29.552Z
       end;
     `);
 
-    expect(() => distillThreadMemories(database, project.id, "thread_rollback")).toThrow("distill insert failed");
+    expect(() => distillThreadMemories(database, project.id, "thread_rollback", confirmation(database, project.id))).toThrow("distill insert failed");
     expect(searchMemories(database, project.id, "Old memory")[0]?.memory.content).toBe(
       "Old memory should remain after rollback."
     );
@@ -276,7 +281,7 @@ Time: 2026-08-03T03:41:29.552Z
       rawFormat: "markdown",
       rawText: "## Key Decisions\n- Keep this decision."
     });
-    distillThreadMemories(database, project.id, "thread_1");
+    distillThreadMemories(database, project.id, "thread_1", confirmation(database, project.id));
     saveThread(database, {
       id: "thread_1",
       projectId: project.id,
@@ -286,7 +291,7 @@ Time: 2026-08-03T03:41:29.552Z
       rawText: "# Empty"
     });
 
-    expect(distillThreadMemories(database, project.id, "thread_1")).toEqual([]);
+    expect(distillThreadMemories(database, project.id, "thread_1", confirmation(database, project.id))).toEqual([]);
     expect(searchMemories(database, project.id, "decision")[0]?.memory.content).toBe("Keep this decision.");
   });
 

@@ -14,5 +14,6 @@ describe("mira mcp serve CLI", () => {
     expect(stdout).toContain("Start the Mira MCP stdio server");
     expect(stdout).toContain("--db <path>");
     expect(stdout).toContain("--project-root <path>");
+    expect(stdout).toContain("--confirmation-policy <reason>");
   });
 });

@@ -33,6 +33,9 @@ describe("memory lifecycle CLI", () => {
       "--content", "Use lifecycle-aware local SQLite.", "--reason", "Approved"
     ], root, db)).stdout);
     expect(successor.supersedesMemoryId).toBe(first.id);
+    const audit = json<Array<{operation: string; actor: string; authorityReason: string}>>((await run(["memory", "audit"], root, db)).stdout);
+    expect(audit.map(event => event.operation)).toEqual(["correct", "add"]);
+    expect(audit[0]).toMatchObject({actor: "cli", authorityReason: "Explicit local CLI memory operation"});
     const history = json<{ memories: Array<{ id: string }> }>((await run([
       "memory", "history", "--id", successor.id
     ], root, db)).stdout);
@@ -61,6 +64,7 @@ describe("memory lifecycle CLI", () => {
       .rejects.toMatchObject({ stderr: expect.stringContaining("--confirm-hard-delete") });
     expect(json<unknown[]>((await run(["memory", "search", "Private"], root, db)).stdout)).not.toEqual([]);
     await run(["memory", "clear", "--thread", "thread_private", "--confirm-hard-delete"], root, db);
+    expect(json<unknown[]>((await run(["memory", "audit"], root, db)).stdout)).toEqual([]);
     expect(json<unknown[]>((await run(["memory", "search", "Private"], root, db)).stdout)).toEqual([]);
 
     await expect(run(["thread", "delete", "--id", "thread_private"], root, db))

@@ -5,7 +5,7 @@ import {
   type MemoryKind
 } from "../memory/memoryStore.js";
 import { archiveStaleMemoriesForThread } from "../memory/memoryLifecycleStore.js";
-import { curateMemory } from "../memory/curationService.js";
+import { curateMemory, requireCurationAuthority, type CurationAuthority } from "../memory/curationService.js";
 
 type ThreadTextRow = {
   raw_text: string;
@@ -162,7 +162,8 @@ export function distillMemoriesFromText(
 export function distillThreadMemories(
   db: Database.Database,
   projectId: string,
-  threadId: string
+  threadId: string,
+  authority?: CurationAuthority
 ): Memory[] {
   const row = db
     .prepare("select raw_text from threads where project_id = ? and id = ?")
@@ -173,6 +174,7 @@ export function distillThreadMemories(
   }
 
   const inputs = distillMemoriesFromText(projectId, threadId, row.raw_text);
+  requireCurationAuthority(db, projectId, authority);
   if (inputs.length === 0) {
     return [];
   }
@@ -187,6 +189,6 @@ export function distillThreadMemories(
       `distill:${threadId}`,
       "Replaced by a newer deterministic distill result"
     );
-    return inputs.map((memory) => curateMemory(db, {operation: "add", input: memory}));
+    return inputs.map((memory) => curateMemory(db, {operation: "add", input: memory}, authority));
   })();
 }

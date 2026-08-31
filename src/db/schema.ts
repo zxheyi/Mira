@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -30,6 +30,7 @@ export function migrate(db: Database.Database): void {
   const requiresV7Setup = existingVersion === undefined || existingVersion < 7;
   const requiresV8Setup = existingVersion === undefined || existingVersion < 8;
   const requiresV9Setup = existingVersion === undefined || existingVersion < 9;
+  const requiresV10Setup = existingVersion === undefined || existingVersion < 10;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -461,6 +462,18 @@ export function migrate(db: Database.Database): void {
     if (!columns.some(column => column.name === "next_attempt_at")) db.exec("alter table distill_jobs add column next_attempt_at text");
     if (!columns.some(column => column.name === "max_attempts")) db.exec("alter table distill_jobs add column max_attempts integer not null default 3");
   }
+
+  if (requiresV10Setup) db.exec(`
+    create table if not exists curation_events (
+      id text primary key,
+      project_id text not null references projects(id) on delete cascade,
+      memory_id text references memories(id) on delete cascade,
+      candidate_id text references memory_candidates(id) on delete cascade,
+      receipt text not null check(json_valid(receipt)),
+      created_at text not null
+    );
+    create index if not exists idx_curation_events_project on curation_events(project_id, created_at desc);
+  `);
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
