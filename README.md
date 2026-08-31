@@ -91,6 +91,16 @@ MVP 暂不做：
 
 ## MVP 架构决策
 
+### 项目身份与并行任务（schema v7）
+
+Mira 将项目 ID 与工作目录分开保存。同一台机器、同一文件系统上的 Git 仓库改名后保留项目 ID 和旧根路径别名；linked worktree 默认使用主仓库的 `.mira/mira.sqlite`，显式 `--db` 优先。独立 clone 不按远程 URL 自动合并。
+
+旧版本单项目默认数据库随目录一起搬迁、且原目录已不存在时，可以保留原项目。共享数据库或跨文件系统迁移不能安全自动判定时，使用 `mira --db /path/to/mira.sqlite project bind --id <project-id> --root /new/root` 显式绑定；已属于另一项目的根路径会被拒绝。迁移真实数据前应先备份数据库。目录改名后，应重新运行 `integration install` 更新含绝对路径的宿主配置。
+
+并行任务使用全局 `--task <id>`：例如 `mira --task importer working set --kind next_step --content "补充导入测试"` 和 `mira --task importer context bundle`。MCP 的工作记忆与上下文工具支持 `taskId`；一个任务持续使用同一个 ID。未指定时保留项目共享状态，linked worktree 默认使用独立 workspace 作用域。Hook 输出带会话任务 ID，Agent 回写时沿用该 ID。任务读取、清理不会影响其他任务；上下文合并共享状态与选定任务的覆盖项。Project Briefing 仍是项目共享视图。
+
+接口与验收依据：[项目身份与任务作用域规格](specs/022-project-identity-and-task-scope/spec.md)。
+
 MVP 采用每项目一个 Mira 实例的模型：
 
 - 数据库默认位于项目内 `.mira/mira.sqlite`。

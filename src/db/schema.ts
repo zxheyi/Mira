@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -27,6 +27,7 @@ export function migrate(db: Database.Database): void {
   const requiresV4Setup = existingVersion === undefined || existingVersion < 4;
   const requiresV5Setup = existingVersion === undefined || existingVersion < 5;
   const requiresV6Setup = existingVersion === undefined || existingVersion < 6;
+  const requiresV7Setup = existingVersion === undefined || existingVersion < 7;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -423,10 +424,29 @@ export function migrate(db: Database.Database): void {
       on history_import_items(thread_id);
   `);
 
+  if (requiresV7Setup) db.exec(`
+    alter table projects add column repository_key text;
+    create unique index idx_projects_repository_key on projects(repository_key) where repository_key is not null;
+    create table project_roots (
+      root_path text primary key,
+      project_id text not null references projects(id) on delete cascade
+    );
+    insert into project_roots (root_path, project_id) select root_path, id from projects;
+    create table task_working_memory (
+      id text primary key,
+      project_id text not null references projects(id) on delete cascade,
+      task_id text not null check(length(trim(task_id)) between 1 and 500),
+      kind text not null,
+      content text not null,
+      updated_at text not null,
+      unique(project_id, task_id, kind)
+    );
+  `);
+
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
 
-  if (requiresV6Setup) {
+  if (existingVersion !== CURRENT_SCHEMA_VERSION) {
     db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()

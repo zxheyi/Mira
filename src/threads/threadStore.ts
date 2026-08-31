@@ -53,17 +53,18 @@ export function saveThread(db: Database.Database, input: SaveThreadInput): Threa
 
   const now = new Date().toISOString();
 
-  db.prepare(
+  const result = db.prepare(
     `insert into threads (id, project_id, title, source, raw_format, raw_text, created_at, updated_at)
      values (@id, @projectId, @title, @source, @rawFormat, @rawText, @now, @now)
      on conflict(id) do update set
-       project_id = excluded.project_id,
        title = excluded.title,
        source = excluded.source,
        raw_format = excluded.raw_format,
        raw_text = excluded.raw_text,
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at
+     where threads.project_id = excluded.project_id`
   ).run({ ...input, now });
+  if (result.changes !== 1) throw new Error(`Thread belongs to a different project: ${input.id}`);
 
   const row = db
     .prepare(

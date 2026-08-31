@@ -18,6 +18,7 @@ import { CANDIDATE_STATUSES, type MemoryCandidateInput } from "../distill/candid
 import { addMemory, MEMORY_KINDS, searchMemories, type MemoryKind } from "../memory/memoryStore.js";
 import { archiveMemory, getMemory, getMemoryHistory, updateMemory } from "../memory/memoryLifecycleStore.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
+import { repositoryLocation } from "../projects/projectIdentity.js";
 import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
 import {
   clearWorkingMemory,
@@ -71,12 +72,14 @@ export type MiraMcpOptions = {
   projectRoot: string;
   dbPath: string;
   db?: Database.Database;
+  taskId?: string;
 };
 
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
   get_context_bundle: {
+    taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
     memoryLimit: z.number().int().min(1).max(50).optional(),
     maxCharacters: z.number().int().min(100).max(1_000_000).optional(),
@@ -91,11 +94,13 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     limit: z.number().int().min(1).max(50).optional()
   },
   set_working_memory: {
+    taskId: z.string().trim().min(1).max(500).optional(),
     kind: z.enum(WORKING_MEMORY_KINDS),
     content: z.string().trim().min(1).max(100_000)
   },
-  list_working_memory: {},
+  list_working_memory: { taskId: z.string().trim().min(1).max(500).optional() },
   clear_working_memory: {
+    taskId: z.string().trim().min(1).max(500).optional(),
     kind: z.enum(WORKING_MEMORY_KINDS).optional()
   },
   add_memory: {
@@ -161,6 +166,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 
 type ToolSession = {
+  taskId?: string;
   db: Database.Database;
   projectId: string;
 };
@@ -239,7 +245,7 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
 
   try {
     const project = ensureProjectForRoot(db, options.projectRoot);
-    return run({ db, projectId: project.id });
+    return run({ db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId });
   } finally {
     if (!options.db) {
       db.close();
@@ -253,9 +259,11 @@ function executeMiraTool(
   args: ToolArgs
 ): unknown {
   const { db, projectId } = session;
+  const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
       case "get_context_bundle":
         return buildContextBundle(db, projectId, {
+          taskId,
           query: optionalStringArg(args, "query"),
           memoryLimit: numberArg(args, "memoryLimit", 8),
           maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined,
@@ -274,13 +282,14 @@ function executeMiraTool(
       case "set_working_memory":
         return setWorkingMemory(db, {
           projectId,
+          taskId,
           kind: workingMemoryKindArg(args, "kind"),
           content: stringArg(args, "content")
         });
       case "list_working_memory":
-        return listWorkingMemory(db, projectId);
+        return listWorkingMemory(db, projectId, taskId);
       case "clear_working_memory":
-        clearWorkingMemory(db, projectId, optionalWorkingMemoryKindArg(args, "kind"));
+        clearWorkingMemory(db, projectId, optionalWorkingMemoryKindArg(args, "kind"), taskId);
         return { ok: true };
       case "add_memory":
         return addMemory(db, {
@@ -423,7 +432,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   const db = options.db ?? openDatabase(options.dbPath);
   migrate(db);
   const project = ensureProjectForRoot(db, options.projectRoot);
-  const session = { db, projectId: project.id };
+  const session = { db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId };
   const originalClose = server.close.bind(server);
   server.close = async () => {
     await originalClose();

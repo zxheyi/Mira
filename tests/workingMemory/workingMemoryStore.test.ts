@@ -25,6 +25,21 @@ function setupDb(): Database.Database {
 }
 
 describe("working memory store", () => {
+  test("parallel tasks keep independent state and clearing one cannot clear another", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/tasks" });
+    const shared = setWorkingMemory(database, { projectId: project.id, kind: "preference", content: "Use tests" });
+    const first = setWorkingMemory(database, { projectId: project.id, taskId: "task-a", kind: "next_step", content: "Fix importer" });
+    const second = setWorkingMemory(database, { projectId: project.id, taskId: "task-b", kind: "next_step", content: "Review UI" });
+    expect(listWorkingMemory(database, project.id, "task-a")).toEqual([first]);
+    expect(listWorkingMemory(database, project.id, "task-b")).toEqual([second]);
+    expect(listWorkingMemory(database, project.id)).toEqual([shared]);
+    clearWorkingMemory(database, project.id, undefined, "task-a");
+    expect(listWorkingMemory(database, project.id, "task-a")).toEqual([]);
+    expect(listWorkingMemory(database, project.id, "task-b")).toEqual([second]);
+    expect(listWorkingMemory(database, project.id)).toEqual([shared]);
+  });
+
   test("defines the MVP working memory kinds", () => {
     expect(WORKING_MEMORY_KINDS).toEqual(
       expect.arrayContaining([

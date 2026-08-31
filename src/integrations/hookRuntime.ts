@@ -118,7 +118,7 @@ async function appendDiagnostic(
   }
 }
 
-async function contextResult(options: HookRuntimeOptions): Promise<HookRunResult> {
+async function contextResult(options: HookRuntimeOptions, sessionId: string): Promise<HookRunResult> {
   const db = openDatabase(options.dbPath);
   try {
     migrate(db);
@@ -126,6 +126,7 @@ async function contextResult(options: HookRuntimeOptions): Promise<HookRunResult
     return {
       status: "context",
       stdout: buildContextBundle(db, project.id, {
+        taskId: stableThreadId(options.agent, sessionId),
         maxCharacters: options.contextMaxCharacters ?? 4_000
       })
     };
@@ -231,7 +232,7 @@ export async function runIntegrationHook(
 
   try {
     if (input.hook_event_name === "SessionStart") {
-      return await contextResult(options);
+      return await contextResult(options, input.session_id);
     }
     if (isCaptureEvent(options.agent, input.hook_event_name)) {
       return await captureTranscript(options, input);

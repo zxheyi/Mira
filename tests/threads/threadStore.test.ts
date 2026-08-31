@@ -4,7 +4,7 @@ import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { addMemory, searchMemories } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
-import { deleteThread, saveThread } from "../../src/threads/threadStore.js";
+import { deleteThread, getThread, saveThread } from "../../src/threads/threadStore.js";
 
 let db: Database.Database | undefined;
 
@@ -21,6 +21,20 @@ function setupDb(): Database.Database {
 }
 
 describe("thread store", () => {
+  test("rejects reassignment of a captured thread to a different project", () => {
+    const database = setupDb();
+    const first = createProject(database, { name: "First", rootPath: "/first" });
+    const second = createProject(database, { name: "Second", rootPath: "/second" });
+    const saved = saveThread(database, {
+      id: "shared-session", projectId: first.id, title: "Original", source: "codex",
+      rawFormat: "markdown", rawText: "Original evidence"
+    });
+    expect(() => saveThread(database, { ...saved, projectId: second.id, rawText: "Other evidence" }))
+      .toThrow(/different project/i);
+    expect(getThread(database, first.id, saved.id)).toEqual(saved);
+    expect(getThread(database, second.id, saved.id)).toBeUndefined();
+  });
+
   test("saves a thread with raw format and text", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });

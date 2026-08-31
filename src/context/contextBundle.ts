@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { ensureFreshProjectBriefing } from "../briefing/projectBriefingStore.js";
+import { renderProjectBriefing } from "../briefing/projectBriefingRenderer.js";
 import {
   listTopMemoriesForProject,
   listTopMemoriesForProjectByKinds,
@@ -9,6 +10,7 @@ import {
 import { listWorkingMemory, type WorkingMemory } from "../workingMemory/workingMemoryStore.js";
 
 export type BuildContextBundleOptions = {
+  taskId?: string;
   query?: string;
   memoryLimit?: number;
   maxCharacters?: number;
@@ -135,8 +137,12 @@ export function buildContextBundle(
   options: BuildContextBundleOptions = {}
 ): string {
   const maxCharacters = contextCharacterBudget(options);
-  const briefing = ensureFreshProjectBriefing(db, projectId);
-  const workingMemory = sortWorkingMemory(listWorkingMemory(db, projectId));
+  const shared = listWorkingMemory(db, projectId);
+  const selected = options.taskId ? listWorkingMemory(db, projectId, options.taskId) : [];
+  const workingMemory = sortWorkingMemory([...new Map([...shared, ...selected].map((item) => [item.kind, item])).values()]);
+  const briefing = options.taskId
+    ? { ...renderProjectBriefing({ projectName: "Task", workingMemory, memories: [] }), staleAt: undefined }
+    : ensureFreshProjectBriefing(db, projectId);
   const memories = durableMemories(db, projectId, options);
   const warningMemories = listTopMemoriesForProjectByKinds(
     db,
@@ -146,6 +152,7 @@ export function buildContextBundle(
   );
   const regularMemories = memories.filter((memory) => !WARNING_KINDS.has(memory.kind));
   const lines: string[] = ["# Mira Context Bundle", ""];
+  if (options.taskId) lines.push(`Task ID: ${JSON.stringify(options.taskId)}`, "");
 
   lines.push("## Working Memory");
   if (workingMemory.length === 0) {

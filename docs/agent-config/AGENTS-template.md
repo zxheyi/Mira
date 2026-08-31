@@ -9,6 +9,8 @@
 
 ## 工作过程中
 
+- 并行任务使用稳定 `taskId` 调用 `get_context_bundle`、`set_working_memory`、`list_working_memory` 和 `clear_working_memory`；优先沿用 Hook 上下文给出的任务 ID。续接同一任务沿用同一个 ID，项目共同约定才写共享作用域。
+
 - 做出重要架构、实现、命名、技术选型或范围决策后，调用 `add_memory` 写入长期 Memory。
 - 当前任务、阶段、阻塞点、下一步发生变化时，调用 `set_working_memory` 更新 Working Memory。
 - blocker 或 next_step 解决后，调用 `clear_working_memory`，或写入更新后的 Markdown 列表。

@@ -3,8 +3,8 @@ import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
 import { addMemory } from "../../src/memory/memoryStore.js";
-import { createProject } from "../../src/projects/projectStore.js";
-import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
+import { createProject, findProjectByRoot } from "../../src/projects/projectStore.js";
+import { listWorkingMemory, setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
 
 let db: Database.Database | undefined;
 
@@ -28,6 +28,24 @@ function columnNames(database: Database.Database, table: string): string[] {
 }
 
 describe("database schema", () => {
+  test("v6 project and working state remain readable across the identity migration", () => {
+    db = openDatabase(":memory:");
+    db.exec(`
+      create table schema_version (version integer primary key, applied_at text not null);
+      insert into schema_version values (6, '2026-08-01');
+      create table projects (id text primary key, name text, root_path text unique, created_at text);
+      insert into projects values ('legacy-project', 'Legacy', '/legacy', '2026-08-01');
+      create table working_memory (id text primary key, project_id text, kind text, content text, updated_at text, unique(project_id, kind));
+      insert into working_memory values ('legacy-work', 'legacy-project', 'next_step', 'Preserve this next step', '2026-08-01');
+    `);
+    expect(findProjectByRoot(db, '/legacy')?.id).toBe('legacy-project');
+    migrate(db); migrate(db);
+    expect(findProjectByRoot(db, '/legacy')?.id).toBe('legacy-project');
+    expect(listWorkingMemory(db, 'legacy-project')).toEqual([expect.objectContaining({id: 'legacy-work', content: 'Preserve this next step'})]);
+    setWorkingMemory(db, {projectId: 'legacy-project', taskId: 'new-task', kind: 'next_step', content: 'Independent task'});
+    expect(listWorkingMemory(db, 'legacy-project')[0].content).toBe('Preserve this next step');
+  });
+
   test("migrate creates the MVP tables and schema version", () => {
     db = openDatabase(":memory:");
 
@@ -50,7 +68,7 @@ describe("database schema", () => {
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(6);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(7);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -115,7 +133,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -164,7 +182,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -219,7 +237,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -299,7 +317,7 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -332,7 +350,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(6);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(7);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

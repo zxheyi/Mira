@@ -23,6 +23,19 @@ function setupDb(): Database.Database {
 }
 
 describe("context bundle", () => {
+  test("context includes shared state and selected task overrides but never another task", () => {
+    const database = setupDb();
+    const project = createProject(database, { name: "Mira", rootPath: "/task-context" });
+    setWorkingMemory(database, { projectId: project.id, kind: "preference", content: "Shared convention" });
+    setWorkingMemory(database, { projectId: project.id, taskId: "a", kind: "next_step", content: "Task A action" });
+    setWorkingMemory(database, { projectId: project.id, taskId: "b", kind: "next_step", content: "Task B action" });
+    const bundle = buildContextBundle(database, project.id, { taskId: "a" });
+    expect(bundle).toContain("Shared convention");
+    expect(bundle).toContain("Task A action");
+    expect(bundle).not.toContain("Task B action");
+    expect(buildContextBundle(database, project.id)).not.toContain("Task A action");
+  });
+
   test("prints working memory before durable memory", () => {
     const database = setupDb();
     const project = createProject(database, { name: "Mira", rootPath: "/workspace/mira" });

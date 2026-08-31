@@ -98,7 +98,7 @@ describe("doctor CLI", () => {
       dbPath,
       database: {
         exists: true,
-        schemaVersion: 6,
+        schemaVersion: 7,
         project: { id: project.id, rootPath: root },
         counts: { projects: 1, threads: 1, memories: 1, memoryCandidates: 0, historyImportRuns: 0 }
       },

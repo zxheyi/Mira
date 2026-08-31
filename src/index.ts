@@ -66,8 +66,10 @@ import {
   updateMemory
 } from "./memory/memoryLifecycleStore.js";
 import { detectProjectRootWithFallback } from "./projects/projectRoot.js";
+import { defaultProjectDatabase, repositoryLocation } from "./projects/projectIdentity.js";
 import {
   createProject,
+  bindProjectRoot,
   deleteProject,
   ensureProjectForRoot,
   findProjectByRoot,
@@ -88,6 +90,7 @@ import { syncMarkdownVault } from "./vault/markdownVault.js";
 type GlobalOptions = {
   db?: string;
   projectRoot?: string;
+  task?: string;
 };
 
 type ProjectSession = {
@@ -117,7 +120,11 @@ async function resolveProjectRoot(options: GlobalOptions): Promise<string> {
 }
 
 function resolveDbPath(projectRoot: string, options: GlobalOptions): string {
-  return resolve(options.db ?? join(projectRoot, ".mira", "mira.sqlite"));
+  return resolve(options.db ?? defaultProjectDatabase(projectRoot));
+}
+
+function selectedTask(projectRoot: string): string | undefined {
+  return program.opts<GlobalOptions>().task ?? repositoryLocation(projectRoot).workspaceTaskId;
 }
 
 function openMigratedDatabase(dbPath: string): Database.Database {
@@ -388,7 +395,8 @@ program
   .description("Local project memory for coding agents")
   .version("0.1.0")
   .option("--db <path>", "SQLite database path")
-  .option("--project-root <path>", "Project root path");
+  .option("--project-root <path>", "Project root path")
+  .option("--task <id>", "Isolate transient working state for this task");
 
 program
   .command("health")
@@ -407,6 +415,14 @@ program
   });
 
 const project = program.command("project").description("Manage Mira projects");
+
+project.command("bind")
+  .description("Explicitly bind a moved project root without changing its project ID")
+  .requiredOption("--id <id>", "Existing project ID")
+  .requiredOption("--root <path>", "New root path")
+  .action(async (options: { id: string; root: string }) => {
+    await withDatabase(program.opts<GlobalOptions>(), (db) => printJson(bindProjectRoot(db, options.id, options.root)));
+  });
 
 project
   .command("add")
@@ -794,6 +810,7 @@ function registerWorkingCommands(parent: Command): void {
       printJson(
         setWorkingMemory(session.db, {
           projectId: session.project.id,
+          taskId: selectedTask(session.projectRoot),
           kind,
           content: options.content
         })
@@ -806,7 +823,7 @@ function registerWorkingCommands(parent: Command): void {
   .description("List working memory")
   .action(async () => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(listWorkingMemory(session.db, session.project.id));
+      printJson(listWorkingMemory(session.db, session.project.id, selectedTask(session.projectRoot)));
     });
   });
 
@@ -818,7 +835,7 @@ function registerWorkingCommands(parent: Command): void {
     const kind = options.kind ? requireWorkingMemoryKind(options.kind) : undefined;
 
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      clearWorkingMemory(session.db, session.project.id, kind);
+      clearWorkingMemory(session.db, session.project.id, kind, selectedTask(session.projectRoot));
       printJson({ ok: true });
     });
   });
@@ -886,6 +903,7 @@ context
         : undefined;
       process.stdout.write(
         buildContextBundle(session.db, session.project.id, {
+          taskId: selectedTask(session.projectRoot),
           query: options.query,
           memoryLimit,
           maxCharacters,
@@ -922,7 +940,7 @@ mcp
     const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
-    await serveMiraMcpStdio({ projectRoot, dbPath });
+    await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task });
   });
 
 const integration = program.command("integration").description("Manage automatic coding-agent integration");
