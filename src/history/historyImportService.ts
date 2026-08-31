@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import type Database from "better-sqlite3";
 import { normalizeJsonlSession } from "../importers/agentSessionImporter.js";
 import { enqueueDistillJob } from "../distill/distillJobStore.js";
-import { saveCaptureCursor } from "../integrations/captureCursorStore.js";
+import { captureSession, type CapturePreview } from "../threads/sessionCapture.js";
 import { stableThreadId } from "../integrations/threadIdentity.js";
 import type { Project } from "../projects/projectStore.js";
-import { getThread, saveThread } from "../threads/threadStore.js";
+import { getThread } from "../threads/threadStore.js";
 import { scanClaudeHistory } from "./claudeHistoryScanner.js";
 import { scanCodexHistory } from "./codexHistoryScanner.js";
 import {
@@ -98,19 +98,6 @@ async function defaultScan(options: ImportProjectHistoryOptions): Promise<Histor
     candidates.push(...await scanClaudeHistory({ claudeConfigDir: options.claudeConfigDir }));
   }
   return candidates;
-}
-
-function equivalentThread(
-  existing: ReturnType<typeof getThread>,
-  normalized: ReturnType<typeof normalizeJsonlSession>
-): boolean {
-  return Boolean(
-    existing &&
-    existing.title === normalized.title &&
-    existing.source === normalized.source &&
-    existing.rawFormat === normalized.rawFormat &&
-    existing.rawText === normalized.rawText
-  );
 }
 
 function increment(counts: HistoryImportCounts, outcome: HistoryImportOutcome): void {
@@ -271,55 +258,35 @@ export async function importProjectHistory(
       continue;
     }
 
-    const existing = getThread(options.db, options.project.id, threadId);
+    let captured: CapturePreview;
+    try {
+      captured = captureSession(options.db, {
+        id: normalized.id, projectId: options.project.id, title: normalized.title, source: normalized.source,
+        rawFormat: normalized.rawFormat, rawText: normalized.rawText,
+        checkpoint: {agent: candidate.agent, sessionId: candidate.sessionId as string,
+          transcriptPath: candidate.filePath, size: candidate.size, mtimeMs: candidate.mtimeMs}
+      }, {preview: dryRun});
+    } catch (error) {
+      appendItem({
+        ...common, fingerprint, threadId: getThread(options.db, options.project.id, threadId)?.id,
+        outcome: "failed", distillStatus: "not_requested", errorStage: "database", errorReason: sanitizeHistoryImportError(error)
+      });
+      continue;
+    }
     const previous = findLatestHistoryImportItem(
       options.db, options.project.id, candidate.agent, candidate.sessionId
     );
     const sameMetadata = previous?.fingerprint === fingerprint &&
       previous.filePath === candidate.filePath &&
       previous.cwd === candidate.cwd;
-    const outcome: HistoryImportOutcome = existing
-      ? sameMetadata && equivalentThread(existing, normalized)
-        ? "unchanged"
-        : equivalentThread(existing, normalized) && !previous
-          ? "unchanged"
-          : "updated"
-      : "imported";
+    const outcome: HistoryImportOutcome = captured.outcome === "unchanged" && previous && !sameMetadata
+      ? "updated" : captured.outcome;
 
     if (outcome === "unchanged") {
       appendItem({
         ...common, fingerprint, threadId, outcome, distillStatus: "not_applicable"
       });
       continue;
-    }
-
-    if (!dryRun) {
-      try {
-        options.db.transaction(() => {
-          saveThread(options.db, {
-            id: normalized.id,
-            projectId: options.project.id,
-            title: normalized.title,
-            source: normalized.source,
-            rawFormat: normalized.rawFormat,
-            rawText: normalized.rawText
-          });
-          saveCaptureCursor(options.db, {
-            projectId: options.project.id,
-            agent: candidate.agent,
-            sessionId: candidate.sessionId as string,
-            transcriptPath: candidate.filePath,
-            size: candidate.size,
-            mtimeMs: candidate.mtimeMs
-          });
-        })();
-      } catch (error) {
-        appendItem({
-          ...common, fingerprint, threadId: existing?.id, outcome: "failed", distillStatus: "not_requested",
-          errorStage: "database", errorReason: sanitizeHistoryImportError(error)
-        });
-        continue;
-      }
     }
 
     let distillStatus: HistoryDistillStatus = "not_requested";

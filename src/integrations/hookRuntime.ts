@@ -7,8 +7,7 @@ import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import { importAgentSessionFromFile } from "../importers/agentSessionImporter.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
-import { saveThread } from "../threads/threadStore.js";
-import { getCaptureCursor, saveCaptureCursor } from "./captureCursorStore.js";
+import { captureSession } from "../threads/sessionCapture.js";
 import type { IntegrationAgent } from "./configInstaller.js";
 import { stableThreadId } from "./threadIdentity.js";
 
@@ -161,15 +160,6 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
     migrate(db);
     const project = ensureProjectForRoot(db, options.projectRoot);
     capturedProjectId = project.id;
-    const cursor = getCaptureCursor(db, project.id, options.agent, input.session_id);
-    if (
-      cursor?.transcriptPath === transcriptPath &&
-      cursor.size === transcriptStat.size &&
-      cursor.mtimeMs === transcriptStat.mtimeMs
-    ) {
-      return { status: "ignored", stdout: "", reason: "transcript-unchanged" };
-    }
-
     const normalized = await importAgentSessionFromFile({
       source: options.agent,
       inputPath: transcriptPath,
@@ -177,24 +167,18 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
       id: threadId,
       title: `${options.agent} session ${input.session_id}`
     });
-    db.transaction(() => {
-      saveThread(db, {
-        id: normalized.id,
-        projectId: project.id,
-        title: normalized.title,
-        source: normalized.source,
-        rawFormat: normalized.rawFormat,
-        rawText: normalized.rawText
-      });
-      saveCaptureCursor(db, {
-        projectId: project.id,
+    const captured = captureSession(db, {
+      id: normalized.id, projectId: project.id, title: normalized.title, source: normalized.source,
+      rawFormat: normalized.rawFormat, rawText: normalized.rawText,
+      checkpoint: {
         agent: options.agent,
         sessionId: input.session_id,
         transcriptPath,
         size: transcriptStat.size,
         mtimeMs: transcriptStat.mtimeMs
-      });
-    })();
+      }
+    });
+    if (captured.outcome === "unchanged") return {status: "ignored", stdout: "", reason: "transcript-unchanged"};
   } finally {
     db.close();
   }

@@ -20,7 +20,8 @@ import { getMemory, getMemoryHistory } from "../memory/memoryLifecycleStore.js";
 import { authorizeCuration, curateMemory, type CurationAuthority, type ConfirmationPolicy } from "../memory/curationService.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { repositoryLocation } from "../projects/projectIdentity.js";
-import { saveThread, type ThreadRawFormat } from "../threads/threadStore.js";
+import type { ThreadRawFormat } from "../threads/threadStore.js";
+import { captureSession } from "../threads/sessionCapture.js";
 import {
   clearWorkingMemory,
   listWorkingMemory,
@@ -335,14 +336,14 @@ function executeMiraTool(
           importance: numberArg(args, "importance", 5)
         }}, session.authority);
       case "save_thread":
-        return saveThread(db, {
+        return captureSession(db, {
           id: optionalStringArg(args, "id") ?? `thread_${randomUUID()}`,
           projectId,
           title: stringArg(args, "title"),
           source: stringArg(args, "source"),
           rawFormat: rawFormatArg(args, "rawFormat"),
           rawText: stringArg(args, "rawText")
-        });
+        }).thread;
       case "submit_memory_candidates":
         return {
           results: curateMemory(db, {operation: "propose", input: {

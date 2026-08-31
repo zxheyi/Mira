@@ -3,6 +3,17 @@
 Feature ID: `014-phase0-phase1-auto-integration`
 Status: Complete
 
+## 统一采集接口（2026-08-31）
+
+Hook、历史导入、CLI 手动保存/导入和 MCP `save_thread` 共用 [captureSession](../../src/threads/sessionCapture.ts)。宿主适配器保留事件解析、路径白名单、目录扫描、格式规范化和导入报告，不决定记忆可信度。
+
+- 公共接口校验项目归属、Thread 标识和检查点宿主/会话一致性；Thread 与检查点在同一 SQLite 事务提交。检查点失败时会话写入也回滚。
+- 完整内容、标题、来源和格式相同时保持 Thread 时间戳；检查点也未变化时不重写。Hook 仍读取规范化内容以核实幂等，不再仅凭文件大小和 mtime 跳过。此改动增加重复 Hook 的读取/解析开销，未做性能收益声明。
+- `captureSession(..., {preview: true})` 只读取和分类，不保存 Thread 或检查点。历史导入 dry-run 继续不写领域数据及导入审计；文件指纹/路径变化仍由历史报告单独分类。
+- 同一路径的输入 mtime 早于已提交检查点时，拒绝旧快照并要求重新读取。它不是跨路径、时钟回拨或相同 mtime 情况下的完整版本协议。
+- 采集只保存原始来源记录，不产生正式记忆，也不授予确认写入权限。默认 MCP 正式记忆写入遵循 [确认权限规则](../024-memory-curation/spec.md)。
+- 测试：[公共采集事务](../../tests/integrations/sessionCapture.test.ts)、[Codex/Claude Hook 与历史导入互操作](../../tests/integrations/captureAdapters.test.ts)。
+
 ## 目标
 
 完成 Mira 后续进化计划中的 Phase 0 工程基线收口和 Phase 1 自动会话闭环，让 Codex 与 Claude Code 在项目内经过一次安装后能够：

@@ -76,7 +76,8 @@ import {
   type Project
 } from "./projects/projectStore.js";
 import { serveMiraMcpStdio } from "./mcp/transport.js";
-import { deleteThread, saveThread } from "./threads/threadStore.js";
+import { deleteThread } from "./threads/threadStore.js";
+import { captureSession } from "./threads/sessionCapture.js";
 import {
   clearWorkingMemory,
   listWorkingMemory,
@@ -500,14 +501,14 @@ thread
 
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(
-        saveThread(session.db, {
+        captureSession(session.db, {
           id: options.id,
           projectId: session.project.id,
           title: options.title,
           source: options.source,
           rawFormat,
           rawText
-        })
+        }).thread
       );
     });
   });
@@ -1209,14 +1210,14 @@ program
       });
 
       printJson(
-        saveThread(session.db, {
+        captureSession(session.db, {
           id: imported.id,
           projectId: session.project.id,
           title: imported.title,
           source: imported.source,
           rawFormat: imported.rawFormat,
           rawText: imported.rawText
-        })
+        }).thread
       );
     });
   });
