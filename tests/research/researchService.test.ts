@@ -8,10 +8,12 @@ import {
   authorizeResearch,
   getResearchCaseSnapshot,
   markResearchEvidenceStale,
+  markResearchSourceSnapshotStale,
   reviewResearchClaim,
   reviseResearchClaim,
   submitResearchPacket
 } from "../../src/research/researchService.js";
+import { verifyEvidence } from "../../src/research/evidenceVerification.js";
 
 let db: Database.Database | undefined;
 
@@ -23,15 +25,27 @@ afterEach(() => {
 function packet() {
   return {
     case: { title: "Quarterly review", question: "What changed?", asOfDate: "2026-09-01" },
+    snapshots: [
+      {
+        key: "S1", canonicalUri: "https://example.test/q3", sourceTitle: "Q3 filing",
+        publishedAt: "2026-08-01", accessedAt: "2026-09-01", mediaType: "text/plain",
+        content: "p. 12\nRevenue increased by ten percent."
+      },
+      {
+        key: "S2", canonicalUri: "https://example.test/outlook", sourceTitle: "Outlook",
+        publishedAt: "2026-08-01", accessedAt: "2026-09-01", mediaType: "text/plain",
+        content: "slide 4\nManagement expects slower growth."
+      }
+    ],
     evidence: [
       {
-        key: "E1", sourceType: "regulatory_filing" as const,
+        key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing" as const,
         sourceUri: "https://example.test/q3", sourceTitle: "Q3 filing", locator: "p. 12",
         excerpt: "Revenue increased by ten percent.", publishedAt: "2026-08-01",
         accessedAt: "2026-09-01", validThrough: "2026-09-30"
       },
       {
-        key: "E2", sourceType: "company_material" as const,
+        key: "E2", snapshotKey: "S2", sourceType: "company_material" as const,
         sourceUri: "https://example.test/outlook", sourceTitle: "Outlook", locator: "slide 4",
         excerpt: "Management expects slower growth.", publishedAt: "2026-08-01",
         accessedAt: "2026-09-01"
@@ -119,15 +133,30 @@ describe("research governance", () => {
     const authority = authorizeResearch(db, project.id, { actor: "reviewer", reason: "Source review" });
     let snapshot = submitResearchPacket(db, project.id, packet());
     const predecessor = snapshot.claims[0];
-    const evidence = snapshot.evidence;
+    const filingEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
+    const outlookEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/outlook"))!;
 
-    snapshot = reviewResearchClaim(db, project.id, predecessor.id, "approve", "Primary filing is current; outlook is retained as counter-evidence.", authority);
+    expect(verifyEvidence(db, project.id, snapshot.researchCase.id, filingEvidence.id))
+      .toMatchObject({status: "verified"});
+
+    expect(() => reviewResearchClaim(
+      db!, project.id, predecessor.id, "approve", "Counter-evidence reviewed.", authority
+    )).toThrow(/Contradiction Disposition/i);
+    snapshot = reviewResearchClaim(
+      db,
+      project.id,
+      predecessor.id,
+      "approve",
+      "Primary filing is current; outlook is retained as counter-evidence.",
+      authority,
+      [{evidenceId: outlookEvidence.id, disposition: "requires_followup", rationale: "Track the weaker forward outlook."}]
+    );
     expect(snapshot.researchCase.status).toBe("completed");
     expect(snapshot.claims[0].reviewStatus).toBe("approved");
 
-    snapshot = markResearchEvidenceStale(db, project.id, evidence[0].id, "Superseded by a later filing.", authority);
+    snapshot = markResearchEvidenceStale(db, project.id, filingEvidence.id, "Superseded by a later filing.", authority);
     expect(snapshot.researchCase.status).toBe("in_review");
-    expect(snapshot.evidence.find((item) => item.id === evidence[0].id)?.state).toBe("stale");
+    expect(snapshot.evidence.find((item) => item.id === filingEvidence.id)?.state).toBe("stale");
     expect(snapshot.claims[0].reviewStatus).toBe("changes_requested");
     expect(snapshot.events.at(-1)?.receipt).toMatchObject({ affectedClaimIds: [predecessor.id] });
 
@@ -138,7 +167,7 @@ describe("research governance", () => {
       thesisImpact: "weaken",
       invalidationConditions: "Management raises the next reported outlook.",
       links: [{
-        evidenceId: evidence[1].id,
+        evidenceId: outlookEvidence.id,
         relation: "supports",
         rationale: "The outlook directly supports the revised claim."
       }]
@@ -149,7 +178,7 @@ describe("research governance", () => {
     expect(oldClaim).toMatchObject({ statement: predecessor.statement, status: "superseded" });
     expect(successor).toMatchObject({
       statement: "Forward growth is expected to slow.", status: "active", reviewStatus: "pending",
-      links: [expect.objectContaining({ evidenceId: evidence[1].id })]
+      links: [expect.objectContaining({ evidenceId: outlookEvidence.id })]
     });
   });
 
@@ -160,11 +189,44 @@ describe("research governance", () => {
     const authority = authorizeResearch(db, project.id, { actor: "reviewer", reason: "Explicit review" });
     const snapshot = submitResearchPacket(db, project.id, packet());
     const claimId = snapshot.claims[0].id;
+    const filingEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
+    const outlookEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/outlook"))!;
+    expect(verifyEvidence(db, project.id, snapshot.researchCase.id, filingEvidence.id))
+      .toMatchObject({status: "verified"});
     db.exec("create trigger fail_research_audit before insert on research_events begin select raise(abort, 'audit unavailable'); end;");
 
-    expect(() => reviewResearchClaim(db!, project.id, claimId, "approve", "Reviewed.", authority))
+    expect(() => reviewResearchClaim(
+      db!, project.id, claimId, "approve", "Reviewed.", authority,
+      [{evidenceId: outlookEvidence.id, disposition: "accepted_risk", rationale: "Authorized test disposition."}]
+    ))
       .toThrow("audit unavailable");
     expect(getResearchCaseSnapshot(db, project.id, snapshot.researchCase.id).claims[0].reviewStatus)
       .toBe("pending");
+  });
+
+  test("propagates Source Snapshot staleness through Evidence, Verification and approved Claims", () => {
+    db = openDatabase(":memory:");
+    migrate(db);
+    const project = createProject(db, {name:"Snapshot lifecycle",rootPath:"/snapshot-lifecycle"});
+    const authority = authorizeResearch(db, project.id, {actor:"reviewer",reason:"Source governance"});
+    const submitted = submitResearchPacket(db, project.id, {
+      ...packet(),
+      claims:[{...packet().claims[0],links:[packet().claims[0].links[0]]}]
+    });
+    const filing = submitted.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
+    verifyEvidence(db, project.id, submitted.researchCase.id, filing.id);
+    reviewResearchClaim(db, project.id, submitted.claims[0].id, "approve", "Verified.", authority);
+
+    const affected = markResearchSourceSnapshotStale(
+      db, project.id, filing.snapshotId!, "A successor filing is available.", authority
+    );
+    expect(affected).toHaveLength(1);
+    expect(affected[0]).toMatchObject({
+      researchCase:{status:"in_review"},
+      evidence:expect.arrayContaining([expect.objectContaining({id:filing.id,state:"stale"})]),
+      claims:expect.arrayContaining([expect.objectContaining({id:submitted.claims[0].id,reviewStatus:"changes_requested"})])
+    });
+    expect(affected[0].verifications.find((item) => item.evidenceId === filing.id)?.status).toBe("stale");
+    expect(affected[0].snapshots.find((item) => item.id === filing.snapshotId)?.state).toBe("stale");
   });
 });

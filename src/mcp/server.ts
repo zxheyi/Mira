@@ -20,6 +20,8 @@ import { getMemory, getMemoryHistory } from "../memory/memoryLifecycleStore.js";
 import { authorizeCuration, curateMemory, type CurationAuthority, type ConfirmationPolicy } from "../memory/curationService.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import { repositoryLocation } from "../projects/projectIdentity.js";
+import { createHostAdapterRegistry, MIRA_HOSTS } from "../lifecycle/hostAdapterRegistry.js";
+import { createTurnLifecycle } from "../lifecycle/turnLifecycle.js";
 import type { ThreadRawFormat } from "../threads/threadStore.js";
 import { captureSession } from "../threads/sessionCapture.js";
 import {
@@ -43,12 +45,18 @@ import {
 import {
   CLAIM_EVIDENCE_RELATIONS,
   CLAIM_EVIDENCE_STATUSES,
+  CONTRADICTION_DISPOSITIONS,
   RESEARCH_SOURCE_TYPES,
   THESIS_IMPACTS
 } from "../research/researchTypes.js";
 import { renderResearchCaseMarkdown } from "../research/researchExport.js";
+import { prepareResearchContext } from "../research/researchContext.js";
+import { verifyEvidence } from "../research/evidenceVerification.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
+  "list_host_adapters",
+  "before_turn",
+  "after_turn",
   "get_context_bundle",
   "prepare_context",
   "list_recall_events",
@@ -69,7 +77,9 @@ export const MIRA_MCP_TOOL_NAMES = [
   "get_memory_history",
   "submit_research_packet",
   "get_research_case",
+  "prepare_research_context",
   "revise_research_claim",
+  "verify_research_evidence",
   "mark_research_evidence_stale",
   "review_research_claim",
   "export_research_case"
@@ -78,6 +88,9 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
+  list_host_adapters: "List every Host adapter accepted by the unified Turn Lifecycle Port, including phase support and native granularity.",
+  before_turn: "Normalize one Host request, persist its stable Session and Turn, and return one audited Context Packet before execution.",
+  after_turn: "Normalize and atomically capture one completed Host Turn, then enqueue candidate distillation and projection work without granting review authority.",
   get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory, the latest Project Briefing metadata, and query-relevant memories with an audited receipt.",
   prepare_context: "Prepare bounded context and return { markdown, receipt } with candidate, injected and omitted memory IDs. Preview mode records neither recall nor Briefing writes.",
   list_recall_events: "Inspect recent context injection receipts for the bound project and optional task; receipt means injected, not proven useful.",
@@ -97,11 +110,13 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   archive_memory: "Requires host confirmation policy (disabled by default). Archive an active Memory so it leaves search and Context Bundle results while remaining in auditable history.",
   get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved.",
   submit_research_packet: "Submit one validated draft Research Case with bounded Evidence Items, Claims and explicit links; this never creates Memory or mutates thesis state.",
-  get_research_case: "Read one complete project-scoped Research Case snapshot with Evidence, Claims, links and append-only review events.",
+  get_research_case: "Read one complete project-scoped Research Case snapshot with Source Snapshot metadata, Evidence Verification receipts, Claims, links and append-only review events.",
+  prepare_research_context: "Return a read-only evidence-gated Research Context containing only active approved Claims backed by current verified supporting Evidence; draft or stale research remains excluded.",
   revise_research_claim: "Requires host confirmation policy. Create an immutable active successor with explicit Evidence links and supersede the predecessor.",
+  verify_research_evidence: "Run deterministic integrity, source binding, locator, excerpt, publication and freshness checks against the bound Source Snapshot.",
   mark_research_evidence_stale: "Requires host confirmation policy. Mark current Evidence stale and atomically reopen every linked active Claim for review.",
   review_research_claim: "Requires host confirmation policy. Approve only through the current-support Evidence gate, or reject/request changes with a reason.",
-  export_research_case: "Render a deterministic Markdown audit view of one Research Case without writing external state or changing Memory or thesis state."
+  export_research_case: "Render a deterministic Markdown audit view with Source Snapshot metadata and Evidence Verification receipts, without exposing snapshot content or changing Memory or thesis state."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
@@ -116,6 +131,28 @@ export type MiraMcpOptions = {
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
+  list_host_adapters: {},
+  before_turn: {
+    host: z.enum(MIRA_HOSTS),
+    sessionId: z.string().trim().min(1).max(500),
+    turnId: z.string().trim().min(1).max(500),
+    query: z.string().trim().min(1).max(50_000),
+    taskId: z.string().trim().min(1).max(500).optional(),
+    context: z.object({
+      memoryLimit: z.number().int().min(1).max(50).optional(),
+      maxCharacters: z.number().int().min(1).max(1_000_000).optional(),
+      maxTokens: z.number().int().min(25).max(250_000).optional()
+    }).strict().optional()
+  },
+  after_turn: {
+    host: z.enum(MIRA_HOSTS),
+    sessionId: z.string().trim().min(1).max(500),
+    turnId: z.string().trim().min(1).max(500),
+    query: z.string().trim().min(1).max(50_000),
+    response: z.string().trim().min(1).max(50_000),
+    status: z.enum(["succeeded", "failed", "cancelled"]),
+    taskId: z.string().trim().min(1).max(500).optional()
+  },
   prepare_context: {
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
@@ -218,8 +255,18 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
       question: z.string().trim().min(1).max(2000),
       asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
     }).strict(),
+    snapshots: z.array(z.object({
+      key: z.string().trim().min(1).max(100),
+      canonicalUri: z.url().max(4000),
+      sourceTitle: z.string().trim().min(1).max(1000),
+      publishedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      accessedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      mediaType: z.string().trim().min(1).max(200),
+      content: z.string().min(1).max(5_000_000)
+    }).strict()).min(1).max(100),
     evidence: z.array(z.object({
       key: z.string().trim().min(1).max(100),
+      snapshotKey: z.string().trim().min(1).max(100),
       sourceType: z.enum(RESEARCH_SOURCE_TYPES),
       sourceUri: z.url().max(4000),
       sourceTitle: z.string().trim().min(1).max(1000),
@@ -246,6 +293,9 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   get_research_case: {
     caseId: z.string().trim().min(1).max(200)
   },
+  prepare_research_context: {
+    caseId: z.string().trim().min(1).max(200)
+  },
   revise_research_claim: {
     claimId: z.string().trim().min(1).max(200),
     statement: z.string().trim().min(1).max(4000),
@@ -260,6 +310,10 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     }).strict()).min(1).max(100),
     reason: z.string().trim().min(1).max(2000)
   },
+  verify_research_evidence: {
+    caseId: z.string().trim().min(1).max(200),
+    evidenceId: z.string().trim().min(1).max(200)
+  },
   mark_research_evidence_stale: {
     evidenceId: z.string().trim().min(1).max(200),
     reason: z.string().trim().min(1).max(2000)
@@ -267,7 +321,12 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   review_research_claim: {
     claimId: z.string().trim().min(1).max(200),
     decision: z.enum(["approve", "reject", "request_changes"]),
-    reason: z.string().trim().min(1).max(2000)
+    reason: z.string().trim().min(1).max(2000),
+    contradictionDispositions: z.array(z.object({
+      evidenceId: z.string().trim().min(1).max(200),
+      disposition: z.enum(CONTRADICTION_DISPOSITIONS),
+      rationale: z.string().trim().min(1).max(2000)
+    }).strict()).max(100).optional()
   },
   export_research_case: {
     caseId: z.string().trim().min(1).max(200)
@@ -379,6 +438,29 @@ function executeMiraTool(
   const { db, projectId } = session;
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
+      case "list_host_adapters":
+        return createHostAdapterRegistry().list();
+      case "before_turn": {
+        const command = createHostAdapterRegistry().normalizeBeforeTurn(stringArg(args, "host"), {
+          sessionId: stringArg(args, "sessionId"),
+          turnId: stringArg(args, "turnId"),
+          query: stringArg(args, "query"),
+          ...(taskId ? {taskId} : {}),
+          ...(args.context ? {context: args.context} : {})
+        }, "mcp");
+        return createTurnLifecycle({db, projectId}).beforeTurn(command);
+      }
+      case "after_turn": {
+        const command = createHostAdapterRegistry().normalizeAfterTurn(stringArg(args, "host"), {
+          sessionId: stringArg(args, "sessionId"),
+          turnId: stringArg(args, "turnId"),
+          query: stringArg(args, "query"),
+          response: stringArg(args, "response"),
+          status: stringArg(args, "status"),
+          ...(taskId ? {taskId} : {})
+        }, "mcp");
+        return createTurnLifecycle({db, projectId}).afterTurn(command);
+      }
       case "prepare_context":
         return prepareContext(db, projectId, {
           taskId, query: optionalStringArg(args, "query"),
@@ -490,6 +572,8 @@ function executeMiraTool(
         return submitResearchPacket(db, projectId, args as SubmitResearchPacketInput, "mcp");
       case "get_research_case":
         return getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"));
+      case "prepare_research_context":
+        return prepareResearchContext(db, projectId, stringArg(args, "caseId"));
       case "revise_research_claim":
         return reviseResearchClaim(db, projectId, stringArg(args, "claimId"), {
           statement: stringArg(args, "statement"),
@@ -499,6 +583,13 @@ function executeMiraTool(
           invalidationConditions: stringArg(args, "invalidationConditions"),
           links: args.links
         } as ReviseResearchClaimInput, stringArg(args, "reason"), session.researchAuthority);
+      case "verify_research_evidence":
+        return verifyEvidence(
+          db,
+          projectId,
+          stringArg(args, "caseId"),
+          stringArg(args, "evidenceId")
+        );
       case "mark_research_evidence_stale":
         return markResearchEvidenceStale(
           db,
@@ -514,7 +605,8 @@ function executeMiraTool(
           stringArg(args, "claimId"),
           stringArg(args, "decision") as "approve" | "reject" | "request_changes",
           stringArg(args, "reason"),
-          session.researchAuthority
+          session.researchAuthority,
+          (args.contradictionDispositions as never[] | undefined) ?? []
         );
       case "export_research_case":
         return renderResearchCaseMarkdown(

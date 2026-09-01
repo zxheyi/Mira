@@ -8,6 +8,7 @@
     "evidence": [
       {
         "key": "E01_Q4_REVENUE_AND_EPS",
+        "snapshotKey": "S_E01_Q4_REVENUE_AND_EPS",
         "sourceType": "company_material",
         "sourceUri": "https://www.apple.com/newsroom/2024/10/apple-reports-fourth-quarter-results/",
         "sourceTitle": "Apple reports fourth quarter results",
@@ -19,6 +20,7 @@
       },
       {
         "key": "E02_FY24_INCOME_STATEMENT",
+        "snapshotKey": "S_E02_FY24_INCOME_STATEMENT",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -29,6 +31,7 @@
       },
       {
         "key": "E03_FY24_SERVICES_GROWTH",
+        "snapshotKey": "S_E03_FY24_SERVICES_GROWTH",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -39,6 +42,7 @@
       },
       {
         "key": "E04_FY24_GROSS_MARGIN_MIX",
+        "snapshotKey": "S_E04_FY24_GROSS_MARGIN_MIX",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -49,6 +53,7 @@
       },
       {
         "key": "E05_FY24_IPHONE_FLAT",
+        "snapshotKey": "S_E05_FY24_IPHONE_FLAT",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -59,6 +64,7 @@
       },
       {
         "key": "E06_FY24_GREATER_CHINA_DECLINE",
+        "snapshotKey": "S_E06_FY24_GREATER_CHINA_DECLINE",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -69,6 +75,7 @@
       },
       {
         "key": "E07_STATE_AID_TAX_CHARGE",
+        "snapshotKey": "S_E07_STATE_AID_TAX_CHARGE",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -79,6 +86,7 @@
       },
       {
         "key": "E08_FY24_OPERATING_CASH_FLOW",
+        "snapshotKey": "S_E08_FY24_OPERATING_CASH_FLOW",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -89,6 +97,7 @@
       },
       {
         "key": "E09_FY24_SHARE_REPURCHASES",
+        "snapshotKey": "S_E09_FY24_SHARE_REPURCHASES",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -99,6 +108,7 @@
       },
       {
         "key": "E10_FY24_LIQUIDITY_AND_DEBT",
+        "snapshotKey": "S_E10_FY24_LIQUIDITY_AND_DEBT",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -110,6 +120,7 @@
       },
       {
         "key": "E11_DMA_INVESTIGATIONS",
+        "snapshotKey": "S_E11_DMA_INVESTIGATIONS",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -121,6 +132,7 @@
       },
       {
         "key": "E12_MANUFACTURING_CONCENTRATION",
+        "snapshotKey": "S_E12_MANUFACTURING_CONCENTRATION",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -132,6 +144,7 @@
       },
       {
         "key": "E13_MANUFACTURING_COMMITMENTS",
+        "snapshotKey": "S_E13_MANUFACTURING_COMMITMENTS",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -143,6 +156,7 @@
       },
       {
         "key": "E14_REGULATORY_CHANGE_RISK",
+        "snapshotKey": "S_E14_REGULATORY_CHANGE_RISK",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
         "sourceTitle": "Apple Inc. 2024 Form 10-K",
@@ -154,6 +168,7 @@
       },
       {
         "key": "E15_FY23_SERVICES_GROWTH_OLD",
+        "snapshotKey": "S_E15_FY23_SERVICES_GROWTH_OLD",
         "sourceType": "regulatory_filing",
         "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/aapl-20230930.htm",
         "sourceTitle": "Apple Inc. 2023 Form 10-K",
@@ -193,10 +208,26 @@
         "thesisImpact": "watch",
         "invalidationConditions": "FY2024 报表被重述，或后续期间 iPhone 与 Greater China 同时恢复持续同比增长。",
         "links": [
-          {"evidenceKey": "E02_FY24_INCOME_STATEMENT", "relation": "supports", "rationale": "全年总收入同比增加约 2%。"},
-          {"evidenceKey": "E05_FY24_IPHONE_FLAT", "relation": "supports", "rationale": "iPhone 全年收入基本持平。"},
-          {"evidenceKey": "E06_FY24_GREATER_CHINA_DECLINE", "relation": "supports", "rationale": "Greater China 收入下降 8%。"},
-          {"evidenceKey": "E01_Q4_REVENUE_AND_EPS", "relation": "contextual", "rationale": "Q4 单季增长强于全年，但不能外推下一年度。"}
+          {
+            "evidenceKey": "E02_FY24_INCOME_STATEMENT",
+            "relation": "supports",
+            "rationale": "全年总收入同比增加约 2%。"
+          },
+          {
+            "evidenceKey": "E05_FY24_IPHONE_FLAT",
+            "relation": "supports",
+            "rationale": "iPhone 全年收入基本持平。"
+          },
+          {
+            "evidenceKey": "E06_FY24_GREATER_CHINA_DECLINE",
+            "relation": "supports",
+            "rationale": "Greater China 收入下降 8%。"
+          },
+          {
+            "evidenceKey": "E01_Q4_REVENUE_AND_EPS",
+            "relation": "contextual",
+            "rationale": "Q4 单季增长强于全年，但不能外推下一年度。"
+          }
         ]
       },
       {
@@ -207,10 +238,26 @@
         "thesisImpact": "strengthen",
         "invalidationConditions": "Services 毛利率接近 Products 水平、Services 收入下滑，或监管措施实质压低相关费率和收入。",
         "links": [
-          {"evidenceKey": "E03_FY24_SERVICES_GROWTH", "relation": "supports", "rationale": "Services 收入增长 13%。"},
-          {"evidenceKey": "E04_FY24_GROSS_MARGIN_MIX", "relation": "supports", "rationale": "Services 毛利率显著高于 Products 并同比提升。"},
-          {"evidenceKey": "E11_DMA_INVESTIGATIONS", "relation": "contradicts", "rationale": "DMA 调查可能要求业务改变并带来重大罚款。"},
-          {"evidenceKey": "E14_REGULATORY_CHANGE_RISK", "relation": "contradicts", "rationale": "数字平台等法律变化可能改变产品和商业模式。"}
+          {
+            "evidenceKey": "E03_FY24_SERVICES_GROWTH",
+            "relation": "supports",
+            "rationale": "Services 收入增长 13%。"
+          },
+          {
+            "evidenceKey": "E04_FY24_GROSS_MARGIN_MIX",
+            "relation": "supports",
+            "rationale": "Services 毛利率显著高于 Products 并同比提升。"
+          },
+          {
+            "evidenceKey": "E11_DMA_INVESTIGATIONS",
+            "relation": "contradicts",
+            "rationale": "DMA 调查可能要求业务改变并带来重大罚款。"
+          },
+          {
+            "evidenceKey": "E14_REGULATORY_CHANGE_RISK",
+            "relation": "contradicts",
+            "rationale": "数字平台等法律变化可能改变产品和商业模式。"
+          }
         ]
       },
       {
@@ -221,9 +268,21 @@
         "thesisImpact": "strengthen",
         "invalidationConditions": "经营现金流持续低于资本回报现金支出、流动性明显下降，或债务再融资能力恶化。",
         "links": [
-          {"evidenceKey": "E08_FY24_OPERATING_CASH_FLOW", "relation": "supports", "rationale": "给出经营现金流规模。"},
-          {"evidenceKey": "E09_FY24_SHARE_REPURCHASES", "relation": "supports", "rationale": "给出股票回购现金支出。"},
-          {"evidenceKey": "E10_FY24_LIQUIDITY_AND_DEBT", "relation": "contextual", "rationale": "保留现金与证券、票据和商业票据余额，避免误写为无杠杆。"}
+          {
+            "evidenceKey": "E08_FY24_OPERATING_CASH_FLOW",
+            "relation": "supports",
+            "rationale": "给出经营现金流规模。"
+          },
+          {
+            "evidenceKey": "E09_FY24_SHARE_REPURCHASES",
+            "relation": "supports",
+            "rationale": "给出股票回购现金支出。"
+          },
+          {
+            "evidenceKey": "E10_FY24_LIQUIDITY_AND_DEBT",
+            "relation": "contextual",
+            "rationale": "保留现金与证券、票据和商业票据余额，避免误写为无杠杆。"
+          }
         ]
       },
       {
@@ -234,9 +293,21 @@
         "thesisImpact": "watch",
         "invalidationConditions": "Apple 或 SEC 后续重述该费用的金额、性质或会计处理。",
         "links": [
-          {"evidenceKey": "E02_FY24_INCOME_STATEMENT", "relation": "supports", "rationale": "提供 GAAP 全年净利润和稀释 EPS。"},
-          {"evidenceKey": "E07_STATE_AID_TAX_CHARGE", "relation": "supports", "rationale": "提供一次性税务费用和有效税率变化。"},
-          {"evidenceKey": "E01_Q4_REVENUE_AND_EPS", "relation": "contextual", "rationale": "提供官方 Q4 调整后 EPS 对账口径。"}
+          {
+            "evidenceKey": "E02_FY24_INCOME_STATEMENT",
+            "relation": "supports",
+            "rationale": "提供 GAAP 全年净利润和稀释 EPS。"
+          },
+          {
+            "evidenceKey": "E07_STATE_AID_TAX_CHARGE",
+            "relation": "supports",
+            "rationale": "提供一次性税务费用和有效税率变化。"
+          },
+          {
+            "evidenceKey": "E01_Q4_REVENUE_AND_EPS",
+            "relation": "contextual",
+            "rationale": "提供官方 Q4 调整后 EPS 对账口径。"
+          }
         ]
       },
       {
@@ -247,8 +318,16 @@
         "thesisImpact": "weaken",
         "invalidationConditions": "Apple 正式披露制造来源已显著分散、关键单一来源风险大幅下降，且短期采购义务明显降低。",
         "links": [
-          {"evidenceKey": "E12_MANUFACTURING_CONCENTRATION", "relation": "supports", "rationale": "提供外包制造地点和贸易限制风险。"},
-          {"evidenceKey": "E13_MANUFACTURING_COMMITMENTS", "relation": "contextual", "rationale": "量化短期制造采购承诺，不代表中断概率。"}
+          {
+            "evidenceKey": "E12_MANUFACTURING_CONCENTRATION",
+            "relation": "supports",
+            "rationale": "提供外包制造地点和贸易限制风险。"
+          },
+          {
+            "evidenceKey": "E13_MANUFACTURING_COMMITMENTS",
+            "relation": "contextual",
+            "rationale": "量化短期制造采购承诺，不代表中断概率。"
+          }
         ]
       },
       {
@@ -259,11 +338,164 @@
         "thesisImpact": "weaken",
         "invalidationConditions": "DMA 调查终结且无重大整改或罚款，或后续证据表明相关变更不影响 Services 收入与利润率。",
         "links": [
-          {"evidenceKey": "E11_DMA_INVESTIGATIONS", "relation": "supports", "rationale": "提供具体调查、潜在救济和罚款上限。"},
-          {"evidenceKey": "E14_REGULATORY_CHANGE_RISK", "relation": "supports", "rationale": "提供监管变化可能改变业务实践的风险。"},
-          {"evidenceKey": "E03_FY24_SERVICES_GROWTH", "relation": "contextual", "rationale": "Services 当前增长良好，是需要监测的暴露面。"},
-          {"evidenceKey": "E04_FY24_GROSS_MARGIN_MIX", "relation": "contextual", "rationale": "Services 当前毛利率较高，说明暴露的重要性但不证明未来损失。"}
+          {
+            "evidenceKey": "E11_DMA_INVESTIGATIONS",
+            "relation": "supports",
+            "rationale": "提供具体调查、潜在救济和罚款上限。"
+          },
+          {
+            "evidenceKey": "E14_REGULATORY_CHANGE_RISK",
+            "relation": "supports",
+            "rationale": "提供监管变化可能改变业务实践的风险。"
+          },
+          {
+            "evidenceKey": "E03_FY24_SERVICES_GROWTH",
+            "relation": "contextual",
+            "rationale": "Services 当前增长良好，是需要监测的暴露面。"
+          },
+          {
+            "evidenceKey": "E04_FY24_GROSS_MARGIN_MIX",
+            "relation": "contextual",
+            "rationale": "Services 当前毛利率较高，说明暴露的重要性但不证明未来损失。"
+          }
         ]
+      }
+    ],
+    "snapshots": [
+      {
+        "key": "S_E01_Q4_REVENUE_AND_EPS",
+        "canonicalUri": "https://www.apple.com/newsroom/2024/10/apple-reports-fourth-quarter-results/",
+        "sourceTitle": "Apple reports fourth quarter results",
+        "publishedAt": "2024-10-31",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Opening paragraph and footnote 1\nQ4 FY2024 revenue was $94.9 billion, up 6%; GAAP diluted EPS was $0.97 and the adjusted figure excluding the State Aid charge was $1.64."
+      },
+      {
+        "key": "S_E02_FY24_INCOME_STATEMENT",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 8, Consolidated Statements of Operations, pp. 28-29\nFY2024 total net sales were $391.035 billion versus $383.285 billion in FY2023; net income was $93.736 billion and diluted EPS was $6.08."
+      },
+      {
+        "key": "S_E03_FY24_SERVICES_GROWTH",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Products and Services Performance, p. 23\nFY2024 Services net sales were $96.169 billion, up 13%, primarily reflecting advertising, App Store and cloud services."
+      },
+      {
+        "key": "S_E04_FY24_GROSS_MARGIN_MIX",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Gross Margin, p. 23\nFY2024 gross margin percentages were 73.9% for Services, 37.2% for Products and 46.2% in total, compared with 70.8%, 36.5% and 44.1% in FY2023."
+      },
+      {
+        "key": "S_E05_FY24_IPHONE_FLAT",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Products and Services Performance, p. 23\nFY2024 iPhone net sales were $201.183 billion versus $200.583 billion in FY2023, which Apple described as relatively flat."
+      },
+      {
+        "key": "S_E06_FY24_GREATER_CHINA_DECLINE",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Segment Operating Performance, pp. 21-22\nGreater China FY2024 net sales were $66.952 billion, down 8%, primarily from lower iPhone and iPad sales; renminbi weakness also had an unfavorable effect."
+      },
+      {
+        "key": "S_E07_STATE_AID_TAX_CHARGE",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Provision for Income Taxes, p. 24\nFY2024 included an approximately $10.2 billion one-time net income tax charge related to the State Aid Decision, contributing to a 24.1% effective tax rate."
+      },
+      {
+        "key": "S_E08_FY24_OPERATING_CASH_FLOW",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 8, Consolidated Statements of Cash Flows, pp. 32-33\nCash generated by operating activities was $118.254 billion in FY2024 versus $110.543 billion in FY2023."
+      },
+      {
+        "key": "S_E09_FY24_SHARE_REPURCHASES",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 8, financing activities, p. 33; Note 11\nFY2024 cash used to repurchase common stock was $94.949 billion; the company also reported repurchasing about 499 million shares."
+      },
+      {
+        "key": "S_E10_FY24_LIQUIDITY_AND_DEBT",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Liquidity and Capital Resources, p. 24\nAt FY2024 year-end, unrestricted cash, cash equivalents and marketable securities totaled $140.8 billion; fixed-rate notes principal was $97.3 billion and commercial paper was $10.0 billion."
+      },
+      {
+        "key": "S_E11_DMA_INVESTIGATIONS",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part I, Item 3, Digital Markets Act Investigations, p. 17\nThe European Commission opened three DMA investigations in 2024; a final violation could require conduct changes and fines up to 10% of worldwide annual net sales."
+      },
+      {
+        "key": "S_E12_MANUFACTURING_CONCENTRATION",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part I, Item 1A, international disputes and business interruptions, p. 5\nSubstantially all manufacturing is performed in whole or in part by outsourcing partners located primarily across mainland China, India, Japan, South Korea, Taiwan and Vietnam."
+      },
+      {
+        "key": "S_E13_MANUFACTURING_COMMITMENTS",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Manufacturing Purchase Obligations, p. 25\nManufacturing purchase obligations were $53.0 billion at FY2024 year-end, of which $52.9 billion was payable within 12 months."
+      },
+      {
+        "key": "S_E14_REGULATORY_CHANGE_RISK",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+        "sourceTitle": "Apple Inc. 2024 Form 10-K",
+        "publishedAt": "2024-11-01",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part I, Item 1A, Legal and Regulatory Compliance Risks, pp. 12-13\nChanges in antitrust, digital platform, privacy and AI laws may increase costs, limit feature availability, or require changes to products, business practices or supply chains."
+      },
+      {
+        "key": "S_E15_FY23_SERVICES_GROWTH_OLD",
+        "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/aapl-20230930.htm",
+        "sourceTitle": "Apple Inc. 2023 Form 10-K",
+        "publishedAt": "2023-11-03",
+        "accessedAt": "2026-09-01",
+        "mediaType": "text/plain; profile=bounded-public-excerpt",
+        "content": "Part II, Item 7, Products and Services Performance, pp. 21-22\nFY2023 Services net sales were $85.2 billion, up 9%; this historical result is superseded by FY2024 evidence for current-period growth analysis."
       }
     ]
   },
@@ -285,9 +517,21 @@
         "thesisImpact": "strengthen",
         "invalidationConditions": "后续正式文件重述 FY2024 Services 收入，或下一期间显示 Services 收入同比下降。",
         "links": [
-          {"evidenceKey": "E03_FY24_SERVICES_GROWTH", "relation": "supports", "rationale": "FY2024 10-K 提供当前期间收入额和 13% 增速。"},
-          {"evidenceKey": "E15_FY23_SERVICES_GROWTH_OLD", "relation": "contextual", "rationale": "stale 的 FY2023 来源只保留为对比基线。"},
-          {"evidenceKey": "E04_FY24_GROSS_MARGIN_MIX", "relation": "contextual", "rationale": "补充 Services 的利润结构，不证明收入增长本身。"}
+          {
+            "evidenceKey": "E03_FY24_SERVICES_GROWTH",
+            "relation": "supports",
+            "rationale": "FY2024 10-K 提供当前期间收入额和 13% 增速。"
+          },
+          {
+            "evidenceKey": "E15_FY23_SERVICES_GROWTH_OLD",
+            "relation": "contextual",
+            "rationale": "stale 的 FY2023 来源只保留为对比基线。"
+          },
+          {
+            "evidenceKey": "E04_FY24_GROSS_MARGIN_MIX",
+            "relation": "contextual",
+            "rationale": "补充 Services 的利润结构，不证明收入增长本身。"
+          }
         ]
       }
     },

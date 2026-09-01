@@ -5,8 +5,11 @@ import { retryDistillJob } from "../distill/distillJobStore.js";
 import {
   authorizeResearch,
   markResearchEvidenceStale,
+  markResearchSourceSnapshotStale,
   reviewResearchClaim
 } from "../research/researchService.js";
+import { verifyEvidence } from "../research/evidenceVerification.js";
+import { CONTRADICTION_DISPOSITIONS } from "../research/researchTypes.js";
 
 const reason = z.string().trim().min(1).max(1000).optional();
 const memoryAction = z.discriminatedUnion("action", [
@@ -19,12 +22,18 @@ const reviewAction = z.object({decision: z.enum(["accept", "reject"]), reason,
 const requiredReason = z.string().trim().min(1).max(2000);
 const researchClaimAction = z.object({
   decision: z.enum(["approve", "reject", "request_changes"]),
-  reason: requiredReason
+  reason: requiredReason,
+  contradictionDispositions: z.array(z.object({
+    evidenceId: z.string().trim().min(1).max(200),
+    disposition: z.enum(CONTRADICTION_DISPOSITIONS),
+    rationale: requiredReason
+  }).strict()).max(100).optional()
 }).strict();
-const researchEvidenceAction = z.object({
-  action: z.literal("stale"),
-  reason: requiredReason
-}).strict();
+const researchEvidenceAction = z.discriminatedUnion("action", [
+  z.object({action: z.literal("verify"), caseId: z.string().trim().min(1).max(200)}).strict(),
+  z.object({action: z.literal("stale"), reason: requiredReason}).strict()
+]);
+const researchSnapshotAction = z.object({action:z.literal("stale"),reason:requiredReason}).strict();
 
 export function applyViewerAction(db: Database.Database, projectId: string, resource: string, id: string, body: unknown): unknown {
   if (resource === "memory") {
@@ -52,17 +61,26 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
       id,
       input.decision,
       input.reason,
-      authorizeResearch(db, projectId, {actor: "ui:user", reason: "Explicit local Research Claim review"})
+      authorizeResearch(db, projectId, {actor: "ui:user", reason: "Explicit local Research Claim review"}),
+      input.contradictionDispositions ?? []
     );
   }
   if (resource === "research-evidence") {
     const input = researchEvidenceAction.parse(body);
+    if (input.action === "verify") return verifyEvidence(db, projectId, input.caseId, id);
     return markResearchEvidenceStale(
       db,
       projectId,
       id,
       input.reason,
       authorizeResearch(db, projectId, {actor: "ui:user", reason: "Explicit local Evidence lifecycle action"})
+    );
+  }
+  if (resource === "research-snapshots") {
+    const input = researchSnapshotAction.parse(body);
+    return markResearchSourceSnapshotStale(
+      db,projectId,id,input.reason,
+      authorizeResearch(db, projectId, {actor:"ui:user",reason:"Explicit local Source Snapshot lifecycle action"})
     );
   }
   throw new Error("Unsupported viewer action");

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
+import { listDomainEvents } from "../../src/events/domainOutboxStore.js";
 import {
   callMiraTool,
   createMiraMcpServer,
@@ -50,6 +51,9 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer(options);
 
     expect(created.toolNames).toEqual([
+      "list_host_adapters",
+      "before_turn",
+      "after_turn",
       "get_context_bundle",
       "prepare_context",
       "list_recall_events",
@@ -70,7 +74,9 @@ describe("Mira MCP tools", () => {
       "get_memory_history",
       "submit_research_packet",
       "get_research_case",
+      "prepare_research_context",
       "revise_research_claim",
+      "verify_research_evidence",
       "mark_research_evidence_stale",
       "review_research_claim",
       "export_research_case"
@@ -80,6 +86,9 @@ describe("Mira MCP tools", () => {
 
   test("defines precise agent-facing descriptions for every MCP tool", () => {
     expect(Object.keys(MIRA_MCP_TOOL_DESCRIPTIONS)).toEqual([
+      "list_host_adapters",
+      "before_turn",
+      "after_turn",
       "get_context_bundle",
       "prepare_context",
       "list_recall_events",
@@ -100,7 +109,9 @@ describe("Mira MCP tools", () => {
       "get_memory_history",
       "submit_research_packet",
       "get_research_case",
+      "prepare_research_context",
       "revise_research_claim",
+      "verify_research_evidence",
       "mark_research_evidence_stale",
       "review_research_claim",
       "export_research_case"
@@ -113,13 +124,64 @@ describe("Mira MCP tools", () => {
     }
   });
 
+  test("MCP exposes the Host registry and runs an idempotent turn without review authority", async () => {
+    const trusted = await setupMcpOptions();
+    const options = {...trusted, confirmationPolicy: undefined};
+    const hosts = callMiraTool(options, "list_host_adapters", {}) as Array<{host: string}>;
+    expect(hosts.map((item) => item.host)).toEqual([
+      "codex", "claude-code", "cursor", "cli", "mcp", "ui"
+    ]);
+
+    const before = callMiraTool(options, "before_turn", {
+      host: "cursor",
+      sessionId: "mcp-session-1",
+      turnId: "mcp-turn-1",
+      query: "Recall the current research constraints."
+    }) as {session:{projectId:string};turn: {id: string; status: string}; context: {receipt: {id: string}}};
+    expect(before).toMatchObject({
+      turn: {status: "started"},
+      context: {receipt: {id: expect.stringMatching(/^recall_/)}}
+    });
+
+    const input = {
+      host: "cursor",
+      sessionId: "mcp-session-1",
+      turnId: "mcp-turn-1",
+      query: "Recall the current research constraints.",
+      response: "Returned only reviewed project memory.",
+      status: "succeeded"
+    };
+    const completed = callMiraTool(options, "after_turn", input) as {
+      turn: {id: string; status: string}; duplicate: boolean;
+    };
+    expect(completed).toMatchObject({
+      turn: {id: before.turn.id, status: "completed"},
+      duplicate: false
+    });
+    expect(callMiraTool(options, "after_turn", input)).toMatchObject({
+      turn: {id: before.turn.id}, duplicate: true
+    });
+    const auditDb = openDatabase(options.dbPath);
+    expect(listDomainEvents(auditDb, before.session.projectId).filter((event) => event.aggregateId === before.turn.id))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({eventType:"turn_started",payload:expect.objectContaining({sourceHost:"cursor",transport:"mcp"})}),
+        expect.objectContaining({eventType:"turn_completed",payload:expect.objectContaining({sourceHost:"cursor",transport:"mcp"})})
+      ]));
+    auditDb.close();
+    expect(() => callMiraTool(options, "after_turn", {...input, confirmed: true})).toThrow(/Invalid MCP arguments/);
+  });
+
   test("research MCP keeps draft access open and governed operations host-authorized", async () => {
     const trusted = await setupMcpOptions();
     const untrusted = { ...trusted, confirmationPolicy: undefined };
     const packet = {
       case: { title: "MCP Research", question: "What changed?", asOfDate: "2026-09-01" },
+      snapshots: [{
+        key: "S1", canonicalUri: "https://example.test/filing", sourceTitle: "Filing",
+        accessedAt: "2026-09-01", mediaType: "text/plain", content: "p. 1\nRevenue increased."
+      }],
       evidence: [{
-        key: "E1", sourceType: "regulatory_filing",
+        key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing",
         sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
         excerpt: "Revenue increased.", accessedAt: "2026-09-01"
       }],
@@ -132,6 +194,9 @@ describe("Mira MCP tools", () => {
     const submitted = callMiraTool(untrusted, "submit_research_packet", packet) as {
       researchCase: { id: string }; claims: Array<{ id: string }>; evidence: Array<{ id: string }>;
     };
+    expect(callMiraTool(untrusted, "prepare_research_context", {
+      caseId: submitted.researchCase.id
+    })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });
     expect(() => callMiraTool(untrusted, "review_research_claim", {
       claimId: submitted.claims[0].id, decision: "approve", reason: "Forged"
     })).toThrow(/authority/i);
@@ -140,6 +205,11 @@ describe("Mira MCP tools", () => {
       confirmationPolicy: trusted.confirmationPolicy
     })).toThrow(/Invalid MCP arguments/);
 
+    expect(callMiraTool(untrusted, "verify_research_evidence", {
+      caseId: submitted.researchCase.id,
+      evidenceId: submitted.evidence[0].id
+    })).toMatchObject({status: "verified"});
+
     const reviewed = callMiraTool(trusted, "review_research_claim", {
       claimId: submitted.claims[0].id, decision: "approve", reason: "Checked primary source."
     }) as { researchCase: { status: string } };
@@ -147,10 +217,20 @@ describe("Mira MCP tools", () => {
     expect(callMiraTool(untrusted, "get_research_case", {
       caseId: submitted.researchCase.id
     })).toEqual(reviewed);
+    expect(callMiraTool(untrusted, "prepare_research_context", {
+      caseId: submitted.researchCase.id
+    })).toMatchObject({
+      claimIds: [submitted.claims[0].id],
+      evidenceIds: [submitted.evidence[0].id],
+      markdown: expect.stringContaining("Evidence verification proves snapshot binding")
+    });
     const stale = callMiraTool(trusted, "mark_research_evidence_stale", {
       evidenceId: submitted.evidence[0].id, reason: "Superseded by a later source."
     }) as { claims: Array<{ reviewStatus: string }> };
     expect(stale.claims[0].reviewStatus).toBe("changes_requested");
+    expect(callMiraTool(untrusted, "prepare_research_context", {
+      caseId: submitted.researchCase.id
+    })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });
     expect(() => callMiraTool(untrusted, "revise_research_claim", {
       claimId: submitted.claims[0].id,
       statement: "Revenue growth needs revalidation.",

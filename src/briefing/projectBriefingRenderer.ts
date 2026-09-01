@@ -1,10 +1,12 @@
 import type { Memory } from "../memory/memoryStore.js";
 import type { WorkingMemory } from "../workingMemory/workingMemoryStore.js";
+import type { ResearchBriefingSummary } from "../research/researchContext.js";
 
 export type ProjectBriefingRenderInput = {
   projectName: string;
   workingMemory: WorkingMemory[];
   memories: Memory[];
+  researchCases: ResearchBriefingSummary[];
 };
 
 export type RenderedProjectBriefing = {
@@ -40,6 +42,15 @@ function workingEntry(memory: WorkingMemory): BriefingEntry {
   };
 }
 
+function researchEntry(researchCase: ResearchBriefingSummary): BriefingEntry {
+  return {
+    content: `${researchCase.title} · ${researchCase.status} · as of ${researchCase.asOfDate}`
+      + ` · claims ${researchCase.approvedClaimCount} approved/${researchCase.pendingReviewClaimCount} pending`
+      + ` · evidence ${researchCase.verifiedEvidenceCount}/${researchCase.evidenceCount} verified`,
+    marker: `[research-case:${researchCase.id}]`
+  };
+}
+
 function uniqueInOrder(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
@@ -60,6 +71,7 @@ export function renderProjectBriefing(input: ProjectBriefingRenderInput): Render
     { title: "Blockers", entries: workingByKind(["blocker"]) },
     { title: "Lessons and Failed Attempts", entries: memoriesByKind(["lesson", "failed_attempt"]) },
     { title: "Open Questions and Notes", entries: workingByKind(["note"]) },
+    { title: "Investment Research", entries: input.researchCases.map(researchEntry) },
     { title: "Next Actions", entries: [...workingByKind(["next_step"]), ...memoriesByKind(["task", "todo"])] }
   ];
   const included = sections.flatMap((section) => section.entries);

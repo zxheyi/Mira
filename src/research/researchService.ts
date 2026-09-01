@@ -2,12 +2,19 @@ import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { assertNoSensitiveInformation } from "../distill/candidatePolicy.js";
+import { appendDomainEvent, enqueueOutboxMessage, requestProjectionRefresh } from "../events/domainOutboxStore.js";
+import {
+  createPendingEvidenceVerification,
+  registerSourceSnapshot
+} from "./evidenceVerification.js";
 import {
   CLAIM_EVIDENCE_RELATIONS,
   CLAIM_EVIDENCE_STATUSES,
+  CONTRADICTION_DISPOSITIONS,
   RESEARCH_SOURCE_TYPES,
   THESIS_IMPACTS,
   type ClaimReviewStatus,
+  type ContradictionDisposition,
   type ResearchCaseSnapshot,
   type ResearchClaim,
   type ResearchClaimEvidenceLink,
@@ -35,6 +42,7 @@ const linkByKeySchema = z.object({
 }).strict();
 const evidenceInputSchema = z.object({
   key: keySchema,
+  snapshotKey: keySchema,
   sourceType: z.enum(RESEARCH_SOURCE_TYPES),
   sourceUri: z.url().max(4000),
   sourceTitle: text(1000),
@@ -43,6 +51,15 @@ const evidenceInputSchema = z.object({
   publishedAt: dateSchema.optional(),
   accessedAt: dateSchema,
   validThrough: dateSchema.optional()
+}).strict();
+const snapshotInputSchema = z.object({
+  key: keySchema,
+  canonicalUri: z.url().max(4000),
+  sourceTitle: text(1000),
+  publishedAt: dateSchema.optional(),
+  accessedAt: dateSchema,
+  mediaType: text(200),
+  content: z.string().min(1).max(5_000_000)
 }).strict();
 const claimInputSchema = z.object({
   key: keySchema,
@@ -59,6 +76,7 @@ const packetSchema = z.object({
     question: text(2000),
     asOfDate: dateSchema
   }).strict(),
+  snapshots: z.array(snapshotInputSchema).min(1).max(100),
   evidence: z.array(evidenceInputSchema).min(1).max(100),
   claims: z.array(claimInputSchema).min(1).max(100)
 }).strict();
@@ -120,6 +138,7 @@ function uniqueKeys(values: string[], label: string): void {
 function hashEvidence(input: z.infer<typeof evidenceInputSchema>): string {
   return createHash("sha256").update(JSON.stringify({
     sourceUri: input.sourceUri,
+    snapshotKey: input.snapshotKey,
     locator: input.locator,
     excerpt: input.excerpt,
     publishedAt: input.publishedAt ?? null
@@ -137,7 +156,14 @@ export function submitResearchPacket(
   assertNoSensitiveInformation(JSON.stringify({ ...parsed, actor: parsedActor }), "Research packet");
   uniqueKeys(parsed.evidence.map((item) => item.key), "Evidence");
   uniqueKeys(parsed.claims.map((item) => item.key), "Claim");
+  uniqueKeys(parsed.snapshots.map((item) => item.key), "Snapshot");
+  const snapshotKeys = new Set(parsed.snapshots.map((item) => item.key));
   const evidenceKeys = new Set(parsed.evidence.map((item) => item.key));
+  for (const evidence of parsed.evidence) {
+    if (!snapshotKeys.has(evidence.snapshotKey)) {
+      throw new Error("Evidence " + evidence.key + " references unknown Snapshot key " + evidence.snapshotKey);
+    }
+  }
   for (const claim of parsed.claims) {
     for (const link of claim.links) {
       if (!evidenceKeys.has(link.evidenceKey)) {
@@ -146,8 +172,11 @@ export function submitResearchPacket(
     }
   }
 
+  return db.transaction(() => {
   const now = new Date().toISOString();
   const caseId = "research_case_" + randomUUID();
+  const registeredSnapshots = parsed.snapshots.map((item) => registerSourceSnapshot(db, projectId, item));
+  const snapshotIds = new Map(parsed.snapshots.map((item, index) => [item.key, registeredSnapshots[index].id]));
   const evidenceIds = new Map(parsed.evidence.map((item) => [item.key, "research_evidence_" + randomUUID()]));
   const claimIds = new Map(parsed.claims.map((item) => [item.key, "research_claim_" + randomUUID()]));
   const evidence: ResearchEvidence[] = parsed.evidence.map((item) => ({
@@ -162,6 +191,7 @@ export function submitResearchPacket(
     publishedAt: item.publishedAt,
     accessedAt: item.accessedAt,
     validThrough: item.validThrough,
+    snapshotId: snapshotIds.get(item.snapshotKey)!,
     contentHash: hashEvidence(item),
     state: "current",
     createdAt: now,
@@ -213,13 +243,26 @@ export function submitResearchPacket(
         operation: "submitResearchPacket",
         actor: parsedActor,
         outcome: "created",
+        snapshotIds: registeredSnapshots.map((item) => item.id),
         evidenceIds: evidence.map((item) => item.id),
         claimIds: claims.map((item) => item.id)
       },
       createdAt: now
     }
   });
+  for (const item of evidence) {
+    createPendingEvidenceVerification(db, {
+      projectId, caseId, evidenceId:item.id, snapshotId:item.snapshotId!, createdAt:now
+    });
+    const requested = appendDomainEvent(db, {projectId,aggregateType:"research_evidence",aggregateId:item.id,
+      eventType:"evidence_verification_requested",payload:{caseId,snapshotId:item.snapshotId},createdAt:now});
+    enqueueOutboxMessage(db, {projectId,eventId:requested.id,topic:"research.evidence.verify.requested",
+      payload:{caseId,evidenceId:item.id,snapshotId:item.snapshotId},createdAt:now});
+  }
+  requestProjectionRefresh(db, {projectId,aggregateType:"research_case",aggregateId:caseId,
+    reason:"research_packet_submitted",createdAt:now});
   return getResearchCaseSnapshot(db, projectId, caseId);
+  })();
 }
 
 function requireActiveClaim(
@@ -269,14 +312,20 @@ export function reviewResearchClaim(
   claimId: string,
   decision: ResearchReviewDecision,
   reason: string,
-  authority?: ResearchAuthority
+  authority?: ResearchAuthority,
+  contradictionDispositions: ContradictionDisposition[] = []
 ): ResearchCaseSnapshot {
   const policy = requireResearchAuthority(db, projectId, authority);
   const parsed = z.object({
     decision: z.enum(["approve", "reject", "request_changes"]),
-    reason: text(2000)
-  }).parse({ decision, reason });
-  assertNoSensitiveInformation(parsed.reason, "Research review reason");
+    reason: text(2000),
+    contradictionDispositions: z.array(z.object({
+      evidenceId: text(200),
+      disposition: z.enum(CONTRADICTION_DISPOSITIONS),
+      rationale: text(2000)
+    }).strict()).max(100)
+  }).parse({ decision, reason, contradictionDispositions });
+  assertNoSensitiveInformation(parsed.reason + "\n" + parsed.contradictionDispositions.map((item) => item.rationale).join("\n"), "Research review reason");
 
   return db.transaction(() => {
     const { snapshot, claim } = requireActiveClaim(db, projectId, claimId);
@@ -286,6 +335,23 @@ export function reviewResearchClaim(
       }
       if (currentSupportingEvidence(snapshot, claimId).length === 0) {
         throw new Error("Approval requires at least one current support Evidence Item");
+      }
+      const verifiedEvidenceIds = new Set(snapshot.verifications
+        .filter((item) => item.current && item.status === "verified")
+        .map((item) => item.evidenceId));
+      if (currentSupportingEvidence(snapshot, claimId).some((item) => !verifiedEvidenceIds.has(item.id))) {
+        throw new Error("Approval requires every current support Evidence Item to be verified against its Source Snapshot");
+      }
+      const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
+      const currentContradictions = claim.links.filter((link) => link.relation === "contradicts")
+        .filter((link) => evidenceById.get(link.evidenceId)?.state === "current");
+      const dispositionsByEvidence = new Map(parsed.contradictionDispositions.map((item) => [item.evidenceId, item]));
+      if (dispositionsByEvidence.size !== parsed.contradictionDispositions.length) {
+        throw new Error("Contradiction Disposition evidence IDs must be unique");
+      }
+      if (currentContradictions.some((link) => !dispositionsByEvidence.has(link.evidenceId))
+        || parsed.contradictionDispositions.some((item) => !currentContradictions.some((link) => link.evidenceId === item.evidenceId))) {
+        throw new Error("Approval requires one structured Contradiction Disposition for every current contradicting Evidence Item");
       }
       if (!claim.invalidationConditions.trim()) {
         throw new Error("Approval requires invalidation conditions");
@@ -311,11 +377,14 @@ export function reviewResearchClaim(
         actor: policy.actor,
         authorityReason: policy.reason,
         reason: parsed.reason,
+        contradictionDispositions: parsed.contradictionDispositions,
         decision: parsed.decision,
         outcome: reviewStatus
       },
       createdAt: now
     });
+    requestProjectionRefresh(db, {projectId,aggregateType:"research_case",aggregateId:claim.caseId,
+      reason:"research_claim_reviewed",createdAt:now});
     return getResearchCaseSnapshot(db, projectId, claim.caseId);
   })();
 }
@@ -340,6 +409,8 @@ export function markResearchEvidenceStale(
     db.prepare(
       "update research_evidence set state = 'stale', updated_at = ? where project_id = ? and id = ?"
     ).run(now, projectId, evidenceId);
+    db.prepare(`update evidence_verifications set status = 'stale', updated_at = ?
+      where project_id = ? and evidence_id = ? and is_current = 1`).run(now, projectId, evidenceId);
     const affected = db.prepare(`
       select distinct c.id
       from research_claims c
@@ -374,7 +445,68 @@ export function markResearchEvidenceStale(
       },
       createdAt: now
     });
+    requestProjectionRefresh(db, {projectId,aggregateType:"research_case",aggregateId:evidence.case_id,
+      reason:"research_evidence_stale",createdAt:now});
     return getResearchCaseSnapshot(db, projectId, evidence.case_id);
+  })();
+}
+
+export function markResearchSourceSnapshotStale(
+  db: Database.Database,
+  projectId: string,
+  snapshotId: string,
+  reason: string,
+  authority?: ResearchAuthority
+): ResearchCaseSnapshot[] {
+  const policy = requireResearchAuthority(db, projectId, authority);
+  const parsedReason = text(2000).parse(reason);
+  assertNoSensitiveInformation(parsedReason, "Source Snapshot stale reason");
+  return db.transaction(() => {
+    const source = db.prepare(
+      "select state from source_snapshots where project_id = ? and id = ?"
+    ).get(projectId, snapshotId) as {state:string} | undefined;
+    if (!source) throw new Error("Source Snapshot not found: " + snapshotId);
+    if (source.state !== "current") throw new Error("Only current Source Snapshots can be marked stale");
+    const linked = db.prepare(`
+      select id, case_id from research_evidence
+      where project_id = ? and snapshot_id = ? and state = 'current'
+      order by case_id, id
+    `).all(projectId, snapshotId) as Array<{id:string;case_id:string}>;
+    const now = new Date().toISOString();
+    db.prepare("update source_snapshots set state = 'stale', updated_at = ? where project_id = ? and id = ?")
+      .run(now, projectId, snapshotId);
+    const caseIds = [...new Set(linked.map((item) => item.case_id))];
+    for (const item of linked) {
+      db.prepare("update research_evidence set state = 'stale', updated_at = ? where project_id = ? and id = ?")
+        .run(now, projectId, item.id);
+      db.prepare(`update evidence_verifications set status = 'stale', updated_at = ?
+        where project_id = ? and evidence_id = ? and is_current = 1`).run(now, projectId, item.id);
+      const affected = db.prepare(`
+        select distinct c.id from research_claims c
+        join research_claim_evidence l
+          on l.project_id = c.project_id and l.case_id = c.case_id and l.claim_id = c.id
+        where c.project_id = ? and c.case_id = ? and c.status = 'active' and l.evidence_id = ?
+        order by c.id
+      `).all(projectId, item.case_id, item.id).map((row) => (row as {id:string}).id);
+      if (affected.length > 0) {
+        db.prepare(`update research_claims set review_status = 'changes_requested', updated_at = ?
+          where project_id = ? and id in (${affected.map(() => "?").join(", ")})`)
+          .run(now, projectId, ...affected);
+      }
+      insertResearchEvent(db, {
+        id:"research_event_" + randomUUID(),projectId,caseId:item.case_id,evidenceId:item.id,
+        eventType:"evidence_marked_stale",receipt:{operation:"markResearchSourceSnapshotStale",
+          actor:policy.actor,authorityReason:policy.reason,reason:parsedReason,outcome:"stale",
+          snapshotId,affectedClaimIds:affected},createdAt:now
+      });
+    }
+    for (const caseId of caseIds) {
+      db.prepare("update research_cases set status = 'in_review', updated_at = ? where project_id = ? and id = ?")
+        .run(now, projectId, caseId);
+    }
+    requestProjectionRefresh(db, {projectId,aggregateType:"source_snapshot",aggregateId:snapshotId,
+      reason:"source_snapshot_stale",createdAt:now});
+    return caseIds.map((caseId) => getResearchCaseSnapshot(db, projectId, caseId));
   })();
 }
 
@@ -447,6 +579,8 @@ export function reviseResearchClaim(
       },
       createdAt: now
     });
+    requestProjectionRefresh(db, {projectId,aggregateType:"research_case",aggregateId:claim.caseId,
+      reason:"research_claim_revised",createdAt:now});
     return getResearchCaseSnapshot(db, projectId, claim.caseId);
   })();
 }

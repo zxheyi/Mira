@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { listMemoriesForProject } from "../memory/memoryStore.js";
 import { listWorkingMemory } from "../workingMemory/workingMemoryStore.js";
+import { listResearchBriefingSummaries } from "../research/researchContext.js";
 import {
   renderProjectBriefing,
   type ProjectBriefingRenderInput,
@@ -147,7 +148,8 @@ export function rebuildProjectBriefing(
       const renderInput: ProjectBriefingRenderInput = {
         projectName: name,
         workingMemory: listWorkingMemory(db, projectId),
-        memories: listMemoriesForProject(db, projectId)
+        memories: listMemoriesForProject(db, projectId),
+        researchCases: listResearchBriefingSummaries(db, projectId)
       };
       const rendered: RenderedProjectBriefing = (options.renderer ?? renderProjectBriefing)(renderInput);
       return insertBriefing(db, {

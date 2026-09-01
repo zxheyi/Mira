@@ -1,13 +1,14 @@
 import { appendFile, mkdir, realpath, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { buildContextBundle } from "../context/contextBundle.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import { importAgentSessionFromFile } from "../importers/agentSessionImporter.js";
+import { createHostAdapterRegistry } from "../lifecycle/hostAdapterRegistry.js";
+import { createTurnLifecycle } from "../lifecycle/turnLifecycle.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
-import { captureSession } from "../threads/sessionCapture.js";
 import type { IntegrationAgent } from "./configInstaller.js";
 import { stableThreadId } from "./threadIdentity.js";
 
@@ -118,21 +119,39 @@ async function appendDiagnostic(
   }
 }
 
-async function contextResult(options: HookRuntimeOptions, sessionId: string): Promise<HookRunResult> {
+async function contextResult(options: HookRuntimeOptions, input: HookInput): Promise<HookRunResult> {
   const db = openDatabase(options.dbPath);
   try {
     migrate(db);
     const project = ensureProjectForRoot(db, options.projectRoot);
+    const command = createHostAdapterRegistry().normalizeBeforeTurn(options.agent, {
+      session_id: input.session_id,
+      turn_id: `session-start:${input.source?.trim() || "default"}`,
+      prompt: "Resume the current Mira project context.",
+      task_id: stableThreadId(options.agent, input.session_id),
+      context: {maxCharacters: options.contextMaxCharacters ?? 4_000}
+    });
+    const result = createTurnLifecycle({db, projectId: project.id}).beforeTurn(command);
     return {
       status: "context",
-      stdout: buildContextBundle(db, project.id, {
-        taskId: stableThreadId(options.agent, sessionId),
-        maxCharacters: options.contextMaxCharacters ?? 4_000
-      })
+      stdout: result.context.markdown
     };
   } finally {
     db.close();
   }
+}
+
+function lastTranscriptRole(rawText: string, role: "user" | "assistant"): string | undefined {
+  const heading = role.toLowerCase();
+  const sections = rawText.split(/^##\s+/m);
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    const section = sections[index] ?? "";
+    const newline = section.indexOf("\n");
+    if (newline < 0 || section.slice(0, newline).trim().toLowerCase() !== heading) continue;
+    const content = section.slice(newline + 1).replace(/^\s*Time:\s*[^\n]+\n+/i, "").trim();
+    if (content) return content.slice(0, 50_000);
+  }
+  return undefined;
 }
 
 async function captureTranscript(options: HookRuntimeOptions, input: HookInput): Promise<HookRunResult> {
@@ -156,6 +175,9 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
   const transcriptStat = await stat(transcriptPath);
   const db = openDatabase(options.dbPath);
   let capturedProjectId: string;
+  let capturedThreadId: string;
+  let duplicate = false;
+  let captureOutcome: "imported" | "updated" | "unchanged";
   try {
     migrate(db);
     const project = ensureProjectForRoot(db, options.projectRoot);
@@ -167,18 +189,36 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
       id: threadId,
       title: `${options.agent} session ${input.session_id}`
     });
-    const captured = captureSession(db, {
-      id: normalized.id, projectId: project.id, title: normalized.title, source: normalized.source,
-      rawFormat: normalized.rawFormat, rawText: normalized.rawText,
-      checkpoint: {
+    const transcriptHash = createHash("sha256").update(normalized.rawText).digest("hex");
+    const command = createHostAdapterRegistry().normalizeAfterTurn(options.agent, {
+      session_id: input.session_id,
+      turn_id: `capture:${transcriptHash.slice(0, 24)}`,
+      prompt: lastTranscriptRole(normalized.rawText, "user") ?? `Capture ${options.agent} session ${input.session_id}.`,
+      response: lastTranscriptRole(normalized.rawText, "assistant") ?? "Host session transcript captured.",
+      status: "succeeded",
+      task_id: stableThreadId(options.agent, input.session_id),
+      transcript: {
+        threadId: normalized.id,
+        title: normalized.title,
+        rawFormat: normalized.rawFormat,
+        rawText: normalized.rawText,
+        checkpoint: {
         agent: options.agent,
         sessionId: input.session_id,
         transcriptPath,
         size: transcriptStat.size,
         mtimeMs: transcriptStat.mtimeMs
+        }
       }
     });
-    if (captured.outcome === "unchanged") return {status: "ignored", stdout: "", reason: "transcript-unchanged"};
+    const captured = createTurnLifecycle({db, projectId: project.id}).afterTurn(command);
+    if (!captured.capture.threadId) throw new Error("Lifecycle capture did not retain its Thread reference");
+    capturedThreadId = captured.capture.threadId;
+    duplicate = captured.duplicate;
+    captureOutcome = captured.capture.outcome;
+    if (duplicate || captureOutcome === "unchanged") {
+      return {status: "ignored", stdout: "", reason: "transcript-unchanged"};
+    }
   } finally {
     db.close();
   }
@@ -187,7 +227,7 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
     try {
       await options.onThreadCaptured({
         projectId: capturedProjectId,
-        threadId,
+        threadId: capturedThreadId,
         projectRoot: options.projectRoot,
         dbPath: options.dbPath
       });
@@ -196,7 +236,7 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
     }
   }
 
-  return { status: "captured", stdout: "", threadId };
+  return { status: "captured", stdout: "", threadId: capturedThreadId };
 }
 
 export async function runIntegrationHook(
@@ -217,7 +257,7 @@ export async function runIntegrationHook(
 
   try {
     if (input.hook_event_name === "SessionStart") {
-      const result = await contextResult(options, input.session_id);
+      const result = await contextResult(options, input);
       try { await options.onSessionStarted?.({projectRoot: options.projectRoot, dbPath: options.dbPath}); }
       catch (error) { await appendDiagnostic(options, input, "worker-resume-failed", error); }
       return result;

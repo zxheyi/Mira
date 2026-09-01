@@ -9,6 +9,9 @@ import { listAllMemoriesForProject, type Memory } from "../memory/memoryStore.js
 import type { Project } from "../projects/projectStore.js";
 import { listThreadsForProject, type Thread } from "../threads/threadStore.js";
 import { listWorkingMemory, type WorkingMemory } from "../workingMemory/workingMemoryStore.js";
+import { renderResearchCaseMarkdown } from "../research/researchExport.js";
+import { getResearchCaseSnapshot, listResearchCases } from "../research/researchStore.js";
+import type { ResearchCaseSnapshot } from "../research/researchTypes.js";
 
 export type VaultSnapshot = {
   project: Project;
@@ -17,6 +20,7 @@ export type VaultSnapshot = {
   memories: Memory[];
   threads: Thread[];
   pendingCandidates: MemoryCandidate[];
+  researchCases: ResearchCaseSnapshot[];
 };
 
 export type VaultFileSystem = Pick<typeof import("node:fs/promises"), "mkdir" | "writeFile" | "rename" | "rm">;
@@ -170,6 +174,10 @@ function renderIndex(snapshot: VaultSnapshot): string {
     `- ${wikiLink(memoryPath(memory), memory.title)} · ${memory.kind} · ${memory.status}`
   );
   const threads = snapshot.threads.map((thread) => `- ${wikiLink(threadPath(thread), thread.title)}`);
+  const researchCases = snapshot.researchCases.map((item) =>
+    `- ${wikiLink(`research/${encodeVaultId(item.researchCase.id)}`, item.researchCase.title)}`
+      + ` · ${item.researchCase.status} · as of ${item.researchCase.asOfDate}`
+  );
   return finalNewline(
     frontmatter([["type", "vault_index"], ["project", snapshot.project.id], ["title", snapshot.project.name]]) +
     `\n# ${snapshot.project.name} Memory Vault\n\n` +
@@ -177,6 +185,7 @@ function renderIndex(snapshot: VaultSnapshot): string {
     "- [[reviews/pending-candidates|Pending Candidates]]\n" +
     `\n## Memories\n\n${memories.length ? memories.join("\n") : "No memories."}\n` +
     `\n## Threads\n\n${threads.length ? threads.join("\n") : "No threads."}\n`
+    + `\n## Investment Research\n\n${researchCases.length ? researchCases.join("\n") : "No Research Cases."}\n`
   );
 }
 
@@ -187,7 +196,10 @@ export function readVaultSnapshot(db: Database.Database, project: Project): Vaul
     workingMemory: listWorkingMemory(db, project.id),
     memories: listAllMemoriesForProject(db, project.id),
     threads: listThreadsForProject(db, project.id).sort((a, b) => a.id.localeCompare(b.id)),
-    pendingCandidates: listAllMemoryCandidatesByStatus(db, project.id, "pending_review")
+    pendingCandidates: listAllMemoryCandidatesByStatus(db, project.id, "pending_review"),
+    researchCases: listResearchCases(db, project.id)
+      .map((item) => getResearchCaseSnapshot(db, project.id, item.id))
+      .sort((a, b) => a.researchCase.id.localeCompare(b.researchCase.id))
   })).immediate();
 }
 
@@ -206,6 +218,12 @@ export function renderMarkdownVault(snapshot: VaultSnapshot): Map<string, string
   files.set("index.md", renderIndex(snapshot));
   files.set("project-briefing.md", renderBriefing(snapshot));
   files.set("working-memory.md", renderWorkingMemory(snapshot));
+  for (const researchCase of snapshot.researchCases) {
+    files.set(
+      `research/${encodeVaultId(researchCase.researchCase.id)}.md`,
+      finalNewline(renderResearchCaseMarkdown(researchCase))
+    );
+  }
   for (const memory of snapshot.memories) {
     files.set(`${memoryPath(memory)}.md`, renderMemory(memory, memories, threads, successors));
   }

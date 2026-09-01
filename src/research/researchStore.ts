@@ -15,6 +15,12 @@ import type {
   ResearchEvidence,
   ResearchEvidenceState,
   ResearchSourceType,
+  SourceSnapshotSummary,
+  SourceSnapshotState,
+  EvidenceVerification,
+  EvidenceVerificationChecks,
+  EvidenceVerificationReceipt,
+  EvidenceVerificationStatus,
   ThesisImpact
 } from "./researchTypes.js";
 
@@ -26,7 +32,16 @@ type ResearchEvidenceRow = {
   id: string; project_id: string; case_id: string; source_type: ResearchSourceType;
   source_uri: string; source_title: string; locator: string; excerpt: string;
   published_at: string | null; accessed_at: string; valid_through: string | null;
-  content_hash: string; state: ResearchEvidenceState; created_at: string; updated_at: string;
+  snapshot_id: string | null; content_hash: string; state: ResearchEvidenceState; created_at: string; updated_at: string;
+};
+type SourceSnapshotRow = {
+  id:string;project_id:string;canonical_uri:string;source_title:string;published_at:string|null;
+  accessed_at:string;media_type:string;content_hash:string;state:SourceSnapshotState;created_at:string;updated_at:string;
+};
+type EvidenceVerificationRow = {
+  id:string;project_id:string;case_id:string;evidence_id:string;snapshot_id:string;
+  status:EvidenceVerificationStatus;checks:string;receipt:string;is_current:number;
+  supersedes_verification_id:string|null;verified_at:string|null;created_at:string;updated_at:string;
 };
 type ResearchClaimRow = {
   id: string; project_id: string; case_id: string; statement: string;
@@ -63,9 +78,24 @@ function toEvidence(row: ResearchEvidenceRow): ResearchEvidence {
     id: row.id, projectId: row.project_id, caseId: row.case_id, sourceType: row.source_type,
     sourceUri: row.source_uri, sourceTitle: row.source_title, locator: row.locator, excerpt: row.excerpt,
     publishedAt: row.published_at ?? undefined, accessedAt: row.accessed_at,
-    validThrough: row.valid_through ?? undefined, contentHash: row.content_hash, state: row.state,
+    validThrough: row.valid_through ?? undefined, snapshotId: row.snapshot_id ?? undefined,
+    contentHash: row.content_hash, state: row.state,
     createdAt: row.created_at, updatedAt: row.updated_at
   };
+}
+
+function toSnapshotSummary(row: SourceSnapshotRow): SourceSnapshotSummary {
+  return {id:row.id,projectId:row.project_id,canonicalUri:row.canonical_uri,sourceTitle:row.source_title,
+    publishedAt:row.published_at ?? undefined,accessedAt:row.accessed_at,mediaType:row.media_type,
+    contentHash:row.content_hash,state:row.state,createdAt:row.created_at,updatedAt:row.updated_at};
+}
+
+function toVerification(row: EvidenceVerificationRow): EvidenceVerification {
+  return {id:row.id,projectId:row.project_id,caseId:row.case_id,evidenceId:row.evidence_id,
+    snapshotId:row.snapshot_id,status:row.status,checks:JSON.parse(row.checks) as EvidenceVerificationChecks,
+    receipt:JSON.parse(row.receipt) as EvidenceVerificationReceipt,current:row.is_current === 1,
+    supersedesVerificationId:row.supersedes_verification_id ?? undefined,
+    verifiedAt:row.verified_at ?? undefined,createdAt:row.created_at,updatedAt:row.updated_at};
 }
 
 function toClaim(row: ResearchClaimRow): ResearchClaim {
@@ -107,17 +137,18 @@ export function createResearchPacketRecords(db: Database.Database, packet: Store
     const insertEvidence = db.prepare(`
       insert into research_evidence (
         id, project_id, case_id, source_type, source_uri, source_title, locator, excerpt,
-        published_at, accessed_at, valid_through, content_hash, state, created_at, updated_at
+        published_at, accessed_at, valid_through, snapshot_id, content_hash, state, created_at, updated_at
       ) values (
         @id, @projectId, @caseId, @sourceType, @sourceUri, @sourceTitle, @locator, @excerpt,
-        @publishedAt, @accessedAt, @validThrough, @contentHash, @state, @createdAt, @updatedAt
+        @publishedAt, @accessedAt, @validThrough, @snapshotId, @contentHash, @state, @createdAt, @updatedAt
       )
     `);
     for (const evidence of packet.evidence) {
       insertEvidence.run({
         ...evidence,
         publishedAt: evidence.publishedAt ?? null,
-        validThrough: evidence.validThrough ?? null
+        validThrough: evidence.validThrough ?? null,
+        snapshotId: evidence.snapshotId ?? null
       });
     }
 
@@ -182,9 +213,22 @@ export function getResearchCaseSnapshot(
 
   const evidence = db.prepare(`
     select id, project_id, case_id, source_type, source_uri, source_title, locator, excerpt,
-           published_at, accessed_at, valid_through, content_hash, state, created_at, updated_at
+           published_at, accessed_at, valid_through, snapshot_id, content_hash, state, created_at, updated_at
     from research_evidence where project_id = ? and case_id = ? order by created_at asc, id asc
   `).all(projectId, caseId).map((row) => toEvidence(row as ResearchEvidenceRow));
+  const snapshotIds = [...new Set(evidence.map((item) => item.snapshotId).filter((id): id is string => Boolean(id)))];
+  const snapshots = snapshotIds.length === 0 ? [] : db.prepare(`
+    select id, project_id, canonical_uri, source_title, published_at, accessed_at, media_type,
+           content_hash, state, created_at, updated_at
+    from source_snapshots where project_id = ? and id in (${snapshotIds.map(() => "?").join(", ")})
+    order by created_at asc, id asc
+  `).all(projectId, ...snapshotIds).map((row) => toSnapshotSummary(row as SourceSnapshotRow));
+  const verifications = db.prepare(`
+    select id, project_id, case_id, evidence_id, snapshot_id, status, checks, receipt, is_current,
+           supersedes_verification_id, verified_at, created_at, updated_at
+    from evidence_verifications where project_id = ? and case_id = ?
+    order by created_at asc, id asc
+  `).all(projectId, caseId).map((row) => toVerification(row as EvidenceVerificationRow));
   const links = db.prepare(`
     select project_id, case_id, claim_id, evidence_id, relation, rationale
     from research_claim_evidence where project_id = ? and case_id = ?
@@ -205,5 +249,5 @@ export function getResearchCaseSnapshot(
     from research_events where project_id = ? and case_id = ? order by created_at asc, rowid asc
   `).all(projectId, caseId).map((row) => toEvent(row as ResearchEventRow));
 
-  return { researchCase: toResearchCase(caseRow), evidence, claims, events };
+  return { researchCase: toResearchCase(caseRow), snapshots, evidence, verifications, claims, events };
 }

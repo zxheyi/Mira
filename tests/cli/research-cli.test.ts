@@ -26,8 +26,12 @@ test("research CLI submits, reviews, reads and exports through one domain servic
   const exportPath = join(root, "research.md");
   await writeFile(packetPath, JSON.stringify({
     case: { title: "Public company", question: "What changed?", asOfDate: "2026-09-01" },
+    snapshots: [{
+      key: "S1", canonicalUri: "https://example.test/filing", sourceTitle: "Filing",
+      accessedAt: "2026-09-01", mediaType: "text/plain", content: "p. 1\nRevenue increased."
+    }],
     evidence: [{
-      key: "E1", sourceType: "regulatory_filing",
+      key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing",
       sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
       excerpt: "Revenue increased.", accessedAt: "2026-09-01"
     }],
@@ -40,9 +44,17 @@ test("research CLI submits, reviews, reads and exports through one domain servic
 
   const submitted = parseJson<{
     researchCase: { id: string; status: string };
+    snapshots: Array<{id:string}>;
+    evidence: Array<{id: string}>;
     claims: Array<{ id: string; reviewStatus: string }>;
   }>((await runMira(["research", "submit", "--path", packetPath], root, dbPath)).stdout);
   expect(submitted.researchCase.status).toBe("draft");
+
+  const verified = parseJson<{status: string}>((await runMira([
+    "research", "verify", "--case", submitted.researchCase.id,
+    "--evidence", submitted.evidence[0].id
+  ], root, dbPath)).stdout);
+  expect(verified.status).toBe("verified");
 
   const reviewed = parseJson<{ researchCase: { status: string }; claims: Array<{ reviewStatus: string }> }>(
     (await runMira([
@@ -54,6 +66,11 @@ test("research CLI submits, reviews, reads and exports through one domain servic
     researchCase: { status: "completed" },
     claims: [expect.objectContaining({ reviewStatus: "approved" })]
   });
+
+  const context = parseJson<{claimIds:string[];evidenceIds:string[]}>(
+    (await runMira(["research","context","--case",submitted.researchCase.id],root,dbPath)).stdout
+  );
+  expect(context).toMatchObject({claimIds:[submitted.claims[0].id],evidenceIds:[submitted.evidence[0].id]});
 
   const shown = parseJson<{ researchCase: { id: string }; events: unknown[] }>(
     (await runMira(["research", "show", "--case", submitted.researchCase.id], root, dbPath)).stdout
@@ -70,6 +87,15 @@ test("research CLI submits, reviews, reads and exports through one domain servic
   const markdown = await readFile(exportPath, "utf8");
   expect(markdown).toContain("# Research Case: Public company");
   expect(markdown).toContain("## Evidence Ledger");
+  expect(markdown).toContain("## Source Snapshot Ledger");
+  expect(markdown).toContain("## Evidence Verification");
   expect(markdown).toContain("## Claim Matrix");
   expect(markdown).toContain("Mira does not mutate thesis state");
+
+  const stale = parseJson<Array<{researchCase:{status:string};claims:Array<{reviewStatus:string}>}>>(
+    (await runMira(["research","snapshot-stale","--snapshot",submitted.snapshots[0].id,
+      "--reason","Superseded public source."],root,dbPath)).stdout
+  );
+  expect(stale[0]).toMatchObject({researchCase:{status:"in_review"},
+    claims:[expect.objectContaining({reviewStatus:"changes_requested"})]});
 }, 30_000);

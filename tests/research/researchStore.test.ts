@@ -58,7 +58,9 @@ describe("research store", () => {
     ]);
     expect(getResearchCaseSnapshot(db, project.id, "case-1")).toEqual({
       researchCase: expect.objectContaining({ id: "case-1", question: "What changed?" }),
+      snapshots: [],
       evidence: [expect.objectContaining({ id: "evidence-1", state: "current" })],
+      verifications: [],
       claims: [expect.objectContaining({
         id: "claim-1",
         reviewStatus: "pending",

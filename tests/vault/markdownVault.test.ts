@@ -12,6 +12,7 @@ import { addMemory } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
 import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
+import { submitResearchPacket } from "../../src/research/researchService.js";
 import {
   readVaultSnapshot,
   renderMarkdownVault,
@@ -114,6 +115,24 @@ describe("Markdown Vault", () => {
 
     await syncMarkdownVault(database, project, output);
     expect(await readTree(output)).toEqual(first);
+  });
+
+  test("exports Research Cases as audit views without Source Snapshot content", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mira-vault-research-"));
+    const {database,project} = setup(root);
+    const research = submitResearchPacket(database, project.id, {
+      case:{title:"Public filing",question:"What changed?",asOfDate:"2026-09-01"},
+      snapshots:[{key:"S1",canonicalUri:"https://example.test/filing",sourceTitle:"Filing",publishedAt:"2026-08-01",accessedAt:"2026-09-01",mediaType:"text/plain",content:"Page 1\nPRIVATE SNAPSHOT BODY"}],
+      evidence:[{key:"E1",snapshotKey:"S1",sourceType:"regulatory_filing",sourceUri:"https://example.test/filing",sourceTitle:"Filing",locator:"Page 1",excerpt:"PRIVATE SNAPSHOT BODY",publishedAt:"2026-08-01",accessedAt:"2026-09-01"}],
+      claims:[{key:"C1",statement:"A bounded claim.",evidenceStatus:"supported",confidence:0.8,thesisImpact:"watch",invalidationConditions:"A later filing.",links:[{evidenceKey:"E1",relation:"supports",rationale:"Direct source."}]}]
+    });
+
+    const files = renderMarkdownVault(readVaultSnapshot(database, project));
+    const researchPath = `research/${research.researchCase.id}.md`;
+    expect(files.get("index.md")).toContain(`[[research/${research.researchCase.id}|Public filing]]`);
+    expect(files.get(researchPath)).toContain("## Source Snapshot Ledger");
+    expect(files.get(researchPath)).toContain(research.snapshots[0].contentHash);
+    expect(files.get(researchPath)).not.toContain("Page 1\\nPRIVATE SNAPSHOT BODY");
   });
 
   test("restores the previous Vault when the final staging swap fails", async () => {

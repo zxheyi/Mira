@@ -104,11 +104,19 @@ describe("database schema", () => {
         "research_evidence",
         "research_claims",
         "research_claim_evidence",
-        "research_events"
+        "research_events",
+        "lifecycle_sessions",
+        "lifecycle_turns",
+        "capture_records",
+        "domain_events",
+        "outbox_messages",
+        "source_snapshots",
+        "evidence_verifications",
+        "outbox_handler_receipts"
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(11);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(13);
   });
 
   test("v10 migration preserves memory data and scopes research links to one case", () => {
@@ -126,6 +134,8 @@ describe("database schema", () => {
     });
 
     db.exec(`
+      drop table if exists evidence_verifications;
+      drop table if exists source_snapshots;
       drop table if exists research_events;
       drop table if exists research_claim_evidence;
       drop table if exists research_claims;
@@ -150,7 +160,7 @@ describe("database schema", () => {
         "research_events"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
 
     const now = new Date().toISOString();
     db.prepare(
@@ -170,6 +180,44 @@ describe("database schema", () => {
       "insert into research_claim_evidence (project_id, case_id, claim_id, evidence_id, relation, rationale) values (?, ?, ?, ?, 'supports', ?)"
     ).run(project.id, "case-b", "claim-b", "evidence-a", "Cross-case link"))
       .toThrow();
+  });
+
+  test("v12 to v13 preserves legacy Evidence and reopens approved Claims for verification", () => {
+    db = openDatabase(":memory:");
+    migrate(db);
+    const project = createProject(db, {name: "Legacy research", rootPath: "/research-v12"});
+    const now = "2026-08-31T00:00:00.000Z";
+    db.prepare(`insert into research_cases (
+      id, project_id, title, question, as_of_date, status, created_at, updated_at
+    ) values (?, ?, ?, ?, ?, 'completed', ?, ?)`)
+      .run("legacy-case", project.id, "Legacy", "What changed?", "2026-08-31", now, now);
+    db.prepare(`insert into research_evidence (
+      id, project_id, case_id, source_type, source_uri, source_title, locator, excerpt,
+      accessed_at, content_hash, state, created_at, updated_at
+    ) values (?, ?, ?, 'regulatory_filing', ?, ?, ?, ?, ?, ?, 'current', ?, ?)`)
+      .run("legacy-evidence", project.id, "legacy-case", "https://example.test/legacy", "Legacy filing",
+        "p. 1", "Legacy excerpt.", "2026-08-31", "legacy-hash", now, now);
+    db.prepare(`insert into research_claims (
+      id, project_id, case_id, statement, evidence_status, review_status, confidence,
+      thesis_impact, invalidation_conditions, status, created_at, updated_at
+    ) values (?, ?, ?, ?, 'supported', 'approved', 0.8, 'watch', ?, 'active', ?, ?)`)
+      .run("legacy-claim", project.id, "legacy-case", "Legacy claim.", "A later filing differs.", now, now);
+    db.exec(`
+      drop table evidence_verifications;
+      drop table source_snapshots;
+      delete from schema_version;
+      insert into schema_version values (12, '2026-08-31T00:00:00.000Z');
+    `);
+
+    migrate(db);
+    migrate(db);
+
+    expect(db.prepare("select snapshot_id from research_evidence where id = 'legacy-evidence'").pluck().get()).toBeNull();
+    expect(db.prepare("select review_status from research_claims where id = 'legacy-claim'").pluck().get())
+      .toBe("changes_requested");
+    expect(db.prepare("select status from research_cases where id = 'legacy-case'").pluck().get())
+      .toBe("in_review");
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -234,7 +282,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -283,7 +331,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -338,7 +386,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -419,7 +467,7 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -453,7 +501,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(11);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(13);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

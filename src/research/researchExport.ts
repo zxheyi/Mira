@@ -9,7 +9,7 @@ function optional(value: string | undefined): string {
 }
 
 export function renderResearchCaseMarkdown(snapshot: ResearchCaseSnapshot): string {
-  const { researchCase, evidence, claims, events } = snapshot;
+  const { researchCase, snapshots, evidence, verifications, claims, events } = snapshot;
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   const output: string[] = [
     "# Research Case: " + line(researchCase.title),
@@ -19,9 +19,25 @@ export function renderResearchCaseMarkdown(snapshot: ResearchCaseSnapshot): stri
     "- As of: " + researchCase.asOfDate,
     "- Status: `" + researchCase.status + "`",
     "",
-    "## Evidence Ledger",
+    "## Source Snapshot Ledger",
     ""
   ];
+
+  for (const item of snapshots) {
+    output.push(
+      "### " + item.id,
+      "",
+      "- State: `" + item.state + "`",
+      "- Source: [" + line(item.sourceTitle) + "](" + item.canonicalUri + ")",
+      "- Published: " + optional(item.publishedAt),
+      "- Accessed: " + item.accessedAt,
+      "- Media type: `" + item.mediaType + "`",
+      "- SHA-256: `" + item.contentHash + "`",
+      ""
+    );
+  }
+
+  output.push("## Evidence Ledger", "");
 
   for (const item of evidence) {
     output.push(
@@ -34,9 +50,27 @@ export function renderResearchCaseMarkdown(snapshot: ResearchCaseSnapshot): stri
       "- Published: " + optional(item.publishedAt),
       "- Accessed: " + item.accessedAt,
       "- Valid through: " + optional(item.validThrough),
+      "- Snapshot: " + (item.snapshotId ? "`" + item.snapshotId + "`" : "—"),
       "- Content hash: `" + item.contentHash + "`",
       "",
       "> " + line(item.excerpt),
+      ""
+    );
+  }
+
+  output.push("## Evidence Verification", "");
+  for (const item of verifications) {
+    output.push(
+      "### " + item.id,
+      "",
+      "- Evidence: `" + item.evidenceId + "`",
+      "- Snapshot: `" + item.snapshotId + "`",
+      "- Status: `" + item.status + "`" + (item.current ? " (current)" : " (historical)"),
+      "- Verified at: " + optional(item.verifiedAt),
+      "- Checks: `" + JSON.stringify(item.checks) + "`",
+      "- Check codes: `" + JSON.stringify(item.receipt.checkCodes) + "`",
+      "- Stored SHA-256: `" + item.receipt.storedContentHash + "`",
+      "- Actual SHA-256: `" + item.receipt.actualContentHash + "`",
       ""
     );
   }
@@ -81,7 +115,7 @@ export function renderResearchCaseMarkdown(snapshot: ResearchCaseSnapshot): stri
     "",
     "## Boundary",
     "",
-    "This export is a derived audit view. Mira does not mutate thesis state, portfolio state, or trading decisions.",
+    "This export is a derived audit view. Source Snapshot content is intentionally omitted. Mira does not mutate thesis state, portfolio state, or trading decisions.",
     ""
   );
   return output.join("\n");

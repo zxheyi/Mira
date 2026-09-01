@@ -184,8 +184,11 @@ mira export --format markdown --out ./export
 mira research submit --path ./research-packet.json
 mira research list
 mira research show --case research_case_123
+mira research context --case research_case_123
+mira research verify --case research_case_123 --evidence research_evidence_123
 mira research review --claim research_claim_123 --decision approve --reason "Checked primary sources"
 mira research evidence-stale --evidence research_evidence_123 --reason "Superseded by a later filing"
+mira research snapshot-stale --snapshot source_snapshot_123 --reason "Superseded by a later snapshot"
 mira research revise --claim research_claim_123 --path ./claim-revision.json --reason "Reframed after new evidence"
 mira research export --case research_case_123 --out ./research-case.md
 ```
@@ -328,6 +331,9 @@ mira mcp serve --project-root /path/to/project --db /path/to/project/.mira/mira.
 Agent 可用工具：
 
 ```text
+list_host_adapters
+before_turn
+after_turn
 get_context_bundle
 prepare_context
 list_recall_events
@@ -346,9 +352,19 @@ get_memory
 update_memory
 archive_memory
 get_memory_history
+submit_research_packet
+get_research_case
+prepare_research_context
+revise_research_claim
+verify_research_evidence
+mark_research_evidence_stale
+review_research_claim
+export_research_case
 ```
 
 MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
+
+`prepare_research_context` 是只读的独立研究上下文出口：它只返回 active、approved 且由 current、verified supporting Evidence 支撑的 Claim。draft、未验证或 stale 研究不会进入结果；该工具不授予审核权，也不修改 Memory 或 thesis。
 
 ## 项目文档
 

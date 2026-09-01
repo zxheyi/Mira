@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { listMemoryCandidates } from "../distill/candidateService.js";
 import { listDistillJobs, sanitizeDistillError } from "../distill/distillJobStore.js";
+import { listOutboxMessages } from "../events/domainOutboxStore.js";
 import { getMemoryHistory } from "../memory/memoryLifecycleStore.js";
 import { listRecallEvents } from "../context/recallAuditStore.js";
 import { applyViewerAction } from "./viewerActions.js";
@@ -15,12 +16,15 @@ import {
   getViewerMemorySnapshot,
   getViewerOverview,
   getViewerResearchCase,
+  getViewerResearchContext,
   getViewerThread,
   listViewerImportRuns,
   listViewerThreads,
   listViewerResearchCases
 } from "./viewerData.js";
 import { renderResearchCaseMarkdown } from "../research/researchExport.js";
+import { createHostAdapterRegistry } from "../lifecycle/hostAdapterRegistry.js";
+import { createTurnLifecycle } from "../lifecycle/turnLifecycle.js";
 
 export type ViewerServerOptions = {
   projectRoot: string;
@@ -173,6 +177,7 @@ function dashboardHtml(): string {
       <div id="edit-preview" class="markdown"></div>
       <label id="content-field">更正内容<textarea id="edit-content"></textarea></label>
       <label id="replacement-field">替换的 active 记忆 ID（可选）<input id="edit-replacement" maxlength="500"></label>
+      <label id="contradictions-field">结构化反证处置（JSON）<textarea id="edit-contradictions"></textarea></label>
       <label id="reason-field">操作原因（可选）<input id="edit-reason" maxlength="1000"></label>
       <p id="edit-error" class="error" role="alert"></p>
       <div class="actions"><button type="button" id="edit-cancel">取消</button><button type="submit">确认提交</button></div>
@@ -317,14 +322,31 @@ function dashboardHtml(): string {
       const snapshot = await api('/api/research-cases/' + encodeURIComponent(id));
       state.researchSnapshot = snapshot;
       const evidenceById = new Map(snapshot.evidence.map(item => [item.id, item]));
-      const evidence = snapshot.evidence.map(item =>
+      const verificationByEvidence = new Map(snapshot.verifications.filter(item => item.current).map(item => [item.evidenceId, item]));
+      const sourceById = new Map(snapshot.snapshots.map(item => [item.id, item]));
+      const sources = snapshot.snapshots.map(item =>
         '<article class="panel memory-card"><h3>' + escapeHtml(item.sourceTitle) + '</h3>'
+        + '<div class="muted">' + escapeHtml(item.id + ' · ' + item.state + ' · ' + item.mediaType) + '</div>'
+        + '<p><a href="' + escapeHtml(item.canonicalUri) + '" target="_blank" rel="noreferrer">打开来源</a></p>'
+        + '<div class="muted">SHA-256: ' + escapeHtml(item.contentHash) + ' · accessed ' + escapeHtml(item.accessedAt) + '</div>'
+        + (item.state === 'current' ? '<div class="actions">' + actionButton('research-snapshots', item.id, 'stale', '标记 Snapshot 过期') + '</div>' : '')
+        + '</article>'
+      ).join('');
+      const evidence = snapshot.evidence.map(item => {
+        const verification = verificationByEvidence.get(item.id);
+        const source = sourceById.get(item.snapshotId);
+        return '<article class="panel memory-card"><h3>' + escapeHtml(item.sourceTitle) + '</h3>'
         + '<div class="muted">' + escapeHtml(item.id + ' · ' + item.sourceType + ' · ' + item.state) + '</div>'
         + '<p><a href="' + escapeHtml(item.sourceUri) + '" target="_blank" rel="noreferrer">打开来源</a> · ' + escapeHtml(item.locator) + '</p>'
         + '<div class="markdown">' + escapeHtml(item.excerpt) + '</div>'
-        + (item.state === 'current' ? '<div class="actions">' + actionButton('research-evidence', item.id, 'stale', '标记过期') + '</div>' : '')
-        + '</article>'
-      ).join('');
+        + '<div class="muted">Snapshot: ' + escapeHtml(source?.id || item.snapshotId || 'missing')
+        + ' · verification: ' + escapeHtml(verification?.status || 'missing')
+        + (verification?.receipt?.checkCodes?.length ? ' · ' + escapeHtml(verification.receipt.checkCodes.join(', ')) : '') + '</div>'
+        + (item.state === 'current' ? '<div class="actions">'
+          + (verification?.status !== 'verified' ? actionButton('research-evidence', item.id, 'verify', '校验证据') : '')
+          + actionButton('research-evidence', item.id, 'stale', '标记过期') + '</div>' : '')
+        + '</article>';
+      }).join('');
       const claims = snapshot.claims.map(claim => {
         const links = claim.links.map(link => {
           const source = evidenceById.get(link.evidenceId);
@@ -344,14 +366,19 @@ function dashboardHtml(): string {
           + '<p><b>失效条件：</b>' + escapeHtml(claim.invalidationConditions) + '</p>'
           + '<ul>' + links + '</ul>' + actions + '</article>';
       }).join('');
-      const exported = await api('/api/research-cases/' + encodeURIComponent(id) + '/export');
+      const [exported, researchContext] = await Promise.all([
+        api('/api/research-cases/' + encodeURIComponent(id) + '/export'),
+        api('/api/research-cases/' + encodeURIComponent(id) + '/context')
+      ]);
       document.getElementById('research-detail').innerHTML =
         '<h2>' + escapeHtml(snapshot.researchCase.title) + '</h2>'
         + '<div class="muted">' + escapeHtml(snapshot.researchCase.status + ' · as of ' + snapshot.researchCase.asOfDate) + '</div>'
         + '<p>' + escapeHtml(snapshot.researchCase.question) + '</p>'
         + '<h2>Claims</h2>' + (claims || '<div class="empty">暂无 Claim</div>')
+        + '<h2>Source Snapshot Ledger</h2>' + (sources || '<div class="empty">暂无 Source Snapshot</div>')
         + '<h2>Evidence Ledger</h2>' + (evidence || '<div class="empty">暂无 Evidence</div>')
         + '<h2>Review Events</h2><pre>' + escapeHtml(JSON.stringify(snapshot.events, null, 2)) + '</pre>'
+        + '<details><summary>Evidence-gated Research Context</summary><pre>' + escapeHtml(researchContext.markdown) + '</pre></details>'
         + '<details><summary>Markdown 导出预览</summary><pre>' + escapeHtml(exported.markdown) + '</pre></details>';
     }
     async function renderRecalls() {
@@ -359,8 +386,10 @@ function dashboardHtml(): string {
       document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2>' + receipts.map(receipt => '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>').join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
     }
     async function renderJobs() {
-      const jobs = await api('/api/jobs');
-      document.getElementById('jobs').innerHTML = '<h2>后台任务</h2><p class="muted">重试仅重新排队；由下一次后台启动或 CLI distill jobs run --drain 执行。</p>' + jobs.map(job => '<article class="panel memory-card"><b>' + escapeHtml(job.status + ' · ' + job.threadId) + '</b><p>尝试 ' + job.attempts + ' / ' + job.maxAttempts + '</p><div class="muted">下次重试：' + escapeHtml(job.nextAttemptAt || '无') + '</div><p class="error">' + escapeHtml(job.lastError || '') + '</p>' + (job.status === 'failed' || (job.status === 'running' && Date.parse(job.updatedAt) <= Date.now() - 300000) ? '<div class="actions">' + actionButton('jobs', job.id, 'retry', '重新排队') + '</div>' : '') + '</article>').join('') + (!jobs.length ? '<div class="empty">暂无后台任务</div>' : '');
+      const [jobs, outbox] = await Promise.all([api('/api/jobs'), api('/api/outbox')]);
+      const distill = jobs.map(job => '<article class="panel memory-card"><b>' + escapeHtml(job.status + ' · ' + job.threadId) + '</b><p>尝试 ' + job.attempts + ' / ' + job.maxAttempts + '</p><div class="muted">下次重试：' + escapeHtml(job.nextAttemptAt || '无') + '</div><p class="error">' + escapeHtml(job.lastError || '') + '</p>' + (job.status === 'failed' || (job.status === 'running' && Date.parse(job.updatedAt) <= Date.now() - 300000) ? '<div class="actions">' + actionButton('jobs', job.id, 'retry', '重新排队') + '</div>' : '') + '</article>').join('');
+      const messages = outbox.map(item => '<article class="panel memory-card"><b>' + escapeHtml(item.status + ' · ' + item.topic) + '</b><p>尝试 ' + item.attempts + ' / ' + item.maxAttempts + '</p><div class="muted">可执行：' + escapeHtml(item.availableAt) + '</div><p class="error">' + escapeHtml(item.lastError || '') + '</p></article>').join('');
+      document.getElementById('jobs').innerHTML = '<h2>后台任务</h2><p class="muted">Outbox 使用租约恢复；CLI outbox run --drain 处理事实提交后的可靠跟进。</p><h2>Domain Outbox</h2>' + (messages || '<div class="empty">暂无 Outbox 消息</div>') + '<h2>Distill Jobs</h2>' + (distill || '<div class="empty">暂无提炼任务</div>');
     }
     function openEditor(resource, id, action) {
       state.editing = {resource, id, action};
@@ -372,19 +401,32 @@ function dashboardHtml(): string {
             ? state.researchSnapshot?.claims.find(claim => claim.id === id)
             : resource === 'research-evidence'
               ? state.researchSnapshot?.evidence.find(evidence => evidence.id === id)
+              : resource === 'research-snapshots'
+                ? state.researchSnapshot?.snapshots.find(snapshot => snapshot.id === id)
               : null;
       document.getElementById('edit-title').textContent = ({
         correct:'纠正记忆', archive:'归档记忆', restore:'恢复记忆', accept:'批准候选',
         reject: resource === 'research-claims' ? '拒绝 Claim' : '拒绝候选',
-        retry:'重新排队', approve:'批准 Claim', request_changes:'要求修改 Claim', stale:'标记 Evidence 过期'
+        retry:'重新排队', approve:'批准 Claim', request_changes:'要求修改 Claim', stale:'标记 Evidence 过期', verify:'校验 Evidence'
       })[action];
       document.getElementById('edit-preview').textContent = item
         ? (item.title || item.statement || item.sourceTitle || id) + '\\n' + (item.content || item.excerpt || '')
         : id;
       document.getElementById('content-field').hidden = action !== 'correct';
       document.getElementById('replacement-field').hidden = action !== 'accept';
+      const contradictions = resource === 'research-claims' && action === 'approve'
+        ? (item?.links || []).filter(link => link.relation === 'contradicts')
+          .filter(link => state.researchSnapshot?.evidence.find(evidence => evidence.id === link.evidenceId)?.state === 'current')
+        : [];
+      document.getElementById('contradictions-field').hidden = contradictions.length === 0;
+      document.getElementById('edit-contradictions').value = contradictions.length
+        ? JSON.stringify(contradictions.map(link => ({evidenceId:link.evidenceId,disposition:'requires_followup',rationale:''})), null, 2)
+        : '';
       document.getElementById('reason-field').hidden = resource === 'jobs';
-      const governedResearch = resource === 'research-claims' || resource === 'research-evidence';
+      const governedResearch = resource === 'research-claims'
+        || (resource === 'research-evidence' && action === 'stale')
+        || resource === 'research-snapshots';
+      document.getElementById('reason-field').hidden = resource === 'jobs' || (resource === 'research-evidence' && action === 'verify');
       document.getElementById('edit-reason').required = governedResearch;
       document.getElementById('reason-field').childNodes[0].nodeValue = governedResearch ? '操作原因（必填）' : '操作原因（可选）';
       document.getElementById('edit-content').value = item?.content || '';
@@ -435,11 +477,16 @@ function dashboardHtml(): string {
         const body = resource === 'candidates' || resource === 'research-claims'
           ? {decision: action}
           : {action};
+        if (resource === 'research-evidence' && action === 'verify') body.caseId = state.selectedResearchCaseId;
         const reason = document.getElementById('edit-reason').value.trim();
         if (reason && resource !== 'jobs') body.reason = reason;
         if (action === 'correct') body.content = document.getElementById('edit-content').value;
         const replacement = document.getElementById('edit-replacement').value.trim();
         if (action === 'accept' && replacement) body.supersedesMemoryId = replacement;
+        const contradictions = document.getElementById('edit-contradictions').value.trim();
+        if (resource === 'research-claims' && action === 'approve' && contradictions) {
+          body.contradictionDispositions = JSON.parse(contradictions);
+        }
         await api('/api/' + resource + '/' + encodeURIComponent(id), body);
         document.getElementById('editor').close();
         document.getElementById('feedback').textContent = '已保存；历史记录保留。';
@@ -514,8 +561,9 @@ async function routeRequest(
     if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") {
       sendJson(res, 415, {error: "JSON required"}); return;
     }
-    const match = pathname.match(/^\/api\/(memory|candidates|jobs|research-claims|research-evidence)\/([^/]+)$/);
-    if (!match) { sendJson(res, 404, {error: "Not found"}); return; }
+    const lifecycleMatch = pathname.match(/^\/api\/turn\/(before|after)$/);
+    const actionMatch = pathname.match(/^\/api\/(memory|candidates|jobs|research-claims|research-evidence|research-snapshots)\/([^/]+)$/);
+    if (!lifecycleMatch && !actionMatch) { sendJson(res, 404, {error: "Not found"}); return; }
     if (Number(req.headers["content-length"] ?? 0) > 65_536) { sendJson(res, 413, {error: "Body too large"}); return; }
     try {
       let size = 0;
@@ -526,12 +574,28 @@ async function routeRequest(
         chunks.push(Buffer.from(chunk));
       }
       const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      const result = await withProject(options, ({db, project}) => applyViewerAction(db, project.id, match[1], decodeURIComponent(match[2]), body));
+      const result = await withProject(options, ({db, project}) => {
+        if (lifecycleMatch) {
+          const registry = createHostAdapterRegistry();
+          const lifecycle = createTurnLifecycle({db, projectId: project.id});
+          return lifecycleMatch[1] === "before"
+            ? lifecycle.beforeTurn(registry.normalizeBeforeTurn("ui", body, "ui"))
+            : lifecycle.afterTurn(registry.normalizeAfterTurn("ui", body, "ui"));
+        }
+        return applyViewerAction(
+          db,
+          project.id,
+          actionMatch![1],
+          decodeURIComponent(actionMatch![2]),
+          body
+        );
+      });
       sendJson(res, 200, result);
     } catch (error) { sendJson(res, 400, {error: sanitizeDistillError(error)}); }
     return;
   }
   if (pathname === "/api/session") { sendJson(res, 200, {csrfToken: options.csrfToken}); return; }
+  if (pathname === "/api/hosts") { sendJson(res, 200, createHostAdapterRegistry().list()); return; }
   if (pathname === "/" || pathname === "/index.html") {
     send(res, 200, "text/html; charset=utf-8", dashboardHtml());
     return;
@@ -541,6 +605,7 @@ async function routeRequest(
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listRecallEvents(db, project.id, {taskId: url.searchParams.get("taskId") ?? undefined})); return; }
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
+    if (pathname === "/api/outbox") { sendJson(res, 200, listOutboxMessages(db, project.id)); return; }
     if (pathname === "/api/research-cases") {
       sendJson(res, 200, listViewerResearchCases(db, project.id)); return;
     }
@@ -548,6 +613,10 @@ async function routeRequest(
     if (researchExportMatch) {
       const snapshot = getViewerResearchCase(db, project.id, decodeURIComponent(researchExportMatch[1]));
       sendJson(res, 200, {markdown: renderResearchCaseMarkdown(snapshot)}); return;
+    }
+    const researchContextMatch = pathname.match(/^\/api\/research-cases\/([^/]+)\/context$/);
+    if (researchContextMatch) {
+      sendJson(res, 200, getViewerResearchContext(db, project.id, decodeURIComponent(researchContextMatch[1]))); return;
     }
     const researchCaseMatch = pathname.match(/^\/api\/research-cases\/([^/]+)$/);
     if (researchCaseMatch) {

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -32,6 +32,8 @@ export function migrate(db: Database.Database): void {
   const requiresV9Setup = existingVersion === undefined || existingVersion < 9;
   const requiresV10Setup = existingVersion === undefined || existingVersion < 10;
   const requiresV11Setup = existingVersion === undefined || existingVersion < 11;
+  const requiresV12Setup = existingVersion === undefined || existingVersion < 12;
+  const requiresV13Setup = existingVersion === undefined || existingVersion < 13;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -115,7 +117,7 @@ export function migrate(db: Database.Database): void {
     create table if not exists distill_jobs (
       id text primary key,
       project_id text not null,
-      thread_id text not null,
+      thread_id text,
       trigger text not null check (trigger in ('hook', 'cli')),
       channel text not null check (channel in ('provider')),
       input_hash text not null,
@@ -584,6 +586,192 @@ export function migrate(db: Database.Database): void {
     create index if not exists idx_research_events_case_created
       on research_events(project_id, case_id, created_at, id);
   `);
+
+  if (requiresV12Setup) db.exec(`
+    create table if not exists lifecycle_sessions (
+      id text primary key,
+      project_id text not null,
+      host text not null check(host in ('codex', 'claude-code', 'cursor', 'cli', 'mcp', 'ui')),
+      host_session_id text not null check(length(trim(host_session_id)) between 1 and 500),
+      status text not null check(status in ('open', 'closed')),
+      opened_at text not null,
+      last_seen_at text not null,
+      closed_at text,
+      unique(project_id, id),
+      unique(project_id, host, host_session_id),
+      foreign key(project_id) references projects(id) on delete cascade
+    );
+    create index if not exists idx_lifecycle_sessions_project_seen
+      on lifecycle_sessions(project_id, last_seen_at desc);
+
+    create table if not exists lifecycle_turns (
+      id text primary key,
+      project_id text not null,
+      session_id text not null,
+      host_turn_id text not null check(length(trim(host_turn_id)) between 1 and 500),
+      task_id text,
+      query text not null check(length(trim(query)) between 1 and 50000),
+      response text,
+      outcome_status text check(outcome_status is null or outcome_status in ('succeeded', 'failed', 'cancelled')),
+      status text not null check(status in ('started', 'completed')),
+      recall_event_id text references recall_events(id) on delete set null,
+      before_input_hash text,
+      before_result text check(before_result is null or json_valid(before_result)),
+      after_input_hash text,
+      after_result text check(after_result is null or json_valid(after_result)),
+      started_at text not null,
+      completed_at text,
+      unique(project_id, id),
+      unique(project_id, session_id, host_turn_id),
+      foreign key(project_id, session_id) references lifecycle_sessions(project_id, id) on delete cascade
+    );
+    create index if not exists idx_lifecycle_turns_session_started
+      on lifecycle_turns(project_id, session_id, started_at);
+
+    create table if not exists capture_records (
+      id text primary key,
+      project_id text not null,
+      turn_id text not null,
+      thread_id text,
+      content_hash text not null,
+      outcome text not null check(outcome in ('imported', 'updated', 'unchanged')),
+      captured_at text not null,
+      unique(project_id, id),
+      unique(project_id, turn_id),
+      foreign key(project_id, turn_id) references lifecycle_turns(project_id, id) on delete cascade,
+      foreign key(thread_id) references threads(id) on delete set null
+    );
+    create index if not exists idx_capture_records_project_captured
+      on capture_records(project_id, captured_at desc);
+
+    create table if not exists domain_events (
+      id text primary key,
+      project_id text not null,
+      aggregate_type text not null check(length(trim(aggregate_type)) between 1 and 100),
+      aggregate_id text not null check(length(trim(aggregate_id)) between 1 and 500),
+      event_type text not null check(length(trim(event_type)) between 1 and 100),
+      payload text not null check(json_valid(payload) and json_type(payload) = 'object'),
+      created_at text not null,
+      unique(project_id, id),
+      foreign key(project_id) references projects(id) on delete cascade
+    );
+    create index if not exists idx_domain_events_project_created
+      on domain_events(project_id, created_at desc, id desc);
+
+    create table if not exists outbox_messages (
+      id text primary key,
+      project_id text not null,
+      event_id text not null,
+      topic text not null check(topic in (
+        'capture.distill.requested',
+        'research.evidence.verify.requested',
+        'projection.refresh.requested'
+      )),
+      payload text not null check(json_valid(payload) and json_type(payload) = 'object'),
+      status text not null check(status in ('pending', 'running', 'completed', 'failed')),
+      attempts integer not null default 0 check(attempts >= 0),
+      max_attempts integer not null default 3 check(max_attempts >= 1),
+      available_at text not null,
+      lease_expires_at text,
+      last_error text,
+      created_at text not null,
+      updated_at text not null,
+      unique(project_id, id),
+      unique(event_id, topic),
+      foreign key(project_id, event_id) references domain_events(project_id, id) on delete cascade,
+      foreign key(project_id) references projects(id) on delete cascade
+    );
+    create index if not exists idx_outbox_messages_due
+      on outbox_messages(status, available_at, created_at);
+    create index if not exists idx_outbox_messages_project_status
+      on outbox_messages(project_id, status, created_at desc);
+  `);
+
+  if (requiresV13Setup) {
+    db.exec(`
+      create table if not exists source_snapshots (
+        id text primary key,
+        project_id text not null,
+        canonical_uri text not null check(length(trim(canonical_uri)) between 1 and 4000),
+        source_title text not null check(length(trim(source_title)) between 1 and 1000),
+        published_at text,
+        accessed_at text not null,
+        media_type text not null check(length(trim(media_type)) between 1 and 200),
+        content text not null check(length(content) between 1 and 5000000),
+        content_hash text not null check(length(content_hash) = 64),
+        state text not null check(state in ('current', 'stale', 'archived')),
+        created_at text not null,
+        updated_at text not null,
+        unique(project_id, id),
+        unique(project_id, canonical_uri, content_hash),
+        foreign key(project_id) references projects(id) on delete cascade
+      );
+      create index if not exists idx_source_snapshots_project_uri
+        on source_snapshots(project_id, canonical_uri, created_at desc);
+    `);
+
+    const evidenceColumns = db.prepare("pragma table_info(research_evidence)").all() as Array<{name: string}>;
+    if (!evidenceColumns.some((column) => column.name === "snapshot_id")) {
+      db.exec("alter table research_evidence add column snapshot_id text");
+    }
+    const outboxColumns = db.prepare("pragma table_info(outbox_messages)").all() as Array<{name: string}>;
+    if (!outboxColumns.some((column) => column.name === "lease_token")) {
+      db.exec("alter table outbox_messages add column lease_token text");
+    }
+    db.exec(`
+      create index if not exists idx_research_evidence_snapshot
+        on research_evidence(project_id, snapshot_id);
+
+      create table if not exists evidence_verifications (
+        id text primary key,
+        project_id text not null,
+        case_id text not null,
+        evidence_id text not null,
+        snapshot_id text not null,
+        status text not null check(status in ('pending', 'verified', 'failed', 'stale')),
+        checks text not null check(json_valid(checks) and json_type(checks) = 'object'),
+        receipt text not null check(json_valid(receipt) and json_type(receipt) = 'object'),
+        is_current integer not null default 1 check(is_current in (0, 1)),
+        supersedes_verification_id text,
+        verified_at text,
+        created_at text not null,
+        updated_at text not null,
+        unique(project_id, case_id, id),
+        foreign key(project_id, case_id) references research_cases(project_id, id) on delete cascade,
+        foreign key(project_id, case_id, evidence_id)
+          references research_evidence(project_id, case_id, id) on delete cascade,
+        foreign key(project_id, snapshot_id)
+          references source_snapshots(project_id, id) on delete restrict,
+        foreign key(supersedes_verification_id) references evidence_verifications(id) on delete set null
+      );
+      create unique index if not exists idx_evidence_verifications_current
+        on evidence_verifications(project_id, evidence_id) where is_current = 1;
+      create index if not exists idx_evidence_verifications_case
+        on evidence_verifications(project_id, case_id, created_at);
+
+      create table if not exists outbox_handler_receipts (
+        message_id text primary key,
+        project_id text not null,
+        topic text not null,
+        result text not null check(json_valid(result) and json_type(result) = 'object'),
+        completed_at text not null,
+        foreign key(project_id, message_id) references outbox_messages(project_id, id) on delete cascade
+      );
+      create index if not exists idx_outbox_handler_receipts_project
+        on outbox_handler_receipts(project_id, completed_at desc);
+
+      update research_claims
+      set review_status = 'changes_requested',
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      where review_status = 'approved';
+      update research_cases
+      set status = 'in_review',
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      where id in (
+        select distinct case_id from research_claims where review_status = 'changes_requested'
+      );
+    `);
+  }
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");

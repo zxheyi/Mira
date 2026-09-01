@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
+import { listDomainEvents, listOutboxMessages } from "../../src/events/domainOutboxStore.js";
 import { runIntegrationHook } from "../../src/integrations/hookRuntime.js";
 import { ensureProjectForRoot } from "../../src/projects/projectStore.js";
 import { listThreadsForProject } from "../../src/threads/threadStore.js";
@@ -192,6 +193,8 @@ describe("integration hook runtime", () => {
     migrate(db);
     const project = ensureProjectForRoot(db, options.projectRoot);
     const threads = listThreadsForProject(db, project.id);
+    const events = listDomainEvents(db, project.id);
+    const outbox = listOutboxMessages(db, project.id);
     db.close();
 
     expect(first).toMatchObject({ status: "captured", threadId: "thread_codex_session_codex" });
@@ -201,6 +204,10 @@ describe("integration hook runtime", () => {
     expect(threads[0]?.rawFormat).toBe("jsonl");
     expect(threads[0]?.rawText).toContain("Add automatic capture.");
     expect(threads[0]?.rawText).toContain("Automatic capture is implemented.");
+    expect(events.map(event => event.eventType)).toContain("turn_completed");
+    expect(outbox.map(message => message.topic)).toEqual(expect.arrayContaining([
+      "capture.distill.requested", "projection.refresh.requested"
+    ]));
   });
 
   test("captures Claude Code Stop and SessionEnd into one stable thread", async () => {

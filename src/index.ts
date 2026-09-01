@@ -16,6 +16,9 @@ import { listRecallEvents } from "./context/recallAuditStore.js";
 import { openDatabase } from "./db/client.js";
 import { runDoctor } from "./doctor/doctor.js";
 import { migrate } from "./db/schema.js";
+import { listOutboxMessages, type OutboxStatus } from "./events/domainOutboxStore.js";
+import { createOutboxRunner } from "./events/outboxRunner.js";
+import { createDefaultOutboxHandlers, drainOutbox } from "./events/defaultOutboxHandlers.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
 import { startDetachedDistillWorker } from "./distill/detachedWorker.js";
 import {
@@ -58,6 +61,8 @@ import {
   type IntegrationRuntime
 } from "./integrations/configInstaller.js";
 import { runIntegrationHook } from "./integrations/hookRuntime.js";
+import { createHostAdapterRegistry } from "./lifecycle/hostAdapterRegistry.js";
+import { createTurnLifecycle } from "./lifecycle/turnLifecycle.js";
 import { clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
 import { authorizeCuration, curateMemory, listCurationEvents } from "./memory/curationService.js";
 import {
@@ -92,6 +97,7 @@ import {
   getResearchCaseSnapshot,
   listResearchCases,
   markResearchEvidenceStale,
+  markResearchSourceSnapshotStale,
   reviewResearchClaim,
   reviseResearchClaim,
   submitResearchPacket,
@@ -100,6 +106,9 @@ import {
   type SubmitResearchPacketInput
 } from "./research/researchService.js";
 import { renderResearchCaseMarkdown } from "./research/researchExport.js";
+import { verifyEvidence } from "./research/evidenceVerification.js";
+import { prepareResearchContext } from "./research/researchContext.js";
+import type { ContradictionDisposition } from "./research/researchTypes.js";
 
 type GlobalOptions = {
   db?: string;
@@ -313,6 +322,13 @@ function requireDistillJobStatus(status: string): DistillJobStatus {
   return status as DistillJobStatus;
 }
 
+function requireOutboxStatus(status: string): OutboxStatus {
+  if (status !== "pending" && status !== "running" && status !== "completed" && status !== "failed") {
+    throw new Error("Outbox status must be pending, running, completed, or failed");
+  }
+  return status;
+}
+
 function requireCandidateStatus(status: string): CandidateStatus {
   if (!(CANDIDATE_STATUSES as readonly string[]).includes(status)) {
     throw new Error(`Candidate status is unsupported: ${status}. Supported statuses: ${CANDIDATE_STATUSES.join(", ")}`);
@@ -374,7 +390,11 @@ async function enqueueHookDistill(input: {
 }): Promise<void> {
   const db = openMigratedDatabase(input.dbPath);
   try {
-    enqueueDistillJob(db, input.projectId, input.threadId, "hook");
+    await drainOutbox(
+      createOutboxRunner({db}),
+      input.projectId,
+      createDefaultOutboxHandlers({db})
+    );
   } finally {
     db.close();
   }
@@ -989,6 +1009,107 @@ context
     });
   });
 
+const turn = program.command("turn").description("Run the unified Mira turn lifecycle");
+
+turn
+  .command("hosts")
+  .description("List Host adapters accepted by the lifecycle port")
+  .action(() => {
+    printJson(createHostAdapterRegistry().list());
+  });
+
+turn
+  .command("before")
+  .description("Prepare audited context before a Host turn")
+  .requiredOption("--host <host>", "Host adapter id")
+  .requiredOption("--session <id>", "Stable Host session id")
+  .requiredOption("--turn <id>", "Stable Host turn id")
+  .requiredOption("--query <text>", "User query")
+  .option("--memory-limit <number>", "Maximum long-term memories")
+  .option("--max-characters <number>", "Maximum context characters")
+  .option("--max-tokens <number>", "Maximum token upper bound")
+  .action(async (options: {
+    host: string; session: string; turn: string; query: string;
+    memoryLimit?: string; maxCharacters?: string; maxTokens?: string;
+  }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      const contextOptions = {
+        ...(options.memoryLimit ? {memoryLimit: integerInRange(options.memoryLimit, 1, 50, "--memory-limit")} : {}),
+        ...(options.maxCharacters ? {maxCharacters: integerInRange(options.maxCharacters, 1, 1_000_000, "--max-characters")} : {}),
+        ...(options.maxTokens ? {maxTokens: integerInRange(options.maxTokens, 25, 250_000, "--max-tokens")} : {})
+      };
+      const taskId = selectedTask(session.projectRoot);
+      const command = createHostAdapterRegistry().normalizeBeforeTurn(options.host, {
+        sessionId: options.session,
+        turnId: options.turn,
+        query: options.query,
+        ...(taskId ? {taskId} : {}),
+        ...(Object.keys(contextOptions).length ? {context: contextOptions} : {})
+      }, "cli");
+      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id}).beforeTurn(command));
+    });
+  });
+
+turn
+  .command("after")
+  .description("Capture a completed Host turn and enqueue non-authoritative follow-up work")
+  .requiredOption("--host <host>", "Host adapter id")
+  .requiredOption("--session <id>", "Stable Host session id")
+  .requiredOption("--turn <id>", "Stable Host turn id")
+  .requiredOption("--query <text>", "User query")
+  .requiredOption("--response <text>", "Assistant response")
+  .requiredOption("--status <status>", "succeeded, failed, or cancelled")
+  .action(async (options: {
+    host: string; session: string; turn: string; query: string; response: string; status: string;
+  }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      const taskId = selectedTask(session.projectRoot);
+      const command = createHostAdapterRegistry().normalizeAfterTurn(options.host, {
+        sessionId: options.session,
+        turnId: options.turn,
+        query: options.query,
+        response: options.response,
+        status: options.status,
+        ...(taskId ? {taskId} : {})
+      }, "cli");
+      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id}).afterTurn(command));
+    });
+  });
+
+const outbox = program.command("outbox").description("Inspect and run reliable Mira follow-up work");
+
+outbox
+  .command("list")
+  .description("List Domain Outbox messages for the current project")
+  .option("--status <status>", "pending, running, completed, or failed")
+  .option("--limit <number>", "Maximum messages", "100")
+  .action(async (options: {status?: string; limit: string}) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listOutboxMessages(
+        session.db,
+        session.project.id,
+        options.status ? requireOutboxStatus(options.status) : undefined,
+        integerInRange(options.limit, 1, 100, "--limit")
+      ));
+    });
+  });
+
+outbox
+  .command("run")
+  .description("Run one or drain due Outbox messages with lease recovery")
+  .option("--once", "Run one due message")
+  .option("--drain", "Drain all currently due messages")
+  .action(async (options: {once?: boolean; drain?: boolean}) => {
+    if (options.once && options.drain) throw new Error("Choose --once or --drain");
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      const runner = createOutboxRunner({db:session.db});
+      const handlers = createDefaultOutboxHandlers({db:session.db});
+      printJson(options.drain
+        ? await drainOutbox(runner, session.project.id, handlers)
+        : await runner.runNext(session.project.id, handlers) ?? null);
+    });
+  });
+
 const vault = program.command("vault").description("Materialize the project memory as Markdown");
 
 vault
@@ -1037,6 +1158,16 @@ research
   });
 
 research
+  .command("context")
+  .description("Prepare an evidence-gated context containing only approved Research Claims")
+  .requiredOption("--case <id>", "Research Case id")
+  .action(async (options: { case: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(prepareResearchContext(session.db, session.project.id, options.case));
+    });
+  });
+
+research
   .command("revise")
   .description("Create an immutable successor for an active Research Claim")
   .requiredOption("--claim <id>", "Predecessor Research Claim id")
@@ -1074,13 +1205,41 @@ research
   });
 
 research
+  .command("snapshot-stale")
+  .description("Mark a Source Snapshot stale and reopen every linked Claim")
+  .requiredOption("--snapshot <id>", "Source Snapshot id")
+  .requiredOption("--reason <text>", "Staleness reason")
+  .action(async (options: {snapshot:string;reason:string}) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(markResearchSourceSnapshotStale(
+        session.db,session.project.id,options.snapshot,options.reason,cliResearchAuthority(session)
+      ));
+    });
+  });
+
+research
+  .command("verify")
+  .description("Verify one Evidence item against its bound Source Snapshot")
+  .requiredOption("--case <id>", "Research Case id")
+  .requiredOption("--evidence <id>", "Evidence id")
+  .action(async (options: {case: string; evidence: string}) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(verifyEvidence(session.db, session.project.id, options.case, options.evidence));
+    });
+  });
+
+research
   .command("review")
   .description("Approve, reject, or request changes for an active Research Claim")
   .requiredOption("--claim <id>", "Research Claim id")
   .requiredOption("--decision <decision>", "approve, reject, or request_changes")
   .requiredOption("--reason <text>", "Review reason")
-  .action(async (options: { claim: string; decision: string; reason: string }) => {
+  .option("--contradictions <path>", "JSON array of structured Contradiction Dispositions")
+  .action(async (options: { claim: string; decision: string; reason: string; contradictions?: string }) => {
     const decision = requireResearchReviewDecision(options.decision);
+    const contradictionDispositions = options.contradictions
+      ? JSON.parse(await readFile(resolve(options.contradictions), "utf8")) as ContradictionDisposition[]
+      : [];
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(reviewResearchClaim(
         session.db,
@@ -1088,7 +1247,8 @@ research
         options.claim,
         decision,
         options.reason,
-        cliResearchAuthority(session)
+        cliResearchAuthority(session),
+        contradictionDispositions
       ));
     });
   });

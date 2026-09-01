@@ -62,8 +62,12 @@ This transcript appears in the UI.`
   rebuildProjectBriefing(db, project.id);
   const research = submitResearchPacket(db, project.id, {
     case: { title: "Public filing review", question: "What changed?", asOfDate: "2026-09-01" },
+    snapshots: [{
+      key: "S1", canonicalUri: "https://example.test/filing", sourceTitle: "Filing",
+      accessedAt: "2026-09-01", mediaType: "text/plain", content: "p. 1\nRevenue increased."
+    }],
     evidence: [{
-      key: "E1", sourceType: "regulatory_filing",
+      key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing",
       sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
       excerpt: "Revenue increased.", accessedAt: "2026-09-01"
     }],
@@ -149,6 +153,12 @@ describe("viewer server", () => {
       url + "/api/research-cases/" + research.researchCase.id + "/export"
     );
     expect(exported.markdown).toContain("# Research Case: Public filing review");
+    expect(exported.markdown).toContain("## Source Snapshot Ledger");
+    expect(exported.markdown).toContain("## Evidence Verification");
+    const context = await json<{claimIds:string[]}>(
+      url + "/api/research-cases/" + research.researchCase.id + "/context"
+    );
+    expect(context.claimIds).toEqual([]);
 
     const session = await json<{ csrfToken: string }>(url + "/api/session");
     const headers = {
@@ -156,6 +166,13 @@ describe("viewer server", () => {
       origin: url,
       "x-mira-csrf": session.csrfToken
     };
+    const verification = await fetch(url + "/api/research-evidence/" + research.evidence[0].id, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({action: "verify", caseId: research.researchCase.id})
+    });
+    expect(verification.status).toBe(200);
+    expect(await verification.json()).toMatchObject({status: "verified"});
     const reviewed = await fetch(url + "/api/research-claims/" + research.claims[0].id, {
       method: "POST",
       headers,
@@ -178,6 +195,54 @@ describe("viewer server", () => {
     });
   });
 
+  test("Viewer exposes the Host registry and runs UI turns through the lifecycle port", async () => {
+    const {url} = await setupServer();
+    const hosts = await json<Array<{host: string}>>(url + "/api/hosts");
+    expect(hosts.map((item) => item.host)).toEqual([
+      "codex", "claude-code", "cursor", "cli", "mcp", "ui"
+    ]);
+    const session = await json<{csrfToken: string}>(url + "/api/session");
+    const headers = {
+      "content-type": "application/json",
+      origin: url,
+      "x-mira-csrf": session.csrfToken
+    };
+    const beforeBody = {
+      sessionId: "viewer-session-1",
+      turnId: "viewer-turn-1",
+      query: "Preview the governed project context."
+    };
+    const beforeResponse = await fetch(url + "/api/turn/before", {
+      method: "POST", headers, body: JSON.stringify(beforeBody)
+    });
+    expect(beforeResponse.status).toBe(200);
+    const before = await beforeResponse.json() as {session: {host: string}; turn: {id: string; status: string}};
+    expect(before).toMatchObject({session: {host: "ui"}, turn: {status: "started"}});
+
+    const afterBody = {
+      ...beforeBody,
+      response: "Displayed reviewed memory without changing authority.",
+      status: "succeeded"
+    };
+    const afterResponse = await fetch(url + "/api/turn/after", {
+      method: "POST", headers, body: JSON.stringify(afterBody)
+    });
+    expect(afterResponse.status).toBe(200);
+    expect(await afterResponse.json()).toMatchObject({
+      turn: {id: before.turn.id, status: "completed"}, duplicate: false
+    });
+    const duplicate = await fetch(url + "/api/turn/after", {
+      method: "POST", headers, body: JSON.stringify(afterBody)
+    });
+    expect(duplicate.status).toBe(200);
+    expect(await duplicate.json()).toMatchObject({turn: {id: before.turn.id}, duplicate: true});
+
+    const forgedHost = await fetch(url + "/api/turn/before", {
+      method: "POST", headers, body: JSON.stringify({...beforeBody, host: "cursor"})
+    });
+    expect(forgedHost.status).toBe(400);
+  });
+
   test("serves read-only project APIs", async () => {
     const { url } = await setupServer();
 
@@ -185,6 +250,7 @@ describe("viewer server", () => {
     const threads = await json<Array<{ id: string; preview: string; rawText?: string }>>(`${url}/api/threads`);
     const detail = await json<{ id: string; rawText: string }>(`${url}/api/threads/thread_viewer_one`);
     const runs = await json<Array<{ importedCount: number }>>(`${url}/api/import-runs`);
+    const outbox = await json<Array<{topic: string; status: string}>>(`${url}/api/outbox`);
     const briefing = await json<{ markdown: string }>(`${url}/api/briefing`);
     const bundle = await json<{ markdown: string }>(`${url}/api/context-bundle`);
 
@@ -194,6 +260,10 @@ describe("viewer server", () => {
     expect(threads[0].rawText).toBeUndefined();
     expect(detail.rawText).toContain("appears in the UI");
     expect(runs[0].importedCount).toBe(1);
+    expect(outbox).toEqual(expect.arrayContaining([
+      expect.objectContaining({topic:"research.evidence.verify.requested",status:"pending"}),
+      expect.objectContaining({topic:"projection.refresh.requested",status:"pending"})
+    ]));
     expect(briefing.markdown).toContain("Open Mira UI");
     expect(bundle.markdown).toContain("# Mira Context Bundle");
   });

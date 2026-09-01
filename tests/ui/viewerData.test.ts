@@ -77,8 +77,12 @@ Assistant: Added a local dashboard.`
   rebuildProjectBriefing(db, project.id);
   const research = submitResearchPacket(db, project.id, {
     case: { title: "Evidence review", question: "What changed?", asOfDate: "2026-09-01" },
+    snapshots: [{
+      key: "S1", canonicalUri: "https://example.test/filing", sourceTitle: "Filing",
+      accessedAt: "2026-09-01", mediaType: "text/plain", content: "p. 1\nRevenue increased."
+    }],
     evidence: [{
-      key: "E1", sourceType: "regulatory_filing",
+      key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing",
       sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
       excerpt: "Revenue increased.", accessedAt: "2026-09-01"
     }],

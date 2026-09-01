@@ -10,6 +10,7 @@ import type { Project } from "../projects/projectStore.js";
 import { getThread, listThreadsForProject, type Thread } from "../threads/threadStore.js";
 import { listWorkingMemory, type WorkingMemory } from "../workingMemory/workingMemoryStore.js";
 import { getResearchCaseSnapshot, listResearchCases } from "../research/researchStore.js";
+import { prepareResearchContext } from "../research/researchContext.js";
 
 export type ViewerCounts = {
   threads: number;
@@ -147,4 +148,8 @@ export function listViewerResearchCases(db: Database.Database, projectId: string
 
 export function getViewerResearchCase(db: Database.Database, projectId: string, caseId: string) {
   return getResearchCaseSnapshot(db, projectId, caseId);
+}
+
+export function getViewerResearchContext(db: Database.Database, projectId: string, caseId: string) {
+  return prepareResearchContext(db, projectId, caseId);
 }

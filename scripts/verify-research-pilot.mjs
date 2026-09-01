@@ -16,6 +16,8 @@ import {
   submitResearchPacket
 } from "../dist/src/research/researchService.js";
 import { renderResearchCaseMarkdown } from "../dist/src/research/researchExport.js";
+import { verifyEvidence } from "../dist/src/research/evidenceVerification.js";
+import { prepareResearchContext } from "../dist/src/research/researchContext.js";
 import { callMiraTool } from "../dist/src/mcp/server.js";
 import { getViewerResearchCase } from "../dist/src/ui/viewerData.js";
 
@@ -35,6 +37,7 @@ const authority = authorizeResearch(db, project.id, {
 });
 
 assert.ok(fixture.packet.evidence.length >= 10 && fixture.packet.evidence.length <= 20);
+assert.equal(fixture.packet.snapshots.length, fixture.packet.evidence.length);
 assert.ok(fixture.packet.claims.length >= 5 && fixture.packet.claims.length <= 10);
 assert.ok(fixture.packet.evidence.every(item => {
   const host = new URL(item.sourceUri).hostname;
@@ -49,6 +52,15 @@ const claimIds = receipt.claimIds;
 assert.ok(Array.isArray(evidenceIds) && Array.isArray(claimIds));
 const evidenceByKey = new Map(fixture.packet.evidence.map((item, index) => [item.key, evidenceIds[index]]));
 const claimByKey = new Map(fixture.packet.claims.map((item, index) => [item.key, claimIds[index]]));
+
+for (const evidence of snapshot.evidence) {
+  assert.equal(
+    verifyEvidence(db, project.id, snapshot.researchCase.id, evidence.id).status,
+    "verified",
+    "every pilot Evidence item must verify against its bound Source Snapshot"
+  );
+}
+snapshot = getViewerResearchCase(db, project.id, snapshot.researchCase.id);
 
 const preReview = fixture.workflow.preStaleReview;
 snapshot = reviewResearchClaim(
@@ -124,10 +136,15 @@ assert.deepEqual(JSON.parse(cli.stdout.trim()), canonicalSnapshot);
 
 const markdown = renderResearchCaseMarkdown(snapshot);
 assert.match(markdown, /## Evidence Ledger/);
+assert.match(markdown, /## Source Snapshot Ledger/);
+assert.match(markdown, /## Evidence Verification/);
 assert.match(markdown, /## Claim Matrix/);
 assert.match(markdown, /Mira does not mutate thesis state/);
 const exportPath = join(root, "apple-fy2024-research.md");
 await writeFile(exportPath, markdown, "utf8");
+const researchContext = prepareResearchContext(db, project.id, snapshot.researchCase.id);
+assert.ok(researchContext.claimIds.length > 0);
+assert.doesNotMatch(researchContext.markdown, /Q4 FY2024 revenue was/);
 
 console.log(JSON.stringify({
   status: "passed",
@@ -140,12 +157,14 @@ console.log(JSON.stringify({
   exportPath,
   checks: [
     "official-source-boundary",
+    "source-snapshot-verification",
     "contradicting-evidence",
     "authorized-review",
     "stale-propagation",
     "immutable-revision",
     "all-active-claims-reviewed",
     "cli-mcp-ui-consistency",
+    "evidence-gated-research-context",
     "no-memory-or-thesis-mutation"
   ]
 }));

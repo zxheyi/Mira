@@ -27,8 +27,12 @@ const job = claimNextDistillJob(db, project.id);
 failDistillJob(db, job.id, "Synthetic provider unavailable", job.attempts);
 const research = submitResearchPacket(db, project.id, {
   case: {title: "公开公司季度研究", question: "本季度发生了什么变化？", asOfDate: "2026-09-01"},
+  snapshots: [{
+    key: "S1", canonicalUri: "https://example.test/filing", sourceTitle: "季度监管文件",
+    accessedAt: "2026-09-01", mediaType: "text/plain", content: "p. 1\n报告收入同比增长。"
+  }],
   evidence: [{
-    key: "E1", sourceType: "regulatory_filing", sourceUri: "https://example.test/filing",
+    key: "E1", snapshotKey: "S1", sourceType: "regulatory_filing", sourceUri: "https://example.test/filing",
     sourceTitle: "季度监管文件", locator: "p. 1", excerpt: "报告收入同比增长。", accessedAt: "2026-09-01"
   }],
   claims: [{
@@ -84,6 +88,12 @@ try {
   await page.getByText(/pending · synthetic_source/).waitFor();
   await nav("研究案例");
   await page.getByRole("heading",{name:"研究案例 · Evidence → Claim → Review",exact:true}).waitFor();
+  const evidence = page.locator("article").filter({hasText:"季度监管文件"})
+    .filter({has:page.locator('[data-resource="research-evidence"]')});
+  await evidence.getByRole("button",{name:"校验证据",exact:true}).click();
+  assert.equal(await page.locator("#reason-field").isVisible(), false, "deterministic verification needs no authority reason");
+  await submit();
+  await evidence.getByText(/verification: verified/).waitFor();
   const claim = page.locator("article").filter({hasText:"报告收入仍保持同比增长。"});
   await claim.getByRole("button",{name:"批准",exact:true}).click();
   assert.equal(await page.getByLabel("操作原因（必填）").getAttribute("required"), "");
@@ -91,7 +101,6 @@ try {
   await page.screenshot({path:join(root,"desktop-research-review.png"), fullPage:true});
   await submit();
   await page.locator("#research-detail").getByText(/completed · as of 2026-09-01/).waitFor();
-  const evidence = page.locator("article").filter({hasText:"季度监管文件"});
   await evidence.getByRole("button",{name:"标记过期",exact:true}).click();
   await page.getByLabel("操作原因（必填）").fill("已被后续监管文件替代");
   await submit();
