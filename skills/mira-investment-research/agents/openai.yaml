@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mira Investment Research"
+  short_description: "Evidence-gated investment research with Mira"
+  default_prompt: "Use $mira-investment-research to investigate this investment question with traceable evidence and reviewed claims."

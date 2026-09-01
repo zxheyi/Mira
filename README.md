@@ -295,6 +295,12 @@ mira --project-root /path/to/project integration uninstall --agent all
 
 完整行为与排障说明见 [自动接入指南](docs/agent-config/automatic-integration.md)。
 
+## 投资研究 Domain Skill
+
+仓库内置 [Mira Investment Research Skill](skills/mira-investment-research/SKILL.md)。把整个 `skills/mira-investment-research` 目录复制到 Codex skills 目录后，可通过 `$mira-investment-research` 调用。npm 发布清单也包含 `skills/`。
+
+这个 runtime profile 编排 `prepare context → evidence ledger → claim review → candidate proposal`。它只把稳定方法和已核验来源事实提交为 candidate；推导性投资结论与 thesis 影响保留在研究审核包，确认写入仍要求 Mira 宿主权限，thesis 状态由核心之外的领域审核协议管理。该 Skill 不执行交易或修改投资组合。
+
 ## MCP 快速配置
 
 Mira MVP 提供每项目一个 stdio MCP server。推荐使用绝对路径绑定项目和数据库：
@@ -348,6 +354,7 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 5 Vault 布局契约](specs/018-markdown-vault/contracts/vault-layout.md)
 - [历史会话批量导入 Spec](specs/019-history-bulk-import/spec.md)
 - [召回质量基线 Spec](specs/026-recall-quality-baseline/spec.md)
+- [Mira Investment Research Skill](skills/mira-investment-research/SKILL.md)
 - [历史会话批量导入设计](docs/superpowers/specs/2026-07-20-mira-history-bulk-import-design.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)

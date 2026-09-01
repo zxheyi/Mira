@@ -1,0 +1,28 @@
+version: 1
+id: "mira-investment-research"
+runtime:
+  enforcement: "agent_protocol"
+  executable_core_config: false
+scope:
+  task_id: "required"
+recall:
+  before_research: "prepare_context"
+  recalled_memory_role: "prior_context_until_source_revalidated"
+capture:
+  after_research: "hook_or_save_thread_fallback"
+persistence:
+  transient_hypotheses: "task_working_memory"
+  stable_methods_and_source_facts: "candidate_only"
+  investment_claims: "review_packet_only"
+  confirmed_curation: "host_authority_required"
+thesis:
+  mutation_owner: "external_domain_review_protocol"
+  mira_core_mutation: "disabled"
+execution:
+  trade_execution: "disabled"
+  portfolio_mutation: "disabled"
+audit:
+  evidence_ids: "required"
+  claim_ids: "required"
+  counterevidence: "required"
+  invalidation_conditions: "required"

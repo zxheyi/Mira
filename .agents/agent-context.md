@@ -14,6 +14,7 @@ Last updated: 2026-07-20
 - 自动捕获使用 schema v2 持久化检查点；未变化跳过，失败不推进。
 - Phase 2 可信自动提炼、Phase 3 Memory 生命周期、Phase 4 Project Briefing 与 Phase 5 Markdown Vault 均已实现并验证。
 - 当前项目历史会话批量导入已实现：支持 Codex/Claude Code 扫描、旧根路径别名、幂等分类、schema v6 审计、dry-run、失败查询和可选提炼入队。
+- 可安装的投资研究 domain skill 已实现：Evidence → Claim → Review 运行配置位于核心记忆层之上，投资主张与 thesis 状态不由 Mira 自动修改。
 
 ## 事实源
 
@@ -80,6 +81,8 @@ src/importers/          Markdown / JSONL importer
 src/integrations/       Hook、安装器、捕获检查点
 src/history/            历史扫描、项目匹配、批量导入、审计与报告
 src/mcp/                MCP tools 与 stdio transport
+src/evaluation/         可重复质量基线
+skills/                 可安装的领域 skill 与 agent runtime profile
 tests/                  单元、集成和 CLI 端到端测试
 specs/                  SDD 规格、计划和任务证据
 ```
@@ -130,6 +133,7 @@ specs/                  SDD 规格、计划和任务证据
 - 高影响、低置信或冲突候选进入审核队列，稳定决策和当前状态仍可由 Agent 通过 MCP 主动维护。
 - `save_thread` 是手动摘要兜底，不应重复保存 Hook 已捕获的完整 transcript。
 - Markdown Vault 是 SQLite 的单向物化视图，不解析或回写人工编辑。
+- 投资研究 skill 只编排证据账本、主张审核与 candidate 提交；确认写入沿用 Mira 权限，thesis 状态由核心外领域协议持有。
 
 ## 开发节奏
 
@@ -142,4 +146,4 @@ TDD：写失败测试，确认 RED；最小实现到 GREEN；再重构和扩大�
 
 ## 下一阶段
 
-下一阶段以真实历史批量导入和日常 Hook 会话共同验证使用质量，重点观察失败分布、候选准确率、Briefing 可读性、Vault 审核效率和 Context 预算命中率，再用数据决定检索与审核体验的后续投入。
+下一阶段用 20 题基线和真实 recall audit 样本验证语义召回或重排方案，优先解决当前 5 个语义改写未命中；继续观察候选准确率、Briefing 可读性、Vault 审核效率和 Context 预算命中率。

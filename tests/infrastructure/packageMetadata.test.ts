@@ -12,6 +12,6 @@ describe("package metadata", () => {
 
     expect(packageJson.scripts?.prepare).toContain("tsc");
     expect(packageJson.engines?.node).toBe(">=20.0.0");
-    expect(packageJson.files).toEqual(expect.arrayContaining(["dist/src"]));
+    expect(packageJson.files).toEqual(expect.arrayContaining(["dist/src", "skills"]));
   });
 });
