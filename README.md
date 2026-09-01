@@ -251,7 +251,7 @@ Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关
 
 质量报告在至少 20 条人工标注前返回 `insufficient_data`；达到 20 条后，至少 5 条 receipt 出现 Memory 未进入候选集才返回 `evaluate_hybrid`，否则返回 `keep_fts`。该结果只提供决策证据，不会自动启用 hybrid/vector，也不会修改 Research 或 thesis 状态。
 
-`npm run benchmark:recall` 在内存数据库上运行 20 题可重复召回基线，不读取或修改用户数据库。初始词法检索结果为 `Recall@1 = 0.75`、`Recall@5 = 0.75`、`MRR = 0.75`；5 个语义改写题未命中，用于指导后续检索优化，而不是作为自动写入或发布门禁。
+`npm run benchmark:recall` 在内存数据库上运行 20 题可重复召回基线，不读取或修改用户数据库。初始词法检索结果为 `Recall@1 = 0.75`、`Recall@5 = 0.75`、`MRR = 0.75`；三项指标现在也是 CI 回归下限，用于阻止已知召回能力退化，不代表允许扩大自动写入权限。
 
 `npm run verify:research-pilot` 在临时数据库中重放 Apple FY2024 公开来源案例，覆盖官方来源边界、反驳证据、授权审核、stale 传播、不可变修订、CLI/MCP/UI 一致性，以及不写入 Memory/thesis 的隔离约束。案例材料见 [Apple FY2024 来源笔记](docs/research/apple-fy2024-source-notes.md) 和 [可重放 fixture](examples/research/apple-fy2024-pilot.json)。
 
