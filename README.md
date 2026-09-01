@@ -353,6 +353,7 @@ update_memory
 archive_memory
 get_memory_history
 submit_research_packet
+list_research_cases
 get_research_case
 prepare_research_context
 revise_research_claim

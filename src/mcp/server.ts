@@ -34,6 +34,7 @@ import {
 import {
   authorizeResearch,
   getResearchCaseSnapshot,
+  listResearchCases,
   markResearchEvidenceStale,
   reviewResearchClaim,
   reviseResearchClaim,
@@ -76,6 +77,7 @@ export const MIRA_MCP_TOOL_NAMES = [
   "archive_memory",
   "get_memory_history",
   "submit_research_packet",
+  "list_research_cases",
   "get_research_case",
   "prepare_research_context",
   "revise_research_claim",
@@ -110,6 +112,7 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   archive_memory: "Requires host confirmation policy (disabled by default). Archive an active Memory so it leaves search and Context Bundle results while remaining in auditable history.",
   get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved.",
   submit_research_packet: "Submit one validated draft Research Case with bounded Evidence Items, Claims and explicit links; this never creates Memory or mutates thesis state.",
+  list_research_cases: "List project-scoped Research Cases with stable ids, titles, questions, as-of dates and workflow status so a connected caller can select a case without guessing.",
   get_research_case: "Read one complete project-scoped Research Case snapshot with Source Snapshot metadata, Evidence Verification receipts, Claims, links and append-only review events.",
   prepare_research_context: "Return a read-only evidence-gated Research Context containing only active approved Claims backed by current verified supporting Evidence; draft or stale research remains excluded.",
   revise_research_claim: "Requires host confirmation policy. Create an immutable active successor with explicit Evidence links and supersede the predecessor.",
@@ -290,6 +293,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
       }).strict()).min(1).max(100)
     }).strict()).min(1).max(100)
   },
+  list_research_cases: {},
   get_research_case: {
     caseId: z.string().trim().min(1).max(200)
   },
@@ -570,6 +574,8 @@ function executeMiraTool(
         return getMemoryHistory(db, projectId, stringArg(args, "memoryId"));
       case "submit_research_packet":
         return submitResearchPacket(db, projectId, args as SubmitResearchPacketInput, "mcp");
+      case "list_research_cases":
+        return listResearchCases(db, projectId);
       case "get_research_case":
         return getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"));
       case "prepare_research_context":

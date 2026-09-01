@@ -73,6 +73,7 @@ describe("Mira MCP tools", () => {
       "archive_memory",
       "get_memory_history",
       "submit_research_packet",
+      "list_research_cases",
       "get_research_case",
       "prepare_research_context",
       "revise_research_claim",
@@ -108,6 +109,7 @@ describe("Mira MCP tools", () => {
       "archive_memory",
       "get_memory_history",
       "submit_research_packet",
+      "list_research_cases",
       "get_research_case",
       "prepare_research_context",
       "revise_research_claim",
@@ -194,6 +196,9 @@ describe("Mira MCP tools", () => {
     const submitted = callMiraTool(untrusted, "submit_research_packet", packet) as {
       researchCase: { id: string }; claims: Array<{ id: string }>; evidence: Array<{ id: string }>;
     };
+    expect(callMiraTool(untrusted, "list_research_cases", {})).toEqual([
+      submitted.researchCase
+    ]);
     expect(callMiraTool(untrusted, "prepare_research_context", {
       caseId: submitted.researchCase.id
     })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });

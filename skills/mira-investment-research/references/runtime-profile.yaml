@@ -8,6 +8,7 @@ scope:
 recall:
   project_context: "prepare_context"
   project_context_role: "prior_context_until_source_revalidated"
+  case_discovery: "list_research_cases"
   case_context: "prepare_research_context"
   case_context_when: "existing_case_id_available"
   case_context_role: "approved_prior_research_until_evidence_state_changes"
