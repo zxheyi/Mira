@@ -177,6 +177,10 @@ mira briefing rebuild
 mira briefing history --limit 20
 mira context bundle --query "Mira"
 mira context bundle --max-tokens 1000
+mira context prepare --query "local database"
+mira context recalls
+mira context feedback --recall recall_123 --outcome missed --missing-memory memory_456 --reason "Expected Memory was absent"
+mira context quality
 mira vault sync
 mira vault sync --out ./notes/mira
 mira export --format json --out ./export
@@ -242,6 +246,10 @@ mira context bundle --max-tokens 1000
 Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关 Warning Memory、相关长期 Memory。Briefing 全文单独读取，避免再次混入不相关记忆。显式 query 下警告也必须匹配；支持中文子串检索。超长记忆整条跳过，并继续尝试后续短记忆。
 
 `--max-characters` 与 `--max-tokens` 可同时使用；后者使用保守的 UTF-8 字节数上界（适用于 byte-level tokenizer），不是模型专属 token 实测值。`mira context prepare` / MCP `prepare_context` 返回 `{markdown, receipt}`；原 `context bundle` 保持 Markdown 输出。默认记录候选、完整注入、预算省略的记忆 ID、项目/任务、输出 hash 和耗时；用 `mira context recalls` / MCP `list_recall_events` 查询。注入不等于成功使用。`context prepare --preview` / MCP `preview: true` 不记录召回，也不重建 Briefing。
+
+只有用户明确评价某次通用 Memory 召回时，才使用 `mira context feedback` / MCP `record_recall_feedback` 绑定 Recall Receipt 与 relevant、missing、irrelevant、corrected Memory ID；Agent 不能根据调用成功自动标记 useful。反馈中的 `correctedMemoryIds` 只是用户标注；实际纠正须在 `memory update` / `update_memory` 中传入 `recallId`，由不可变 Memory 事件形成 `confirmedCorrectionMemoryIds`。用 `mira context quality` / `get_recall_quality_report` 区分真实检索缺失、排序淘汰、预算淘汰和 Memory 质量问题。
+
+质量报告在至少 20 条人工标注前返回 `insufficient_data`；达到 20 条后，至少 5 条 receipt 出现 Memory 未进入候选集才返回 `evaluate_hybrid`，否则返回 `keep_fts`。该结果只提供决策证据，不会自动启用 hybrid/vector，也不会修改 Research 或 thesis 状态。
 
 `npm run benchmark:recall` 在内存数据库上运行 20 题可重复召回基线，不读取或修改用户数据库。初始词法检索结果为 `Recall@1 = 0.75`、`Recall@5 = 0.75`、`MRR = 0.75`；5 个语义改写题未命中，用于指导后续检索优化，而不是作为自动写入或发布门禁。
 
@@ -339,6 +347,8 @@ after_turn
 get_context_bundle
 prepare_context
 list_recall_events
+record_recall_feedback
+get_recall_quality_report
 get_project_briefing
 rebuild_project_briefing
 search_memory
@@ -368,6 +378,8 @@ export_research_case
 
 MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
 
+`record_recall_feedback` 只接受宿主已确认的用户反馈；工具参数不能自授予权限。其质量报告只评估通用 Memory 检索，Research Context 的 case-scoped receipt 继续单独审计。
+
 `prepare_research_context` 是对研究事实只读的独立研究上下文出口：它只返回 active、approved 且由 current、verified supporting Evidence 支撑的 Claim。draft、未验证或 stale 研究不会进入结果；该工具不授予审核权，也不修改研究事实、Memory 或 thesis；每次 MCP 调用会追加一条不含 Markdown 正文的 recall receipt，可通过 `list_research_context_recalls` 审计。
 
 ## 项目文档
@@ -390,6 +402,7 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 5 Vault 布局契约](specs/018-markdown-vault/contracts/vault-layout.md)
 - [历史会话批量导入 Spec](specs/019-history-bulk-import/spec.md)
 - [召回质量基线 Spec](specs/026-recall-quality-baseline/spec.md)
+- [召回反馈与检索升级证据 Spec](specs/029-recall-feedback/spec.md)
 - [Mira Investment Research Skill](skills/mira-investment-research/SKILL.md)
 - [历史会话批量导入设计](docs/superpowers/specs/2026-07-20-mira-history-bulk-import-design.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)

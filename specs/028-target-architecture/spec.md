@@ -36,7 +36,8 @@ Codex / Claude Code / Cursor / CLI / MCP / Viewer
 ## 实现结果
 
 - 六类入口均通过可发现的 Host Adapter Registry 和 Unified Turn Lifecycle Port；Descriptor 同时区分 Source Host 与 Transport。
-- schema v13 已落地 Lifecycle Session/Turn、Capture Record、Domain Event/Outbox、Source Snapshot、Evidence Verification 和 handler receipt。
+- schema v14 已落地 Lifecycle Session/Turn、Capture Record、Domain Event/Outbox、Source Snapshot、Evidence Verification、handler receipt 和 host-confirmed Recall Feedback。
+- 通用 Memory Recall Receipt 可绑定显式用户反馈和真实纠正事件，并区分 retrieval、ranking、budget 与 Memory quality；Research Context receipt 保持独立。
 - Research approve gate 要求 current verified supporting Evidence；结构化反证处置、Snapshot stale 级联和旧 Claim 重开均已实现。
 - Briefing 只展示 Research 状态摘要；独立 Research Context 只投影 active approved Claim 和 current verified support，并通过 CLI、Viewer 与 MCP `prepare_research_context` 暴露；MCP 对研究事实只读并追加不含正文的 recall receipt，通用 `prepareContext` 不自动混入研究结论。
 - Research Export、Markdown Vault 与 Viewer 公开 Snapshot 元数据、hash 和 Verification receipt，但不复制 Snapshot 正文。
@@ -206,6 +207,7 @@ Claim approve 必须满足 Research Case v0 条件，并增加：
 
 - v11→v12：增加 Lifecycle Session、Turn、Capture Record、Domain Event 和 Outbox；保留现有 Thread、Memory、jobs、recall 和 Research 数据。
 - v12→v13：增加 Source Snapshot 与 Evidence Verification，并把旧 Evidence 标记为 pending verification。
+- v13→v14：增加 project-scoped Recall Feedback；保留 Recall Receipt、Memory、生命周期事件与 Research 数据。
 - 旧 Hook 命令保持可用，但内部改为 Adapter + Lifecycle Port。
 - `buildContextBundle` 保持兼容 wrapper，内部继续委托 `prepareContext`。
 - 现有 Research packet v0 输入在过渡期可读取；新提交必须包含 snapshot binding 或先注册 Snapshot。
@@ -219,10 +221,10 @@ Claim approve 必须满足 Research Case v0 条件，并增加：
 - Outbox seam：同事务、claim lease、重试、恢复、幂等完成、脱敏错误。
 - Surface seam：Codex/Claude/Cursor/CLI/MCP/UI 通过 Registry/Lifecycle，且 CLI/MCP snapshot 一致。
 - Projection seam：Briefing/Context/Vault/Viewer/Export 读取同一 SQLite 状态，派生输出不可回写事实。
-- Migration：fresh v13、v11→v13 数据保留、旧 Claim 重开、未来版本拒绝。
+- Migration：fresh v14、v13→v14 Recall/Memory 数据保留、旧 Claim 重开、未来版本拒绝。
 - Runtime：真实临时项目完成 `beforeTurn → afterTurn → outbox drain → candidate review → source snapshot → evidence verify → claim review → export`。
 - 全量：`npm test`、`npm run build`、`git diff --check`，Viewer 需要真实浏览器宽/窄屏与零 JavaScript error。
 
 ## 完成判定
 
-目标架构只有在上述所有 seam 均由当前 revision 的测试或 runtime artifact 证明、六类 Host 可发现、v13 migration 可重复、真实研究案例通过新 Evidence Verification、且所有派生读取一致时才算完成。目录、类型声明或未接入的适配器不计为完成。
+目标架构只有在上述所有 seam 均由当前 revision 的测试或 runtime artifact 证明、六类 Host 可发现、v14 migration 可重复、真实研究案例通过新 Evidence Verification、且所有派生读取一致时才算完成。目录、类型声明或未接入的适配器不计为完成。

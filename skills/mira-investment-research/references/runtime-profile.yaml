@@ -12,6 +12,11 @@ recall:
   case_context: "prepare_research_context"
   case_context_when: "existing_case_id_available"
   case_context_role: "approved_prior_research_until_evidence_state_changes"
+  generic_recall_feedback: "record_recall_feedback"
+  retrieval_quality_report: "get_recall_quality_report"
+  automatic_feedback: "disabled"
+  minimum_labeled_recalls: 20
+  minimum_retrieval_miss_records: 5
 capture:
   after_research: "hook_or_save_thread_fallback"
 persistence:

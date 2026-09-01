@@ -9,6 +9,14 @@ import {
 import { buildContextBundle } from "../context/contextBundle.js";
 import { prepareContext } from "../context/contextPreparation.js";
 import { listRecallEvents } from "../context/recallAuditStore.js";
+import {
+  authorizeRecallFeedback,
+  getRecallQualityReport,
+  recordRecallFeedback,
+  RECALL_FEEDBACK_OUTCOMES,
+  type RecallFeedbackAuthority,
+  type RecordRecallFeedbackInput
+} from "../context/recallFeedbackStore.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import {
@@ -64,6 +72,8 @@ export const MIRA_MCP_TOOL_NAMES = [
   "get_context_bundle",
   "prepare_context",
   "list_recall_events",
+  "record_recall_feedback",
+  "get_recall_quality_report",
   "get_project_briefing",
   "rebuild_project_briefing",
   "search_memory",
@@ -100,6 +110,8 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   get_context_bundle: "Use at session start to return one concise Markdown string, not JSON, containing working memory, the latest Project Briefing metadata, and query-relevant memories with an audited receipt.",
   prepare_context: "Prepare bounded context and return { markdown, receipt } with candidate, injected and omitted memory IDs. Preview mode records neither recall nor Briefing writes.",
   list_recall_events: "Inspect recent context injection receipts for the bound project and optional task; receipt means injected, not proven useful.",
+  record_recall_feedback: "Requires host confirmation policy. Label one recorded generic Memory recall with explicit relevant, missing, irrelevant and corrected Memory ids; never infer usefulness from tool success.",
+  get_recall_quality_report: "Read project-scoped Recall Feedback attribution and the evidence threshold for keeping FTS or evaluating hybrid retrieval; this never changes retrieval configuration.",
   get_project_briefing: "Read or deterministically refresh the bound project's latest derived Briefing; returns { briefing } with Markdown, version, provenance ids, stale state, and size estimates.",
   rebuild_project_briefing: "Force one deterministic rebuild of the bound project's derived Briefing; returns { briefing } while preserving every earlier complete or failed version for audit.",
   search_memory: "Use for targeted historical lookups; defaults to keyword OR matching, supports explicit phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
@@ -173,6 +185,16 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     taskId: z.string().trim().min(1).max(500).optional(),
     limit: z.number().int().min(1).max(100).optional()
   },
+  record_recall_feedback: {
+    recallId: z.string().trim().min(1).max(500),
+    outcome: z.enum(RECALL_FEEDBACK_OUTCOMES),
+    relevantMemoryIds: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+    missingMemoryIds: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+    irrelevantMemoryIds: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+    correctedMemoryIds: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+    reason: z.string().trim().min(1).max(2000)
+  },
+  get_recall_quality_report: {},
   get_context_bundle: {
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
@@ -248,7 +270,8 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     confidence: z.number().min(0).max(1).optional(),
     importance: z.number().int().min(1).max(10).optional(),
     source: z.string().trim().min(1).max(500).optional(),
-    reason: z.string().trim().min(1).max(1_000).optional()
+    reason: z.string().trim().min(1).max(1_000).optional(),
+    recallId: z.string().trim().min(1).max(500).optional()
   },
   archive_memory: {
     memoryId: z.string().trim().min(1).max(500),
@@ -349,6 +372,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 type ToolSession = {
   curationAuthority?: CurationAuthority;
+  recallFeedbackAuthority?: RecallFeedbackAuthority;
   researchAuthority?: ResearchAuthority;
   taskId?: string;
   db: Database.Database;
@@ -434,7 +458,8 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
       projectId: project.id,
       taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
       curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
-      researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy)
+      researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
+      recallFeedbackAuthority: options.confirmationPolicy && authorizeRecallFeedback(db, project.id, options.confirmationPolicy)
     });
   } finally {
     if (!options.db) {
@@ -484,6 +509,18 @@ function executeMiraTool(
         });
       case "list_recall_events":
         return listRecallEvents(db, projectId, {taskId, limit: numberArg(args, "limit", 20)});
+      case "record_recall_feedback":
+        return recordRecallFeedback(db, projectId, {
+          recallId:stringArg(args, "recallId"),
+          outcome:stringArg(args, "outcome"),
+          relevantMemoryIds:args.relevantMemoryIds,
+          missingMemoryIds:args.missingMemoryIds,
+          irrelevantMemoryIds:args.irrelevantMemoryIds,
+          correctedMemoryIds:args.correctedMemoryIds,
+          reason:stringArg(args, "reason")
+        } as RecordRecallFeedbackInput, session.recallFeedbackAuthority);
+      case "get_recall_quality_report":
+        return getRecallQualityReport(db, projectId);
       case "get_context_bundle":
         return buildContextBundle(db, projectId, {
           taskId,
@@ -575,7 +612,8 @@ function executeMiraTool(
           importance: typeof args.importance === "number" ? args.importance : undefined,
           source: optionalStringArg(args, "source"),
           actor: "mcp",
-          reason: optionalStringArg(args, "reason")
+          reason: optionalStringArg(args, "reason"),
+          recallId: optionalStringArg(args, "recallId")
         }}, session.curationAuthority);
       case "archive_memory":
         return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")}, session.curationAuthority);
@@ -707,7 +745,8 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     projectId: project.id,
     taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
     curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
-    researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy)
+    researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
+    recallFeedbackAuthority: options.confirmationPolicy && authorizeRecallFeedback(db, project.id, options.confirmationPolicy)
   };
   const originalClose = server.close.bind(server);
   server.close = async () => {

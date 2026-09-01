@@ -15,7 +15,8 @@ description: Use for investment research in Mira when claims or thesis implicati
 4. 建立主张矩阵。为每条主张分配 `C<n>`，绑定支持证据和反证，写明时间边界、失效条件、状态与置信度。置信度只表达判断，不替代证据。
 5. 形成审核包。输出核心结论、证据账本、主张矩阵、反证、未决问题和 thesis 影响建议。生成前读取 [研究协议](references/research-protocol.md)。
 6. 持久化。临时假设与下一步写入 task-scoped Working Memory；稳定方法或来源事实通过 `submit_memory_candidates` 提交 candidate。投资结论保留在审核包中，经过领域审核后再由外部 thesis 协议处理。持久化前读取 [运行配置](references/runtime-profile.yaml)。
-7. 收口。更新当前状态、阻塞和下一步。Hook 可用时由 Hook 捕获会话；Hook 不可用时才使用 `save_thread` 保存可审查的来源摘要或关键原文。
+7. 标注召回。只有用户明确评价通用 Memory 召回时，才调用 `record_recall_feedback` 并绑定原始 `recallId`；实际纠正 Memory 时把该 `recallId` 传给 `update_memory`。不能根据工具调用成功推断 `useful`，也不能替用户补造 missing、irrelevant 或 corrected Memory ID。需要判断检索升级证据时调用 `get_recall_quality_report`。
+8. 收口。更新当前状态、阻塞和下一步。Hook 可用时由 Hook 捕获会话；Hook 不可用时才使用 `save_thread` 保存可审查的来源摘要或关键原文。
 
 Mira 工具不可用时仍完成研究审核包，把 recall、capture 和 persistence 标为 `NOT_RUN`；保持现有安装与权限不变。
 

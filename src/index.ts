@@ -13,6 +13,13 @@ import {
 import { buildContextBundle } from "./context/contextBundle.js";
 import { prepareContext } from "./context/contextPreparation.js";
 import { listRecallEvents } from "./context/recallAuditStore.js";
+import {
+  authorizeRecallFeedback,
+  getRecallQualityReport,
+  recordRecallFeedback,
+  RECALL_FEEDBACK_OUTCOMES,
+  type RecallFeedbackOutcome
+} from "./context/recallFeedbackStore.js";
 import { openDatabase } from "./db/client.js";
 import { runDoctor } from "./doctor/doctor.js";
 import { migrate } from "./db/schema.js";
@@ -133,6 +140,13 @@ function cliResearchAuthority(session: ProjectSession) {
   return authorizeResearch(session.db, session.project.id, {
     actor: "cli",
     reason: "Explicit local CLI research operation"
+  });
+}
+
+function cliRecallFeedbackAuthority(session: ProjectSession) {
+  return authorizeRecallFeedback(session.db, session.project.id, {
+    actor:"cli",
+    reason:"Explicit local CLI recall feedback"
   });
 }
 
@@ -286,6 +300,13 @@ function requireMemoryKind(kind: string): MemoryKind {
     throw new Error(`Memory kind is unsupported: ${kind}. Supported kinds: ${MEMORY_KINDS.join(", ")}`);
   }
   return kind as MemoryKind;
+}
+
+function requireRecallFeedbackOutcome(outcome: string): RecallFeedbackOutcome {
+  if (!(RECALL_FEEDBACK_OUTCOMES as readonly string[]).includes(outcome)) {
+    throw new Error(`Recall feedback outcome is unsupported: ${outcome}. Supported outcomes: ${RECALL_FEEDBACK_OUTCOMES.join(", ")}`);
+  }
+  return outcome as RecallFeedbackOutcome;
 }
 
 function requireWorkingMemoryKind(kind: string): WorkingMemoryKind {
@@ -688,9 +709,10 @@ memory
   .option("--importance <number>", "Successor importance")
   .option("--source <source>", "Successor source")
   .option("--reason <reason>", "Update reason")
+  .option("--recall <id>", "Recall Receipt that injected the predecessor")
   .action(async (options: {
     id: string; content: string; title?: string; kind?: string; confidence?: string;
-    importance?: string; source?: string; reason?: string;
+    importance?: string; source?: string; reason?: string; recall?: string;
   }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(curateMemory(session.db, {operation: "correct", input: {
@@ -703,7 +725,8 @@ memory
         importance: options.importance ? numberInRange(options.importance, 1, 10, "importance") : undefined,
         source: options.source,
         actor: "cli",
-        reason: options.reason
+        reason: options.reason,
+        recallId: options.recall
       }}, cliAuthority(session)));
     });
   });
@@ -976,6 +999,40 @@ context.command("recalls")
       printJson(listRecallEvents(session.db, session.project.id, {
         taskId: selectedTask(session.projectRoot), limit: numberInRange(options.limit, 1, 100, "limit")
       }));
+    });
+  });
+
+context.command("feedback")
+  .description("Record explicit user feedback for one generic Memory Recall Receipt")
+  .requiredOption("--recall <id>", "Recall Receipt id")
+  .requiredOption("--outcome <outcome>", "useful, partial, missed, or incorrect")
+  .option("--relevant-memory <id>", "Injected Memory that helped; repeatable", collectOption, [])
+  .option("--missing-memory <id>", "Expected Memory that was absent; repeatable", collectOption, [])
+  .option("--irrelevant-memory <id>", "Injected Memory that was irrelevant; repeatable", collectOption, [])
+  .option("--corrected-memory <id>", "Injected Memory the user corrected; repeatable", collectOption, [])
+  .requiredOption("--reason <reason>", "User feedback reason")
+  .action(async (options: {
+    recall:string;outcome:string;relevantMemory:string[];missingMemory:string[];
+    irrelevantMemory:string[];correctedMemory:string[];reason:string;
+  }) => {
+    await withProject(program.opts<GlobalOptions>(), session => {
+      printJson(recordRecallFeedback(session.db, session.project.id, {
+        recallId:options.recall,
+        outcome:requireRecallFeedbackOutcome(options.outcome),
+        relevantMemoryIds:options.relevantMemory,
+        missingMemoryIds:options.missingMemory,
+        irrelevantMemoryIds:options.irrelevantMemory,
+        correctedMemoryIds:options.correctedMemory,
+        reason:options.reason
+      }, cliRecallFeedbackAuthority(session)));
+    });
+  });
+
+context.command("quality")
+  .description("Report Recall Feedback causes and retrieval upgrade evidence")
+  .action(async () => {
+    await withProject(program.opts<GlobalOptions>(), session => {
+      printJson(getRecallQualityReport(session.db, session.project.id));
     });
   });
 

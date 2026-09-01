@@ -13,19 +13,20 @@ This document maps every target-architecture requirement to current implementati
 | Source Host and invocation Transport remain distinct | Adapter descriptor `adapterRole`; Turn Domain Events record `sourceHost` and `transport` | MCP test proves `sourceHost=cursor` with `transport=mcp`; lifecycle test proves CLI provenance |
 | Unified `beforeTurn` / `afterTurn` port | `src/lifecycle/turnLifecycle.ts` | `tests/lifecycle/turnLifecycle.test.ts` proves idempotency, conflict rejection, project/Host isolation, Recall/Capture receipts and atomic Outbox creation |
 | Before Turn delegates to Context Orchestrator | `prepareContext` is called only through the lifecycle port for Host turns | lifecycle, CLI, MCP and Viewer tests inspect the returned audited Context Packet |
+| Recall Feedback separates retrieval, ranking, budget and Memory-quality signals | `src/context/recallFeedbackStore.ts`; optional correction `recallId` on immutable Memory events | Context, migration, MCP and CLI tests prove authority, project isolation, exact ID attribution and the 20/5 decision threshold |
 | After Turn captures without granting authority | Capture Record and Thread are stored; only distill/projection Outbox work is requested | lifecycle tests assert no Memory or Candidate is directly confirmed |
 | Project Memory and Candidate / Quarantine remain governed | Existing curation capability tokens and candidate review are reused | `tests/memory/curationService.test.ts`, `tests/distill/candidateService.test.ts`, full runtime acceptance |
 | Investment Research Context is separate from generic memory context | `src/research/researchContext.ts`; Briefing receives only aggregate Research status; MCP delegates to the same projection and appends a body-free Domain Event receipt | Research Context, MCP and stdio tests prove gated inclusion, stale exclusion, exact provenance IDs and output-hash audit |
 | Source Snapshot → Evidence → Claim → Review | `src/research/evidenceVerification.ts`, `src/research/researchService.ts` | evidence and research service tests cover hash, locator, excerpt, as-of, freshness, approval gate, structured contradiction disposition and immutable revision |
 | Snapshot/Evidence staleness propagates | governed Source Snapshot and Evidence stale operations reopen linked Claims and stale current Verification | `tests/research/researchService.test.ts`, CLI Research test |
-| SQLite schema and migration | schema v13 adds Lifecycle, Event/Outbox, Source Snapshot, Verification and handler receipts | `tests/db/schema.test.ts` covers fresh v13, repeated migration, v11/v12 preservation, approved Claim reopening and future-version rejection |
+| SQLite schema and migration | schema v14 adds Recall Feedback after Lifecycle, Event/Outbox, Source Snapshot, Verification and handler receipts | schema tests cover fresh v14, repeated migration, v13 Recall/Memory preservation, approved Claim reopening and future-version rejection |
 | Transactional Event / Outbox | `src/events/domainOutboxStore.ts`, `src/events/outboxRunner.ts`, `src/events/defaultOutboxHandlers.ts` | event tests cover same-transaction writes, lease recovery, stale-worker rejection, exponential retry, sanitization and idempotent effects |
 | Briefing / Context / Vault / Viewer / Export are derived reads | Research summaries in Briefing; separate Research Context; audited Vault pages; Viewer and Export show Snapshot metadata and Verification receipts without Snapshot body | briefing, Research Context, Vault, Viewer and Apple pilot tests |
 | No automatic thesis mutation | Research produces Thesis Impact Proposals only; no thesis/portfolio/trading state writer exists | complete runtime and Apple pilot assert Research creates no Memory or thesis side effect |
 
 ## Executable acceptance
 
-- `npm test`: 67 files, 299 tests.
+- `npm test`: 75 files, 308 tests.
 - `npm run build`: production TypeScript compilation.
 - `npm run verify:target-architecture`: no-network full path from Before Turn through Research export and Vault.
 - `npm run verify:research-pilot`: Apple FY2024 public-source case with 15 Snapshot-bound Evidence Items and eight Claims.

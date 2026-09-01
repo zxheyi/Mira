@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -34,6 +34,7 @@ export function migrate(db: Database.Database): void {
   const requiresV11Setup = existingVersion === undefined || existingVersion < 11;
   const requiresV12Setup = existingVersion === undefined || existingVersion < 12;
   const requiresV13Setup = existingVersion === undefined || existingVersion < 13;
+  const requiresV14Setup = existingVersion === undefined || existingVersion < 14;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -772,6 +773,31 @@ export function migrate(db: Database.Database): void {
       );
     `);
   }
+
+  if (requiresV14Setup) db.exec(`
+    create unique index if not exists idx_recall_events_project_id
+      on recall_events(project_id, id);
+    create table if not exists recall_feedback (
+      id text primary key,
+      project_id text not null,
+      recall_event_id text not null,
+      outcome text not null check(outcome in ('useful', 'partial', 'missed', 'incorrect')),
+      relevant_memory_ids text not null check(json_valid(relevant_memory_ids) and json_type(relevant_memory_ids) = 'array'),
+      missing_memory_ids text not null check(json_valid(missing_memory_ids) and json_type(missing_memory_ids) = 'array'),
+      irrelevant_memory_ids text not null check(json_valid(irrelevant_memory_ids) and json_type(irrelevant_memory_ids) = 'array'),
+      corrected_memory_ids text not null check(json_valid(corrected_memory_ids) and json_type(corrected_memory_ids) = 'array'),
+      reason text not null check(length(trim(reason)) between 1 and 2000),
+      actor text not null check(length(trim(actor)) between 1 and 200),
+      authority_reason text not null check(length(trim(authority_reason)) between 1 and 1000),
+      created_at text not null,
+      unique(project_id, recall_event_id),
+      foreign key(project_id) references projects(id) on delete cascade,
+      foreign key(project_id, recall_event_id)
+        references recall_events(project_id, id) on delete cascade
+    );
+    create index if not exists idx_recall_feedback_project_created
+      on recall_feedback(project_id, created_at desc);
+  `);
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");

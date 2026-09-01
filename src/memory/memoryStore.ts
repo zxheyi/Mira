@@ -286,7 +286,7 @@ export function addMemory(db: Database.Database, input: AddMemoryInput): Memory 
 
 export type UpdateMemoryInput = {
   projectId: string; memoryId: string; content: string; title?: string; kind?: MemoryKind;
-  confidence?: number; importance?: number; source?: string; actor: string; reason?: string;
+  confidence?: number; importance?: number; source?: string; actor: string; reason?: string; recallId?: string;
 };
 
 function requireMemoryById(db: Database.Database, projectId: string, memoryId: string): Memory {
@@ -303,6 +303,17 @@ export function updateMemory(db: Database.Database, input: UpdateMemoryInput): M
   return db.transaction(() => {
     const predecessor = requireMemoryById(db, input.projectId, input.memoryId);
     if (predecessor.status !== "active") throw new Error(`Only active Memory can be updated: ${input.memoryId}`);
+    const recallId = input.recallId?.trim();
+    if (input.recallId !== undefined) {
+      if (!recallId || recallId.length > 500) throw new Error("Correction Recall ID must contain 1 to 500 characters");
+      const row = db.prepare("select receipt from recall_events where project_id = ? and id = ?")
+        .get(input.projectId, recallId) as {receipt:string} | undefined;
+      if (!row) throw new Error(`Correction Recall Receipt not found: ${recallId}`);
+      const receipt = JSON.parse(row.receipt) as {injectedMemoryIds?:unknown};
+      if (!Array.isArray(receipt.injectedMemoryIds) || !receipt.injectedMemoryIds.includes(predecessor.id)) {
+        throw new Error(`Correction Memory was not injected by Recall Receipt: ${predecessor.id}`);
+      }
+    }
     const content = input.content.trim();
     if (!content) throw new Error("Updated Memory content is required");
     if (content === predecessor.content) throw new Error("Updated Memory content must be different from its predecessor");
@@ -318,7 +329,7 @@ export function updateMemory(db: Database.Database, input: UpdateMemoryInput): M
       supersedesMemoryId: predecessor.id,
       event: {
         eventType: "updated", actor: input.actor, reason: input.reason,
-        metadata: { predecessorId: predecessor.id }
+        metadata: { predecessorId: predecessor.id, ...(recallId ? {recallId} : {}) }
       }
     }, "active");
     if (successor.id === predecessor.id || successor.supersedesMemoryId !== predecessor.id) {
@@ -331,7 +342,8 @@ export function updateMemory(db: Database.Database, input: UpdateMemoryInput): M
     if (changed.changes !== 1) throw new Error(`Memory changed concurrently: ${predecessor.id}`);
     recordMemoryEvent(db, {
       memoryId: predecessor.id, projectId: predecessor.projectId, eventType: "superseded",
-      actor: input.actor, reason: input.reason, metadata: { successorId: successor.id }
+      actor: input.actor, reason: input.reason,
+      metadata: { successorId: successor.id, ...(recallId ? {recallId} : {}) }
     });
     return successor;
   })();
