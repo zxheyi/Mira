@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -31,6 +31,7 @@ export function migrate(db: Database.Database): void {
   const requiresV8Setup = existingVersion === undefined || existingVersion < 8;
   const requiresV9Setup = existingVersion === undefined || existingVersion < 9;
   const requiresV10Setup = existingVersion === undefined || existingVersion < 10;
+  const requiresV11Setup = existingVersion === undefined || existingVersion < 11;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -473,6 +474,115 @@ export function migrate(db: Database.Database): void {
       created_at text not null
     );
     create index if not exists idx_curation_events_project on curation_events(project_id, created_at desc);
+  `);
+
+  if (requiresV11Setup) db.exec(`
+    create table if not exists research_cases (
+      id text primary key,
+      project_id text not null,
+      title text not null check(length(trim(title)) between 1 and 500),
+      question text not null check(length(trim(question)) between 1 and 2000),
+      as_of_date text not null,
+      status text not null check(status in ('draft', 'in_review', 'completed', 'archived')),
+      created_at text not null,
+      updated_at text not null,
+      unique(project_id, id),
+      foreign key(project_id) references projects(id) on delete cascade
+    );
+    create index if not exists idx_research_cases_project_updated
+      on research_cases(project_id, updated_at desc);
+
+    create table if not exists research_evidence (
+      id text primary key,
+      project_id text not null,
+      case_id text not null,
+      source_type text not null check(source_type in (
+        'regulatory_filing', 'company_material', 'market_data',
+        'research_paper', 'secondary_analysis', 'other'
+      )),
+      source_uri text not null check(length(trim(source_uri)) between 1 and 4000),
+      source_title text not null check(length(trim(source_title)) between 1 and 1000),
+      locator text not null check(length(trim(locator)) between 1 and 1000),
+      excerpt text not null check(length(trim(excerpt)) between 1 and 8000),
+      published_at text,
+      accessed_at text not null,
+      valid_through text,
+      content_hash text not null,
+      state text not null check(state in ('current', 'stale', 'archived')),
+      created_at text not null,
+      updated_at text not null,
+      unique(project_id, case_id, id),
+      foreign key(project_id, case_id) references research_cases(project_id, id) on delete cascade
+    );
+    create index if not exists idx_research_evidence_case
+      on research_evidence(project_id, case_id, created_at);
+
+    create table if not exists research_claims (
+      id text primary key,
+      project_id text not null,
+      case_id text not null,
+      statement text not null check(length(trim(statement)) between 1 and 4000),
+      evidence_status text not null check(evidence_status in (
+        'observed', 'supported', 'contested', 'unsupported', 'rejected'
+      )),
+      review_status text not null check(review_status in (
+        'pending', 'approved', 'rejected', 'changes_requested'
+      )),
+      confidence real not null check(confidence >= 0 and confidence <= 1),
+      thesis_impact text not null check(thesis_impact in (
+        'none', 'watch', 'strengthen', 'weaken', 'invalidate'
+      )),
+      invalidation_conditions text not null check(length(trim(invalidation_conditions)) between 1 and 4000),
+      status text not null check(status in ('active', 'superseded')),
+      supersedes_claim_id text,
+      created_at text not null,
+      updated_at text not null,
+      unique(project_id, case_id, id),
+      foreign key(project_id, case_id) references research_cases(project_id, id) on delete cascade,
+      foreign key(project_id, case_id, supersedes_claim_id)
+        references research_claims(project_id, case_id, id) on delete restrict
+    );
+    create index if not exists idx_research_claims_case
+      on research_claims(project_id, case_id, status, created_at);
+    create unique index if not exists idx_research_claims_single_successor
+      on research_claims(supersedes_claim_id)
+      where supersedes_claim_id is not null;
+
+    create table if not exists research_claim_evidence (
+      project_id text not null,
+      case_id text not null,
+      claim_id text not null,
+      evidence_id text not null,
+      relation text not null check(relation in ('supports', 'contradicts', 'contextual')),
+      rationale text not null check(length(trim(rationale)) between 1 and 2000),
+      primary key(claim_id, evidence_id, relation),
+      foreign key(project_id, case_id, claim_id)
+        references research_claims(project_id, case_id, id) on delete cascade,
+      foreign key(project_id, case_id, evidence_id)
+        references research_evidence(project_id, case_id, id) on delete cascade
+    );
+    create index if not exists idx_research_claim_evidence_case
+      on research_claim_evidence(project_id, case_id, claim_id);
+
+    create table if not exists research_events (
+      id text primary key,
+      project_id text not null,
+      case_id text not null,
+      claim_id text,
+      evidence_id text,
+      event_type text not null check(event_type in (
+        'packet_submitted', 'claim_revised', 'evidence_marked_stale', 'claim_reviewed'
+      )),
+      receipt text not null check(json_valid(receipt) and json_type(receipt) = 'object'),
+      created_at text not null,
+      foreign key(project_id, case_id) references research_cases(project_id, id) on delete cascade,
+      foreign key(project_id, case_id, claim_id)
+        references research_claims(project_id, case_id, id) on delete cascade,
+      foreign key(project_id, case_id, evidence_id)
+        references research_evidence(project_id, case_id, id) on delete cascade
+    );
+    create index if not exists idx_research_events_case_created
+      on research_events(project_id, case_id, created_at, id);
   `);
 
   const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
