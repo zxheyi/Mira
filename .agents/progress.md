@@ -97,7 +97,8 @@ npm test
 npm run build
 # tsc completed successfully
 
-mira history import --dry-run --root-alias /Users/limaolin/Desktop/AnchorMem
+# 历史 dry-run（路径参数已占位化；复现时替换为实际旧目录）
+mira history import --dry-run --root-alias /old/path/Mira-legacy
 # scanned 487; imported 18; updated 1; skipped 468; failed 0
 # Claude subagent paths 0; real database hash/mtime/size unchanged
 

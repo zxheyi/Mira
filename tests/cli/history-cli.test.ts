@@ -34,7 +34,7 @@ function parseLastJson<T>(stdout: string): T {
 describe("history CLI", () => {
   test("imports Codex and Claude history, writes a report, and lists audit runs", async () => {
     const root = await mkdtemp(join(tmpdir(), "mira-history-cli-"));
-    const oldRoot = join(root, "..", "AnchorMem");
+    const oldRoot = join(root, "..", "Mira-legacy");
     const dbPath = join(root, ".mira", "mira.sqlite");
     const codexHome = await mkdtemp(join(tmpdir(), "mira-history-cli-codex-"));
     const claudeHome = await mkdtemp(join(tmpdir(), "mira-history-cli-claude-"));

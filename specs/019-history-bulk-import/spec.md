@@ -82,5 +82,5 @@ mira history failures [--run <run-id>] [--limit 100]
 - v5 升级到 v6 保留现有数据，并拒绝未来 schema 版本。
 - dry-run 无数据库副作用；重复正式导入得到 `unchanged`。
 - 单文件失败后其余文件继续；失败可通过 CLI 查询。
-- 真实本机 dry-run 可用旧 `AnchorMem` 路径匹配 Mira，且不包含 Claude subagents。
+- 真实本机 dry-run 可用显式旧项目路径别名匹配 Mira，且不包含 Claude subagents。
 - `npm test`、`npm run build`、`git diff --check` 和静态安全审查通过。

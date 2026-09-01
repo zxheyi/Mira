@@ -19,7 +19,7 @@
 - Schema/Audit GREEN：2 个测试文件、13 项测试通过。
 - Bulk Service GREEN：4 个测试文件、17 项测试通过。
 - CLI/Report GREEN：3 项测试通过；首次 dry-run 与 LLM CLI 回归通过。
-- 真实 dry-run：扫描 487 项，18 imported、1 updated、468 skipped、0 failed；旧 AnchorMem 匹配 18 项，Claude subagent 路径 0 项。
+- 真实 dry-run：扫描 487 项，18 imported、1 updated、468 skipped、0 failed；旧项目路径匹配 18 项，Claude subagent 路径 0 项。
 - 无写校验：真实 `.mira/mira.sqlite` 的 SHA-256、mtime 与大小在 dry-run 前后完全一致。
 - 全量：44 个测试文件、212 项测试通过；`npm run build` 与 `git diff --check` 通过。
 - 独立规格审查 Agent 两次运行均未返回结果并已关闭；未将其计为通过证据，改由人工静态安全与数据完整性审查收口。

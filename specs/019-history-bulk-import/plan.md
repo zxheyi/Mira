@@ -32,7 +32,7 @@
 ## TDD 节奏
 
 1. RED/GREEN：共享 Thread identity 和两个 Scanner Adapter。
-2. RED/GREEN：项目匹配与 `AnchorMem -> Mira` 别名。
+2. RED/GREEN：当前 Mira 项目路径匹配与显式旧路径别名。
 3. RED/GREEN：schema v6 和审计 Store。
 4. RED/GREEN：批量服务全部分类、逐项容错、cursor 与 distill。
 5. RED/GREEN：CLI、报告、查询与退出码。

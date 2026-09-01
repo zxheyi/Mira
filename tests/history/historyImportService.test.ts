@@ -46,7 +46,7 @@ async function setup() {
 describe("history import service", () => {
   test("classifies all outcomes and continues after one matched transcript fails", async () => {
     const { root, database, project } = await setup();
-    const oldRoot = join(root, "..", "AnchorMem");
+    const oldRoot = join(root, "..", "Mira-legacy");
     const good = join(root, "01-good.jsonl");
     const alias = join(root, "02-alias.jsonl");
     const malformed = join(root, "03-malformed.jsonl");

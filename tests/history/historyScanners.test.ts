@@ -21,7 +21,7 @@ describe("history scanners", () => {
       { type: "response_item", payload: { role: "user", content: "current body" } }
     ]));
     await writeFile(archived, jsonl([
-      { type: "session_meta", payload: { session_id: "codex-archived", cwd: "/workspace/AnchorMem" } }
+      { type: "session_meta", payload: { session_id: "codex-archived", cwd: "/workspace/Mira-legacy" } }
     ]));
 
     const candidates = await scanCodexHistory({ codexHome: home });
@@ -29,7 +29,7 @@ describe("history scanners", () => {
     expect(candidates.map((item) => item.filePath)).toEqual([archived, current].sort());
     expect(candidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ agent: "codex", sessionId: "codex-current", cwd: "/workspace/Mira" }),
-      expect.objectContaining({ agent: "codex", sessionId: "codex-archived", cwd: "/workspace/AnchorMem" })
+      expect.objectContaining({ agent: "codex", sessionId: "codex-archived", cwd: "/workspace/Mira-legacy" })
     ]));
   });
 

@@ -142,8 +142,8 @@ mira import --source codex --path ./codex-session.md
 mira import --source claude-code --path ./claude-session.md --id claude_session_1
 mira import --source claude-code --format jsonl --path ./claude-transcript.jsonl
 mira import --source codex --format jsonl --path ./codex-transcript.jsonl
-mira history import --dry-run --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/AnchorMem
-mira history import --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/AnchorMem --distill --report ./history-import.json
+mira history import --dry-run --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/Mira-legacy
+mira history import --since 2026-07-01 --max-file-size 20 --limit 20 --root-alias /old/path/Mira-legacy --distill --report ./history-import.json
 mira history runs --limit 20
 mira history failures --limit 100
 mira thread save --id thread_1 --title "Session" --source codex --format markdown --text "## Key Decisions\n- Use Mira."
@@ -198,6 +198,8 @@ mira --project-root /path/to/project --db /path/to/.mira/mira.sqlite init
 `mira import` 目前支持 Codex、Claude Code 和通用 Markdown 会话摘要，也支持 Codex / Claude Code 的 JSONL transcript。导入后会保存为 Thread；Markdown 未传 `--title` 时优先使用第一个 H1，没有 H1 时使用文件名。JSONL 会被 normalize 成可读 Markdown 后保存，`rawFormat` 保留为 `jsonl`。
 
 `mira history import` 用于补录当前项目的本机历史会话。它扫描 `$CODEX_HOME/sessions`、`$CODEX_HOME/archived_sessions` 与 `$CLAUDE_CONFIG_DIR/projects`，只导入 cwd 等于当前项目或显式 `--root-alias` 的主会话；不会猜测路径，也不会导入 Claude subagent。重复运行会按稳定 Thread ID 与 SHA-256 指纹分类为 `imported`、`updated`、`unchanged`、`skipped` 或 `failed`。默认不调用 LLM，`--distill` 只为新增或更新 Thread 幂等入队 Provider 任务。
+
+`--root-alias` 示例中的 `/old/path/Mira-legacy` 是旧工作目录占位路径，请替换为历史会话中记录的实际 cwd；该目录无需仍然存在。
 
 容量治理参数会在读取 transcript 正文前生效：`--since YYYY-MM-DD`、`--until YYYY-MM-DD` 按文件 mtime 限定日期范围，`--max-file-size <MB>` 跳过超大文件，`--limit <N>` 只预览或导入前 N 个匹配会话。报告里的 `summary` 会展示匹配数量、匹配字节数、按日期/大小/limit 跳过的数量，以及最多 10 个最大的项目候选文件，方便先估算数据库增长。
 

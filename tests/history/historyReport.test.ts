@@ -11,7 +11,7 @@ function report(): HistoryImportReport {
     dryRun: false,
     projectRoot: "/workspace/Mira",
     agents: ["codex"],
-    rootAliases: ["/workspace/AnchorMem"],
+    rootAliases: ["/workspace/Mira-legacy"],
     status: "completed",
     startedAt: "2026-07-20T00:00:00.000Z",
     finishedAt: "2026-07-20T00:00:01.000Z",

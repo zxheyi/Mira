@@ -30,7 +30,7 @@ describe("history import audit store", () => {
     });
     const active = createHistoryImportRun(database, {
       projectId: project.id, agents: ["codex", "claude-code"],
-      rootAliases: ["/workspace/AnchorMem"], options: { distill: true }
+      rootAliases: ["/workspace/Mira-legacy"], options: { distill: true }
     });
 
     finishHistoryImportRun(database, active.id, {
