@@ -126,7 +126,7 @@ Agent 使用 Mira 的基本习惯：
 
 ## 安装与首次运行
 
-从源码仓库使用时，先安装依赖并构建 CLI：
+从源码仓库使用时，需要 Node.js 24 LTS。先安装依赖并构建 CLI：
 
 ```bash
 npm install

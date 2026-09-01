@@ -10,8 +10,11 @@ describe("package metadata", () => {
       files?: string[];
     };
 
+    const nodeVersion = (await readFile(join(process.cwd(), ".node-version"), "utf8")).trim();
+
     expect(packageJson.scripts?.prepare).toContain("tsc");
-    expect(packageJson.engines?.node).toBe(">=20.0.0");
+    expect(packageJson.engines?.node).toBe(">=24.0.0");
+    expect(nodeVersion).toBe("24");
     expect(packageJson.files).toEqual(expect.arrayContaining(["dist/src", "skills"]));
   });
 });
