@@ -226,6 +226,8 @@ Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关
 
 `--max-characters` 与 `--max-tokens` 可同时使用；后者使用保守的 UTF-8 字节数上界（适用于 byte-level tokenizer），不是模型专属 token 实测值。`mira context prepare` / MCP `prepare_context` 返回 `{markdown, receipt}`；原 `context bundle` 保持 Markdown 输出。默认记录候选、完整注入、预算省略的记忆 ID、项目/任务、输出 hash 和耗时；用 `mira context recalls` / MCP `list_recall_events` 查询。注入不等于成功使用。`context prepare --preview` / MCP `preview: true` 不记录召回，也不重建 Briefing。
 
+`npm run benchmark:recall` 在内存数据库上运行 20 题可重复召回基线，不读取或修改用户数据库。初始词法检索结果为 `Recall@1 = 0.75`、`Recall@5 = 0.75`、`MRR = 0.75`；5 个语义改写题未命中，用于指导后续检索优化，而不是作为自动写入或发布门禁。
+
 `mira vault sync` 默认完整重建 `<project>/.mira/vault/`，也可通过 `--out` 指定相对项目根目录或绝对路径。Vault 包含索引、Project Briefing、Working Memory、每条 Memory、每个 Thread 和待审核候选；全生命周期状态、来源和前驱/后继关系均可追溯。同步先写 staging，再原子替换目标，失败会恢复上一版。SQLite 始终是唯一事实源，Vault 中的手动编辑不会回写，并会在下次同步时被覆盖。为保护项目，输出目标不能是项目根目录、其祖先、`.git` 或 `.mira` 控制目录。
 
 Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动后台 Worker：
@@ -238,7 +240,7 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="optional-api-key"
 ```
 
-只有 `confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson`、`failed_attempt` 或 `constraint` 的候选会自动接受。`decision`、`architecture`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
+只有 `confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson` 或 `failed_attempt` 的候选会自动接受。`decision`、`architecture`、`constraint`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
 
 Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模式，但无法识别所有敏感内容；未命中的完整 Thread 会发送到你配置的 Provider，请只在确认其隐私与数据保留策略后启用。未配置 Provider 时自动捕获保持原行为，Agent MCP 候选通道仍可用。
 
@@ -345,6 +347,7 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Phase 5 Markdown Vault Spec](specs/018-markdown-vault/spec.md)
 - [Phase 5 Vault 布局契约](specs/018-markdown-vault/contracts/vault-layout.md)
 - [历史会话批量导入 Spec](specs/019-history-bulk-import/spec.md)
+- [召回质量基线 Spec](specs/026-recall-quality-baseline/spec.md)
 - [历史会话批量导入设计](docs/superpowers/specs/2026-07-20-mira-history-bulk-import-design.md)
 - [Codex / Claude Code 自动接入指南](docs/agent-config/automatic-integration.md)
 - [Mira Progress](.agents/progress.md)

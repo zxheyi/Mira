@@ -1,6 +1,6 @@
 # Mira Progress
 
-Last updated: 2026-07-20
+Last updated: 2026-09-01
 
 ## Current Status
 
@@ -19,6 +19,9 @@ Phase 3 auditable Memory lifecycle is implemented, independently reviewed, and l
 Phase 4 proactive Project Briefing and Context Planner are implemented, independently reviewed, and locally verified.
 Phase 5 Obsidian-ready Markdown Vault is implemented and locally verified.
 Current-project Codex / Claude Code history bulk import is implemented and locally verified, including a real no-write dry-run.
+Confirmed curation authority, reviewed batch replacement, and atomic session capture/checkpoints are implemented and remotely delivered.
+A copied-database pilot imported 10 bounded real Codex sessions with 0 failures; the repeated run classified all 10 as unchanged while the source database hash stayed unchanged.
+The deterministic 20-case recall baseline is implemented. Initial lexical results are Recall@1 0.75, Recall@5 0.75, and MRR 0.75; all five misses are semantic paraphrases.
 
 Completed:
 
@@ -91,6 +94,16 @@ Completed:
 Latest verified commands:
 
 ```bash
+npm run benchmark:recall
+# 20 cases; Recall@1 0.75; Recall@5 0.75; MRR 0.75
+# five consecutive runs produced identical reports
+
+# copied-database real-history pilot; max file size 5 MB, limit 10, no distill
+mira history import ...
+# first run: imported 10; failed 0
+# repeated run: unchanged 10; failed 0
+# source database SHA-256 unchanged
+
 npm test
 # Test Files 44 passed; Tests 212 passed
 

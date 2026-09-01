@@ -1,0 +1,22 @@
+[
+  {"id":"source-of-truth","question":"SQLite 事实源","memory":{"title":"SQLite fact source","kind":"architecture","content":"SQLite is Mira's single source of truth; Briefing and Vault are derived outputs."}},
+  {"id":"adapter-role","question":"接入适配器 事件格式","memory":{"title":"Adapter responsibility","kind":"architecture","content":"接入适配器只转换宿主事件和数据格式，不决定记忆可信度。"}},
+  {"id":"context-interface","question":"上下文接口 去重 预算","memory":{"title":"Unified context preparation","kind":"architecture","content":"统一上下文接口负责作用域筛选、检索、去重、预算和召回记录。"}},
+  {"id":"candidate-review","question":"Candidate review lifecycle 正式记忆","memory":{"title":"Candidate review lifecycle","kind":"decision","content":"自动抽取先生成候选，来源校验和审核通过后才成为正式记忆。"}},
+  {"id":"derived-output","question":"派生输出 第二套事实源","memory":{"title":"Derived output authority","kind":"constraint","content":"派生输出不能成为第二套事实源，也不能绕过审核修改正式记忆。"}},
+  {"id":"important-review","question":"架构 决策 约束 人工审核","memory":{"title":"Important candidates require review","kind":"constraint","content":"架构、决策和约束候选即使证据逐字匹配且置信度为一，也必须人工审核。"}},
+  {"id":"curation-authority","question":"confirmed curation authority","memory":{"title":"Confirmed curation authority","kind":"architecture","content":"Confirmed curation requires host-granted project authority and records the actor and reason."}},
+  {"id":"recall-receipt","question":"recall receipt injected IDs","memory":{"title":"Recall audit receipt","kind":"fact","content":"A recall receipt records candidate IDs, fully injected IDs, dropped reasons, output hash, budget, and latency."}},
+  {"id":"capture-checkpoint","question":"checkpoint 原子事务","memory":{"title":"Session capture checkpoint","kind":"architecture","content":"Thread persistence and capture checkpoint updates share one atomic SQLite transaction."}},
+  {"id":"history-alias","question":"root alias 历史 cwd","memory":{"title":"Historical root alias","kind":"fact","content":"History import matches the current project root or an explicit root alias recorded as the historical cwd."}},
+  {"id":"batch-replacement","question":"replace thread archive omitted","memory":{"title":"Reviewed batch replacement","kind":"decision","content":"replace_thread preserves exact memories, creates immutable successors, and archives omitted managed entries."}},
+  {"id":"task-isolation","question":"task working memory isolation","memory":{"title":"Task-scoped working memory","kind":"architecture","content":"A task ID isolates transient Working Memory while durable project memories remain shared."}},
+  {"id":"briefing-rebuild","question":"Project Briefing stale rebuild","memory":{"title":"Project Briefing lifecycle","kind":"fact","content":"Project Briefing is a derived versioned view that becomes stale and rebuilds from SQLite facts."}},
+  {"id":"vault-materialization","question":"Vault 单向物化视图","memory":{"title":"Vault materialization","kind":"constraint","content":"Markdown Vault 是 SQLite 的单向物化视图，不解析或回写人工编辑。"}},
+  {"id":"audit-privacy","question":"敏感信息 transcript body audit","memory":{"title":"Audit privacy","kind":"constraint","content":"审计记录会过滤敏感信息，并且不复制 transcript body 或正式记忆正文。"}},
+  {"id":"low-risk-autoaccept","question":"机器摘要怎样免审转正","memory":{"title":"Low-risk automatic acceptance","kind":"decision","content":"低风险、逐字证据绑定且高置信的普通候选可以按策略自动接受。"}},
+  {"id":"injection-not-use","question":"上下文出现等于被模型采用吗","memory":{"title":"Injection is not successful use","kind":"lesson","content":"召回审计只能证明 Memory 被完整注入上下文，不能证明模型成功使用。"}},
+  {"id":"stale-transcript","question":"会话文件时间倒退会怎样","memory":{"title":"Stale transcript protection","kind":"constraint","content":"同一路径的 transcript 修改时间早于持久化 checkpoint 时，捕获会以 stale input 拒绝。"}},
+  {"id":"evidence-gate","question":"投资研究结论怎么防止模型自信污染","memory":{"title":"Evidence-gated research claim","kind":"constraint","content":"投资研究采用 evidence to claim to review 流程，结论必须由可追溯证据约束。"}},
+  {"id":"thesis-layer","question":"研究观点应在哪一层变更","memory":{"title":"Thesis mutation layer","kind":"architecture","content":"Thesis 状态变更位于 Mira 核心记忆层之上的领域研究协议，由审核授权执行。"}}
+]
