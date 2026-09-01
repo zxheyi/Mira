@@ -67,7 +67,13 @@ describe("Mira MCP tools", () => {
       "get_memory",
       "update_memory",
       "archive_memory",
-      "get_memory_history"
+      "get_memory_history",
+      "submit_research_packet",
+      "get_research_case",
+      "revise_research_claim",
+      "mark_research_evidence_stale",
+      "review_research_claim",
+      "export_research_case"
     ]);
     expect(created.server).toBeDefined();
   });
@@ -91,7 +97,13 @@ describe("Mira MCP tools", () => {
       "get_memory",
       "update_memory",
       "archive_memory",
-      "get_memory_history"
+      "get_memory_history",
+      "submit_research_packet",
+      "get_research_case",
+      "revise_research_claim",
+      "mark_research_evidence_stale",
+      "review_research_claim",
+      "export_research_case"
     ]);
 
     for (const [toolName, description] of Object.entries(MIRA_MCP_TOOL_DESCRIPTIONS)) {
@@ -99,6 +111,72 @@ describe("Mira MCP tools", () => {
       expect(description).not.toBe(`Mira ${toolName} tool`);
       expect(description).not.toMatch(/placeholder/i);
     }
+  });
+
+  test("research MCP keeps draft access open and governed operations host-authorized", async () => {
+    const trusted = await setupMcpOptions();
+    const untrusted = { ...trusted, confirmationPolicy: undefined };
+    const packet = {
+      case: { title: "MCP Research", question: "What changed?", asOfDate: "2026-09-01" },
+      evidence: [{
+        key: "E1", sourceType: "regulatory_filing",
+        sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
+        excerpt: "Revenue increased.", accessedAt: "2026-09-01"
+      }],
+      claims: [{
+        key: "C1", statement: "Revenue increased.", evidenceStatus: "supported", confidence: 0.8,
+        thesisImpact: "watch", invalidationConditions: "A later filing reports a decline.",
+        links: [{ evidenceKey: "E1", relation: "supports", rationale: "Direct observation." }]
+      }]
+    };
+    const submitted = callMiraTool(untrusted, "submit_research_packet", packet) as {
+      researchCase: { id: string }; claims: Array<{ id: string }>; evidence: Array<{ id: string }>;
+    };
+    expect(() => callMiraTool(untrusted, "review_research_claim", {
+      claimId: submitted.claims[0].id, decision: "approve", reason: "Forged"
+    })).toThrow(/authority/i);
+    expect(() => callMiraTool(untrusted, "review_research_claim", {
+      claimId: submitted.claims[0].id, decision: "approve", reason: "Forged",
+      confirmationPolicy: trusted.confirmationPolicy
+    })).toThrow(/Invalid MCP arguments/);
+
+    const reviewed = callMiraTool(trusted, "review_research_claim", {
+      claimId: submitted.claims[0].id, decision: "approve", reason: "Checked primary source."
+    }) as { researchCase: { status: string } };
+    expect(reviewed.researchCase.status).toBe("completed");
+    expect(callMiraTool(untrusted, "get_research_case", {
+      caseId: submitted.researchCase.id
+    })).toEqual(reviewed);
+    const stale = callMiraTool(trusted, "mark_research_evidence_stale", {
+      evidenceId: submitted.evidence[0].id, reason: "Superseded by a later source."
+    }) as { claims: Array<{ reviewStatus: string }> };
+    expect(stale.claims[0].reviewStatus).toBe("changes_requested");
+    expect(() => callMiraTool(untrusted, "revise_research_claim", {
+      claimId: submitted.claims[0].id,
+      statement: "Revenue growth needs revalidation.",
+      evidenceStatus: "contested",
+      confidence: 0.5,
+      thesisImpact: "watch",
+      invalidationConditions: "A current filing confirms the observation.",
+      links: [{ evidenceId: submitted.evidence[0].id, relation: "contextual", rationale: "Historical basis." }],
+      reason: "Source became stale."
+    })).toThrow(/authority/i);
+    const revised = callMiraTool(trusted, "revise_research_claim", {
+      claimId: submitted.claims[0].id,
+      statement: "Revenue growth needs revalidation.",
+      evidenceStatus: "contested",
+      confidence: 0.5,
+      thesisImpact: "watch",
+      invalidationConditions: "A current filing confirms the observation.",
+      links: [{ evidenceId: submitted.evidence[0].id, relation: "contextual", rationale: "Historical basis." }],
+      reason: "Source became stale."
+    }) as { claims: Array<{ statement: string; status: string }> };
+    expect(revised.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ statement: "Revenue growth needs revalidation.", status: "active" })
+    ]));
+    expect(callMiraTool(untrusted, "export_research_case", {
+      caseId: submitted.researchCase.id
+    })).toContain("Revenue growth needs revalidation.");
   });
 
 

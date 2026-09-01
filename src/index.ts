@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import Database from "better-sqlite3";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -87,6 +87,19 @@ import {
 } from "./workingMemory/workingMemoryStore.js";
 import { syncMarkdownVault } from "./vault/markdownVault.js";
 import { startViewerServer } from "./ui/viewerServer.js";
+import {
+  authorizeResearch,
+  getResearchCaseSnapshot,
+  listResearchCases,
+  markResearchEvidenceStale,
+  reviewResearchClaim,
+  reviseResearchClaim,
+  submitResearchPacket,
+  type ResearchReviewDecision,
+  type ReviseResearchClaimInput,
+  type SubmitResearchPacketInput
+} from "./research/researchService.js";
+import { renderResearchCaseMarkdown } from "./research/researchExport.js";
 
 type GlobalOptions = {
   db?: string;
@@ -105,6 +118,13 @@ const program = new Command();
 
 function cliAuthority(session: ProjectSession) {
   return authorizeCuration(session.db, session.project.id, {actor: "cli", reason: "Explicit local CLI memory operation"});
+}
+
+function cliResearchAuthority(session: ProjectSession) {
+  return authorizeResearch(session.db, session.project.id, {
+    actor: "cli",
+    reason: "Explicit local CLI research operation"
+  });
 }
 
 function printJson(value: unknown): void {
@@ -303,6 +323,13 @@ function requireCandidateStatus(status: string): CandidateStatus {
 function requireReviewDecision(decision: string): "accept" | "reject" {
   if (decision !== "accept" && decision !== "reject") {
     throw new Error("Candidate review decision must be accept or reject");
+  }
+  return decision;
+}
+
+function requireResearchReviewDecision(decision: string): ResearchReviewDecision {
+  if (decision !== "approve" && decision !== "reject" && decision !== "request_changes") {
+    throw new Error("Research review decision must be approve, reject, or request_changes");
   }
   return decision;
 }
@@ -977,13 +1004,123 @@ vault
     });
   });
 
+const research = program.command("research").description("Manage evidence-gated investment research cases");
+
+research
+  .command("submit")
+  .description("Atomically submit a draft Research Case packet")
+  .requiredOption("--path <path>", "Research packet JSON file")
+  .action(async (options: { path: string }) => {
+    const input = JSON.parse(await readFile(resolve(options.path), "utf8")) as SubmitResearchPacketInput;
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(submitResearchPacket(session.db, session.project.id, input, "cli"));
+    });
+  });
+
+research
+  .command("list")
+  .description("List Research Cases for the current project")
+  .action(async () => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(listResearchCases(session.db, session.project.id));
+    });
+  });
+
+research
+  .command("show")
+  .description("Read one complete Research Case snapshot")
+  .requiredOption("--case <id>", "Research Case id")
+  .action(async (options: { case: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(getResearchCaseSnapshot(session.db, session.project.id, options.case));
+    });
+  });
+
+research
+  .command("revise")
+  .description("Create an immutable successor for an active Research Claim")
+  .requiredOption("--claim <id>", "Predecessor Research Claim id")
+  .requiredOption("--path <path>", "Revision JSON file")
+  .requiredOption("--reason <text>", "Revision reason")
+  .action(async (options: { claim: string; path: string; reason: string }) => {
+    const input = JSON.parse(await readFile(resolve(options.path), "utf8")) as ReviseResearchClaimInput;
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(reviseResearchClaim(
+        session.db,
+        session.project.id,
+        options.claim,
+        input,
+        options.reason,
+        cliResearchAuthority(session)
+      ));
+    });
+  });
+
+research
+  .command("evidence-stale")
+  .description("Mark current Research Evidence stale and reopen linked Claims")
+  .requiredOption("--evidence <id>", "Research Evidence id")
+  .requiredOption("--reason <text>", "Staleness reason")
+  .action(async (options: { evidence: string; reason: string }) => {
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(markResearchEvidenceStale(
+        session.db,
+        session.project.id,
+        options.evidence,
+        options.reason,
+        cliResearchAuthority(session)
+      ));
+    });
+  });
+
+research
+  .command("review")
+  .description("Approve, reject, or request changes for an active Research Claim")
+  .requiredOption("--claim <id>", "Research Claim id")
+  .requiredOption("--decision <decision>", "approve, reject, or request_changes")
+  .requiredOption("--reason <text>", "Review reason")
+  .action(async (options: { claim: string; decision: string; reason: string }) => {
+    const decision = requireResearchReviewDecision(options.decision);
+    await withProject(program.opts<GlobalOptions>(), (session) => {
+      printJson(reviewResearchClaim(
+        session.db,
+        session.project.id,
+        options.claim,
+        decision,
+        options.reason,
+        cliResearchAuthority(session)
+      ));
+    });
+  });
+
+research
+  .command("export")
+  .description("Render a deterministic Research Case Markdown audit view")
+  .requiredOption("--case <id>", "Research Case id")
+  .option("--out <file>", "Write Markdown to a file")
+  .action(async (options: { case: string; out?: string }) => {
+    await withProject(program.opts<GlobalOptions>(), async (session) => {
+      const markdown = renderResearchCaseMarkdown(
+        getResearchCaseSnapshot(session.db, session.project.id, options.case)
+      );
+      if (!options.out) {
+        process.stdout.write(markdown);
+        return;
+      }
+      const outputPath = resolve(options.out);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, markdown, "utf8");
+      printJson({ caseId: options.case, path: outputPath });
+    });
+  });
+
 
 const mcp = program.command("mcp").description("Run the Mira MCP server");
 
 mcp
   .command("serve")
   .description("Start the Mira MCP stdio server")
-  .option("--confirmation-policy <reason>", "Explicitly delegate formal memory writes to this trusted protocol (disabled by default)")
+  .option("--confirmation-policy <reason>", "Explicitly delegate governed memory and research writes to this trusted protocol (disabled by default)")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
   .action(async (options: GlobalOptions & {confirmationPolicy?: string}) => {

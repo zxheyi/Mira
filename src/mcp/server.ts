@@ -29,6 +29,24 @@ import {
   WORKING_MEMORY_KINDS,
   type WorkingMemoryKind
 } from "../workingMemory/workingMemoryStore.js";
+import {
+  authorizeResearch,
+  getResearchCaseSnapshot,
+  markResearchEvidenceStale,
+  reviewResearchClaim,
+  reviseResearchClaim,
+  submitResearchPacket,
+  type ResearchAuthority,
+  type ReviseResearchClaimInput,
+  type SubmitResearchPacketInput
+} from "../research/researchService.js";
+import {
+  CLAIM_EVIDENCE_RELATIONS,
+  CLAIM_EVIDENCE_STATUSES,
+  RESEARCH_SOURCE_TYPES,
+  THESIS_IMPACTS
+} from "../research/researchTypes.js";
+import { renderResearchCaseMarkdown } from "../research/researchExport.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
   "get_context_bundle",
@@ -48,7 +66,13 @@ export const MIRA_MCP_TOOL_NAMES = [
   "get_memory",
   "update_memory",
   "archive_memory",
-  "get_memory_history"
+  "get_memory_history",
+  "submit_research_packet",
+  "get_research_case",
+  "revise_research_claim",
+  "mark_research_evidence_stale",
+  "review_research_claim",
+  "export_research_case"
 ] as const;
 
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
@@ -71,11 +95,17 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   get_memory: "Read one Memory by id including inactive lifecycle state, provenance, predecessor link, and timestamps for audit or update preparation.",
   update_memory: "Requires host confirmation policy (disabled by default). Create an immutable active successor and atomically supersede its active predecessor; returns Memory without overwriting history.",
   archive_memory: "Requires host confirmation policy (disabled by default). Archive an active Memory so it leaves search and Context Bundle results while remaining in auditable history.",
-  get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved."
+  get_memory_history: "Return the complete ordered predecessor-successor chain plus lifecycle events when auditing how a project Memory evolved.",
+  submit_research_packet: "Submit one validated draft Research Case with bounded Evidence Items, Claims and explicit links; this never creates Memory or mutates thesis state.",
+  get_research_case: "Read one complete project-scoped Research Case snapshot with Evidence, Claims, links and append-only review events.",
+  revise_research_claim: "Requires host confirmation policy. Create an immutable active successor with explicit Evidence links and supersede the predecessor.",
+  mark_research_evidence_stale: "Requires host confirmation policy. Mark current Evidence stale and atomically reopen every linked active Claim for review.",
+  review_research_claim: "Requires host confirmation policy. Approve only through the current-support Evidence gate, or reject/request changes with a reason.",
+  export_research_case: "Render a deterministic Markdown audit view of one Research Case without writing external state or changing Memory or thesis state."
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
-  /** Trusted host configuration, never a tool argument. Absent means proposal-only formal memory writes. */
+  /** Trusted host configuration, never a tool argument. Absent means proposal/draft-only governed writes. */
   confirmationPolicy?: ConfirmationPolicy;
   projectRoot: string;
   dbPath: string;
@@ -181,12 +211,73 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   },
   get_memory_history: {
     memoryId: z.string().trim().min(1).max(500)
+  },
+  submit_research_packet: {
+    case: z.object({
+      title: z.string().trim().min(1).max(500),
+      question: z.string().trim().min(1).max(2000),
+      asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    }).strict(),
+    evidence: z.array(z.object({
+      key: z.string().trim().min(1).max(100),
+      sourceType: z.enum(RESEARCH_SOURCE_TYPES),
+      sourceUri: z.url().max(4000),
+      sourceTitle: z.string().trim().min(1).max(1000),
+      locator: z.string().trim().min(1).max(1000),
+      excerpt: z.string().trim().min(1).max(8000),
+      publishedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      accessedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      validThrough: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    }).strict()).min(1).max(100),
+    claims: z.array(z.object({
+      key: z.string().trim().min(1).max(100),
+      statement: z.string().trim().min(1).max(4000),
+      evidenceStatus: z.enum(CLAIM_EVIDENCE_STATUSES),
+      confidence: z.number().min(0).max(1),
+      thesisImpact: z.enum(THESIS_IMPACTS),
+      invalidationConditions: z.string().trim().min(1).max(4000),
+      links: z.array(z.object({
+        evidenceKey: z.string().trim().min(1).max(100),
+        relation: z.enum(CLAIM_EVIDENCE_RELATIONS),
+        rationale: z.string().trim().min(1).max(2000)
+      }).strict()).min(1).max(100)
+    }).strict()).min(1).max(100)
+  },
+  get_research_case: {
+    caseId: z.string().trim().min(1).max(200)
+  },
+  revise_research_claim: {
+    claimId: z.string().trim().min(1).max(200),
+    statement: z.string().trim().min(1).max(4000),
+    evidenceStatus: z.enum(CLAIM_EVIDENCE_STATUSES),
+    confidence: z.number().min(0).max(1),
+    thesisImpact: z.enum(THESIS_IMPACTS),
+    invalidationConditions: z.string().trim().min(1).max(4000),
+    links: z.array(z.object({
+      evidenceId: z.string().trim().min(1).max(200),
+      relation: z.enum(CLAIM_EVIDENCE_RELATIONS),
+      rationale: z.string().trim().min(1).max(2000)
+    }).strict()).min(1).max(100),
+    reason: z.string().trim().min(1).max(2000)
+  },
+  mark_research_evidence_stale: {
+    evidenceId: z.string().trim().min(1).max(200),
+    reason: z.string().trim().min(1).max(2000)
+  },
+  review_research_claim: {
+    claimId: z.string().trim().min(1).max(200),
+    decision: z.enum(["approve", "reject", "request_changes"]),
+    reason: z.string().trim().min(1).max(2000)
+  },
+  export_research_case: {
+    caseId: z.string().trim().min(1).max(200)
   }
 } satisfies Record<MiraMcpToolName, Record<string, z.ZodType>>;
 
 
 type ToolSession = {
-  authority?: CurationAuthority;
+  curationAuthority?: CurationAuthority;
+  researchAuthority?: ResearchAuthority;
   taskId?: string;
   db: Database.Database;
   projectId: string;
@@ -266,8 +357,13 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
 
   try {
     const project = ensureProjectForRoot(db, options.projectRoot);
-    return run({ db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
-      authority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy) });
+    return run({
+      db,
+      projectId: project.id,
+      taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
+      curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
+      researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy)
+    });
   } finally {
     if (!options.db) {
       db.close();
@@ -334,7 +430,7 @@ function executeMiraTool(
           actor: "mcp",
           confidence: numberArg(args, "confidence", 1),
           importance: numberArg(args, "importance", 5)
-        }}, session.authority);
+        }}, session.curationAuthority);
       case "save_thread":
         return captureSession(db, {
           id: optionalStringArg(args, "id") ?? `thread_${randomUUID()}`,
@@ -367,7 +463,7 @@ function executeMiraTool(
       case "review_memory_candidate":
         return curateMemory(db, {operation: "review", projectId, actor: "mcp",
           candidateId: stringArg(args, "candidateId"), decision: stringArg(args, "decision") as "accept" | "reject",
-          reason: optionalStringArg(args, "reason"), supersedesMemoryId: optionalStringArg(args, "supersedesMemoryId")}, session.authority);
+          reason: optionalStringArg(args, "reason"), supersedesMemoryId: optionalStringArg(args, "supersedesMemoryId")}, session.curationAuthority);
       case "get_memory": {
         const memory = getMemory(db, projectId, stringArg(args, "memoryId"));
         if (!memory) throw new Error(`Memory not found: ${stringArg(args, "memoryId")}`);
@@ -385,11 +481,45 @@ function executeMiraTool(
           source: optionalStringArg(args, "source"),
           actor: "mcp",
           reason: optionalStringArg(args, "reason")
-        }}, session.authority);
+        }}, session.curationAuthority);
       case "archive_memory":
-        return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")}, session.authority);
+        return curateMemory(db, {operation: "archive", projectId, memoryId: stringArg(args, "memoryId"), actor: "mcp", reason: optionalStringArg(args, "reason")}, session.curationAuthority);
       case "get_memory_history":
         return getMemoryHistory(db, projectId, stringArg(args, "memoryId"));
+      case "submit_research_packet":
+        return submitResearchPacket(db, projectId, args as SubmitResearchPacketInput, "mcp");
+      case "get_research_case":
+        return getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"));
+      case "revise_research_claim":
+        return reviseResearchClaim(db, projectId, stringArg(args, "claimId"), {
+          statement: stringArg(args, "statement"),
+          evidenceStatus: stringArg(args, "evidenceStatus"),
+          confidence: numberArg(args, "confidence", 0),
+          thesisImpact: stringArg(args, "thesisImpact"),
+          invalidationConditions: stringArg(args, "invalidationConditions"),
+          links: args.links
+        } as ReviseResearchClaimInput, stringArg(args, "reason"), session.researchAuthority);
+      case "mark_research_evidence_stale":
+        return markResearchEvidenceStale(
+          db,
+          projectId,
+          stringArg(args, "evidenceId"),
+          stringArg(args, "reason"),
+          session.researchAuthority
+        );
+      case "review_research_claim":
+        return reviewResearchClaim(
+          db,
+          projectId,
+          stringArg(args, "claimId"),
+          stringArg(args, "decision") as "approve" | "reject" | "request_changes",
+          stringArg(args, "reason"),
+          session.researchAuthority
+        );
+      case "export_research_case":
+        return renderResearchCaseMarkdown(
+          getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"))
+        );
       default: {
         const exhaustive: never = name;
         throw new Error(`Unsupported MCP tool in executor: ${String(exhaustive)}`);
@@ -457,8 +587,13 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   const db = options.db ?? openDatabase(options.dbPath);
   migrate(db);
   const project = ensureProjectForRoot(db, options.projectRoot);
-  const session = { db, projectId: project.id, taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
-    authority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy) };
+  const session = {
+    db,
+    projectId: project.id,
+    taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
+    curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
+    researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy)
+  };
   const originalClose = server.close.bind(server);
   server.close = async () => {
     await originalClose();
