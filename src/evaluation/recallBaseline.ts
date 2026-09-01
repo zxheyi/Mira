@@ -34,6 +34,28 @@ export type RecallBaselineReport = {
   cases: RecallBaselineResult[];
 };
 
+export type RecallBaselineThresholds = Pick<
+  RecallBaselineReport,
+  "recallAt1" | "recallAt5" | "meanReciprocalRank"
+>;
+
+export const RECALL_BASELINE_THRESHOLDS: Readonly<RecallBaselineThresholds> = Object.freeze({
+  recallAt1: 0.75,
+  recallAt5: 0.75,
+  meanReciprocalRank: 0.75
+});
+
+export function assertRecallBaselineThresholds(
+  report: RecallBaselineReport,
+  thresholds: Readonly<RecallBaselineThresholds> = RECALL_BASELINE_THRESHOLDS
+): void {
+  const metrics = Object.keys(thresholds) as Array<keyof RecallBaselineThresholds>;
+  const failures = metrics
+    .filter(metric => report[metric] < thresholds[metric])
+    .map(metric => `${metric} ${report[metric]} is below ${thresholds[metric]}`);
+  if (failures.length > 0) throw new Error(`Recall baseline regression: ${failures.join("; ")}`);
+}
+
 export function runRecallBaseline(input: RecallBaselineCase[]): RecallBaselineReport {
   const cases = z.array(recallBaselineCaseSchema).parse(input);
   const ids = new Set<string>();
