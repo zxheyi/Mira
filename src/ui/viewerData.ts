@@ -1,6 +1,8 @@
 import { stat } from "node:fs/promises";
 import type Database from "better-sqlite3";
 import { getLatestCompleteProjectBriefing, type ProjectBriefing } from "../briefing/projectBriefingStore.js";
+import {listRecallEvents, type RecallReceipt} from "../context/recallAuditStore.js";
+import {listRecallFeedback, type RecallFeedback} from "../context/recallFeedbackStore.js";
 import { buildContextBundle } from "../context/contextBundle.js";
 import { listHistoryImportRuns } from "../history/historyImportStore.js";
 import type { HistoryImportRun } from "../history/historyTypes.js";
@@ -41,6 +43,8 @@ export type ViewerMemorySnapshot = {
   memories: Memory[];
   workingMemory: WorkingMemory[];
 };
+
+export type ViewerRecallEntry = RecallReceipt & {feedback?: RecallFeedback};
 
 function countProjectRows(db: Database.Database, table: string, projectId: string): number {
   return Number(db.prepare(`select count(*) from ${table} where project_id = ?`).pluck().get(projectId) ?? 0);
@@ -140,6 +144,20 @@ export function getViewerMemorySnapshot(db: Database.Database, projectId: string
     memories: listAllMemoriesForProject(db, projectId),
     workingMemory: listWorkingMemory(db, projectId)
   };
+}
+
+export function listViewerRecallEntries(
+  db: Database.Database,
+  projectId: string,
+  taskId?: string
+): ViewerRecallEntry[] {
+  const feedbackByRecall = new Map(
+    listRecallFeedback(db, projectId, {limit:1000}).map((item) => [item.recallId, item])
+  );
+  return listRecallEvents(db, projectId, {taskId}).map((receipt) => ({
+    ...receipt,
+    ...(feedbackByRecall.get(receipt.id) ? {feedback:feedbackByRecall.get(receipt.id)} : {})
+  }));
 }
 
 export function listViewerResearchCases(db: Database.Database, projectId: string) {

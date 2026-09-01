@@ -57,6 +57,7 @@ SQLite remains the fact source. Schema v14 adds a project-scoped `recall_feedbac
 
 - MCP: `record_recall_feedback`, `get_recall_quality_report`, and optional `recallId` on `update_memory`.
 - CLI: `context feedback` and `context quality`.
+- Viewer: `GET /api/recalls` returns each generic receipt with optional stored feedback; same-origin `POST /api/recall-feedback/:recallId` records one explicit label through the same domain rules. The form exposes injected/dropped Memory details and searchable missing Memory selection.
 - Skill/runtime profile: record feedback only when a user explicitly evaluates recalled Memory; never fabricate usefulness from tool success.
 
 ## Acceptance
@@ -65,4 +66,5 @@ SQLite remains the fact source. Schema v14 adds a project-scoped `recall_feedbac
 - Public module tests prove cause attribution, project isolation, ID-set validation, authority, and the 20/5 decision threshold.
 - Memory correction tests prove Recall linkage on immutable successor/predecessor events.
 - MCP and CLI expose the same stored feedback and quality report.
+- Viewer HTTP and browser tests prove same-origin feedback entry, visible stored state, and explicit user-only labeling.
 - Full tests, build, target-architecture verification, and patch checks pass.

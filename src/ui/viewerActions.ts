@@ -1,6 +1,11 @@
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { authorizeCuration, curateMemory } from "../memory/curationService.js";
+import {
+  authorizeRecallFeedback,
+  recordRecallFeedback,
+  RECALL_FEEDBACK_OUTCOMES
+} from "../context/recallFeedbackStore.js";
 import { retryDistillJob } from "../distill/distillJobStore.js";
 import {
   authorizeResearch,
@@ -12,6 +17,14 @@ import { verifyEvidence } from "../research/evidenceVerification.js";
 import { CONTRADICTION_DISPOSITIONS } from "../research/researchTypes.js";
 
 const reason = z.string().trim().min(1).max(1000).optional();
+const recallFeedbackAction = z.object({
+  outcome:z.enum(RECALL_FEEDBACK_OUTCOMES),
+  relevantMemoryIds:z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+  missingMemoryIds:z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+  irrelevantMemoryIds:z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+  correctedMemoryIds:z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+  reason:z.string().trim().min(1).max(2000)
+}).strict();
 const memoryAction = z.discriminatedUnion("action", [
   z.object({action: z.literal("correct"), content: z.string().trim().min(1).max(50_000), title: z.string().trim().min(1).max(500).optional(), reason}).strict(),
   z.object({action: z.literal("archive"), reason}).strict(),
@@ -36,6 +49,12 @@ const researchEvidenceAction = z.discriminatedUnion("action", [
 const researchSnapshotAction = z.object({action:z.literal("stale"),reason:requiredReason}).strict();
 
 export function applyViewerAction(db: Database.Database, projectId: string, resource: string, id: string, body: unknown): unknown {
+  if (resource === "recall-feedback") {
+    const input = recallFeedbackAction.parse(body);
+    return recordRecallFeedback(db, projectId, {recallId:id,...input}, authorizeRecallFeedback(
+      db, projectId, {actor:"ui:user",reason:"Explicit local Recall Feedback UI action"}
+    ));
+  }
   if (resource === "memory") {
     const input = memoryAction.parse(body);
     const authority = authorizeCuration(db, projectId, {actor: "ui:user", reason: "Explicit local management UI action"});

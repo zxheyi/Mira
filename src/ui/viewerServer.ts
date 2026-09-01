@@ -5,7 +5,6 @@ import { listMemoryCandidates } from "../distill/candidateService.js";
 import { listDistillJobs, sanitizeDistillError } from "../distill/distillJobStore.js";
 import { listOutboxMessages } from "../events/domainOutboxStore.js";
 import { getMemoryHistory } from "../memory/memoryLifecycleStore.js";
-import { listRecallEvents } from "../context/recallAuditStore.js";
 import { applyViewerAction } from "./viewerActions.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
@@ -19,6 +18,7 @@ import {
   getViewerResearchContext,
   getViewerThread,
   listViewerImportRuns,
+  listViewerRecallEntries,
   listViewerThreads,
   listViewerResearchCases
 } from "./viewerData.js";
@@ -80,10 +80,15 @@ function dashboardHtml(): string {
     .actions button, dialog button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; background: white; color: var(--accent-strong); cursor: pointer; }
     .actions button.primary, dialog button[type=submit] { background: var(--accent); color: white; }
     .memory-card { margin-bottom: 14px; overflow-wrap: anywhere; }
-    dialog { border: 1px solid var(--line); border-radius: 12px; width: min(640px, 92vw); max-height: 90vh; padding: 24px; }
+    dialog { border: 1px solid var(--line); border-radius: 12px; width: min(720px, 92vw); max-height: 90vh; padding: 24px; overflow: auto; }
     dialog::backdrop { background: #17203377; }
     dialog label { display: block; margin: 14px 0; }
     dialog input { display: block; width: 100%; margin-top: 6px; }
+    fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 14px 0; padding: 12px; }
+    .recall-memory-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #edf0f4; }
+    .recall-memory-row:last-child { border-bottom: 0; }
+    .recall-memory-row label { display: flex; gap: 8px; align-items: flex-start; margin: 0; }
+    .recall-memory-row input { display: inline; width: auto; margin: 3px 0 0; }
     #feedback { margin-bottom: 12px; overflow-wrap: anywhere; }
     .app { min-height: 100vh; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
     .sidebar { background: #172033; color: white; padding: 20px 14px; display: flex; flex-direction: column; gap: 18px; }
@@ -183,6 +188,27 @@ function dashboardHtml(): string {
       <div class="actions"><button type="button" id="edit-cancel">取消</button><button type="submit">确认提交</button></div>
     </form>
   </dialog>
+  <dialog id="recall-feedback-editor">
+    <form id="recall-feedback-form">
+      <h2>标注召回</h2>
+      <p class="muted">只记录用户明确评价；工具成功不代表召回有用。</p>
+      <div id="recall-feedback-preview" class="markdown"></div>
+      <label>总体结果
+        <select id="recall-feedback-outcome" required>
+          <option value="useful">有用</option><option value="partial">部分有用</option>
+          <option value="missed">未召回</option><option value="incorrect">内容错误</option>
+        </select>
+      </label>
+      <fieldset><legend>已注入 Memory</legend><div id="recall-injected-options"></div></fieldset>
+      <fieldset><legend>缺失 Memory</legend>
+        <label>搜索未注入的 active Memory<input id="recall-missing-filter" placeholder="标题、内容或 ID"></label>
+        <div id="recall-missing-options"></div>
+      </fieldset>
+      <label>用户反馈原因<textarea id="recall-feedback-reason" maxlength="2000" required></textarea></label>
+      <p id="recall-feedback-error" class="error" role="alert"></p>
+      <div class="actions"><button type="button" id="recall-feedback-cancel">取消</button><button type="submit">保存标注</button></div>
+    </form>
+  </dialog>
   <script>
     const state = {
       overview: null,
@@ -191,10 +217,13 @@ function dashboardHtml(): string {
       candidates: [],
       researchCases: [],
       researchSnapshot: null,
+      recalls: [],
       selectedThreadId: null,
       selectedResearchCaseId: null,
       csrfToken: null,
-      editing: null
+      editing: null,
+      recallFeedbackEditing: null,
+      recallMissingIds: new Set()
     };
     const fmt = new Intl.NumberFormat();
     const bytes = (value) => {
@@ -381,9 +410,48 @@ function dashboardHtml(): string {
         + '<details><summary>Evidence-gated Research Context</summary><pre>' + escapeHtml(researchContext.markdown) + '</pre></details>'
         + '<details><summary>Markdown 导出预览</summary><pre>' + escapeHtml(exported.markdown) + '</pre></details>';
     }
+    function recallMemoryLabel(id) {
+      const memory = state.memories.find(item => item.id === id);
+      return memory ? memory.title + ' · ' + id : id;
+    }
     async function renderRecalls() {
-      const receipts = await api('/api/recalls');
-      document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2>' + receipts.map(receipt => '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>').join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
+      const [receipts, snapshot] = await Promise.all([api('/api/recalls'), api('/api/memory')]);
+      state.recalls = receipts;
+      state.memories = snapshot.memories;
+      document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2><p class="muted">只对用户明确评价的通用 Memory 召回进行标注；Research Context receipt 独立审计。</p>' + receipts.map(receipt => {
+        const injected = receipt.injectedMemoryIds.map(id => '<li>' + escapeHtml(recallMemoryLabel(id)) + '</li>').join('') || '<li>无</li>';
+        const dropped = receipt.dropped.map(item => '<li>' + escapeHtml(recallMemoryLabel(item.memoryId) + ' · ' + item.reason) + '</li>').join('') || '<li>无</li>';
+        const feedback = receipt.feedback
+          ? '<span class="badge ok">已标注 · ' + escapeHtml(receipt.feedback.outcome) + '</span><p>' + escapeHtml(receipt.feedback.reason) + '</p>'
+          : '<div class="actions"><button data-recall-feedback="' + escapeHtml(receipt.id) + '">标注召回</button></div>';
+        return '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>Memory 明细</summary><h3>已注入</h3><ul>' + injected + '</ul><h3>已省略</h3><ul>' + dropped + '</ul></details>' + feedback + '<details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>';
+      }).join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
+    }
+    function renderRecallMissingOptions(query) {
+      const receipt = state.recallFeedbackEditing;
+      const normalized = query.trim().toLowerCase();
+      const eligible = state.memories.filter(memory => memory.status === 'active'
+        && !receipt.injectedMemoryIds.includes(memory.id)
+        && (!normalized || (memory.id + memory.title + memory.content).toLowerCase().includes(normalized)));
+      document.getElementById('recall-missing-options').innerHTML = eligible.map(memory =>
+        '<div class="recall-memory-row"><label><input type="checkbox" data-missing-memory="' + escapeHtml(memory.id) + '" ' + (state.recallMissingIds.has(memory.id) ? 'checked' : '') + '><span><b>' + escapeHtml(memory.title) + '</b><br><span class="muted">' + escapeHtml(memory.id) + '</span></span></label></div>'
+      ).join('') || '<div class="empty">没有匹配的未注入 active Memory</div>';
+    }
+    function openRecallFeedback(recallId) {
+      const receipt = state.recalls.find(item => item.id === recallId);
+      if (!receipt || receipt.feedback) return;
+      state.recallFeedbackEditing = receipt;
+      state.recallMissingIds = new Set();
+      document.getElementById('recall-feedback-preview').textContent = (receipt.query || '默认召回') + '\\n' + receipt.id;
+      document.getElementById('recall-injected-options').innerHTML = receipt.injectedMemoryIds.map(id =>
+        '<div class="recall-memory-row"><span>' + escapeHtml(recallMemoryLabel(id)) + '</span><select data-injected-memory="' + escapeHtml(id) + '"><option value="">未标注</option><option value="relevant">有用</option><option value="irrelevant">无关</option><option value="corrected">内容错误</option></select></div>'
+      ).join('') || '<div class="empty">本次没有注入 Memory</div>';
+      document.getElementById('recall-feedback-outcome').value = 'useful';
+      document.getElementById('recall-feedback-reason').value = '';
+      document.getElementById('recall-missing-filter').value = '';
+      document.getElementById('recall-feedback-error').textContent = '';
+      renderRecallMissingOptions('');
+      document.getElementById('recall-feedback-editor').showModal();
     }
     async function renderJobs() {
       const [jobs, outbox] = await Promise.all([api('/api/jobs'), api('/api/outbox')]);
@@ -459,6 +527,8 @@ function dashboardHtml(): string {
       if (openThread) { state.selectedThreadId = openThread.dataset.openThread; await show('threads'); }
       const researchCase = event.target.closest('[data-research-case]');
       if (researchCase) await loadResearchCase(researchCase.dataset.researchCase);
+      const recallFeedback = event.target.closest('[data-recall-feedback]');
+      if (recallFeedback) openRecallFeedback(recallFeedback.dataset.recallFeedback);
       const action = event.target.closest('[data-action]');
       if (action?.dataset.action === 'history') {
         const history = await api('/api/memory/' + encodeURIComponent(action.dataset.id) + '/history');
@@ -466,6 +536,37 @@ function dashboardHtml(): string {
         document.getElementById('memory-history').scrollIntoView({block:'nearest'});
       } else if (action) openEditor(action.dataset.resource, action.dataset.id, action.dataset.action);
       } catch (error) { document.getElementById('feedback').textContent = error.message; }
+    });
+    document.getElementById('recall-missing-filter').addEventListener('input', event => renderRecallMissingOptions(event.target.value));
+    document.getElementById('recall-missing-options').addEventListener('change', event => {
+      const id = event.target.dataset.missingMemory;
+      if (!id) return;
+      if (event.target.checked) state.recallMissingIds.add(id);
+      else state.recallMissingIds.delete(id);
+    });
+    document.getElementById('recall-feedback-cancel').addEventListener('click', () => document.getElementById('recall-feedback-editor').close());
+    document.getElementById('recall-feedback-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = event.target.querySelector('[type=submit]');
+      button.disabled = true;
+      try {
+        const groups = {relevantMemoryIds:[],irrelevantMemoryIds:[],correctedMemoryIds:[]};
+        document.querySelectorAll('[data-injected-memory]').forEach(select => {
+          if (select.value === 'relevant') groups.relevantMemoryIds.push(select.dataset.injectedMemory);
+          if (select.value === 'irrelevant') groups.irrelevantMemoryIds.push(select.dataset.injectedMemory);
+          if (select.value === 'corrected') groups.correctedMemoryIds.push(select.dataset.injectedMemory);
+        });
+        await api('/api/recall-feedback/' + encodeURIComponent(state.recallFeedbackEditing.id), {
+          outcome:document.getElementById('recall-feedback-outcome').value,
+          ...groups,
+          missingMemoryIds:[...state.recallMissingIds],
+          reason:document.getElementById('recall-feedback-reason').value
+        });
+        document.getElementById('recall-feedback-editor').close();
+        document.getElementById('feedback').textContent = '召回标注已保存；不会自动修改检索配置。';
+        await renderRecalls();
+      } catch (error) { document.getElementById('recall-feedback-error').textContent = error.message; }
+      finally { button.disabled = false; }
     });
     document.getElementById('edit-cancel').addEventListener('click', () => document.getElementById('editor').close());
     document.getElementById('edit-form').addEventListener('submit', async event => {
@@ -562,7 +663,7 @@ async function routeRequest(
       sendJson(res, 415, {error: "JSON required"}); return;
     }
     const lifecycleMatch = pathname.match(/^\/api\/turn\/(before|after)$/);
-    const actionMatch = pathname.match(/^\/api\/(memory|candidates|jobs|research-claims|research-evidence|research-snapshots)\/([^/]+)$/);
+    const actionMatch = pathname.match(/^\/api\/(memory|candidates|jobs|recall-feedback|research-claims|research-evidence|research-snapshots)\/([^/]+)$/);
     if (!lifecycleMatch && !actionMatch) { sendJson(res, 404, {error: "Not found"}); return; }
     if (Number(req.headers["content-length"] ?? 0) > 65_536) { sendJson(res, 413, {error: "Body too large"}); return; }
     try {
@@ -603,7 +704,7 @@ async function routeRequest(
 
   await withProject(options, async ({ db, project }) => {
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
-    if (pathname === "/api/recalls") { sendJson(res, 200, listRecallEvents(db, project.id, {taskId: url.searchParams.get("taskId") ?? undefined})); return; }
+    if (pathname === "/api/recalls") { sendJson(res, 200, listViewerRecallEntries(db, project.id, url.searchParams.get("taskId") ?? undefined)); return; }
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
     if (pathname === "/api/outbox") { sendJson(res, 200, listOutboxMessages(db, project.id)); return; }
     if (pathname === "/api/research-cases") {

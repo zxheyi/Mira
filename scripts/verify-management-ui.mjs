@@ -19,9 +19,10 @@ const dbPath = join(root, ".mira", "mira.sqlite");
 const db = openDatabase(dbPath); migrate(db);
 const project = ensureProjectForRoot(db, root);
 const thread = saveThread(db, {id: "synthetic_source", projectId: project.id, title: "示例来源会话", source: "synthetic-test", rawFormat: "markdown", rawText: "研究结论必须绑定可核验的原始资料。"});
-curateMemory(db, {operation: "add", input: {projectId: project.id, title: "示例研究流程", content: "每次研究先核对来源。", kind: "convention", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db, project.id, {actor: "test", reason: "Synthetic UI fixture"}));
+const recalledMemory = curateMemory(db, {operation: "add", input: {projectId: project.id, title: "示例研究流程", content: "每次研究先核对来源。", kind: "convention", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db, project.id, {actor: "test", reason: "Synthetic UI fixture"}));
 for (const title of ["待核对的证据规则", "待拒绝的自动归纳"]) curateMemory(db, {operation: "propose", input: {projectId: project.id, threadId: thread.id, sourceAgent: "synthetic-test", extractionMethod: "agent", candidates: [{title, content: title + "：结论保留原始出处。", kind: "decision", evidence: thread.rawText, confidence: 0.98, importance: 0.8}]}});
-prepareContext(db, project.id, {taskId: "research-demo", maxCharacters: 1200});
+const recall = prepareContext(db, project.id, {taskId: "research-demo", query:"示例研究流程",maxCharacters: 1200}).receipt;
+assert.deepEqual(recall.injectedMemoryIds,[recalledMemory.id]);
 enqueueDistillJob(db, project.id, thread.id, "cli");
 const job = claimNextDistillJob(db, project.id);
 failDistillJob(db, job.id, "Synthetic provider unavailable", job.attempts);
@@ -83,7 +84,19 @@ try {
   await page.locator("#memory-history pre").waitFor();
   assert.match(await page.locator("#memory-history").innerText(), /superseded/);
   await page.screenshot({path:join(root,"desktop-memory-history.png"), fullPage:true});
-  await nav("召回审计"); await page.getByText(/完整注入 1/).waitFor();
+  await nav("召回审计");
+  const recallCard = page.locator("article").filter({hasText:"示例研究流程"}).filter({has:page.getByRole("button",{name:"标注召回",exact:true})});
+  await recallCard.getByRole("button",{name:"标注召回",exact:true}).click();
+  await page.locator('[data-injected-memory="' + recalledMemory.id + '"]').selectOption("relevant");
+  await page.getByLabel("总体结果").selectOption("partial");
+  await page.getByLabel("搜索未注入的 active Memory").fill("待核对的证据规则");
+  await page.locator("[data-missing-memory]").check();
+  await page.getByLabel("用户反馈原因").fill("核心流程有用，但证据规则没有被召回。");
+  await page.screenshot({path:join(root,"desktop-recall-feedback.png"), fullPage:true});
+  await page.getByRole("button",{name:"保存标注",exact:true}).click();
+  await page.locator("#recall-feedback-editor").waitFor({state:"hidden"});
+  await page.locator("article").filter({hasText:"示例研究流程"})
+    .getByText(/已标注 · partial/).waitFor();
   await nav("后台任务"); await page.getByRole("button",{name:"重新排队",exact:true}).click(); await submit();
   await page.getByText(/pending · synthetic_source/).waitFor();
   await nav("研究案例");
@@ -114,7 +127,7 @@ try {
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth), "narrow layout must not overflow horizontally");
   await page.screenshot({path:join(root,"narrow-research.png"), fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
+  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md","specs/029-recall-feedback/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","explicit recall feedback with missing Memory search","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
 } finally {
   await browser?.close(); await server.close(); db.close();
 }
