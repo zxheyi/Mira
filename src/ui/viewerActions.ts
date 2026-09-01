@@ -26,7 +26,12 @@ const recallFeedbackAction = z.object({
   reason:z.string().trim().min(1).max(2000)
 }).strict();
 const memoryAction = z.discriminatedUnion("action", [
-  z.object({action: z.literal("correct"), content: z.string().trim().min(1).max(50_000), title: z.string().trim().min(1).max(500).optional(), reason}).strict(),
+  z.object({
+    action:z.literal("correct"),
+    content:z.string().trim().min(1).max(50_000),
+    title:z.string().trim().min(1).max(500).optional(),
+    recallId:z.string().trim().min(1).max(500).optional(),reason
+  }).strict(),
   z.object({action: z.literal("archive"), reason}).strict(),
   z.object({action: z.literal("restore"), reason}).strict()
 ]);
@@ -59,7 +64,8 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
     const input = memoryAction.parse(body);
     const authority = authorizeCuration(db, projectId, {actor: "ui:user", reason: "Explicit local management UI action"});
     if (input.action === "correct") return curateMemory(db, {operation: "correct", input: {
-      projectId, memoryId: id, content: input.content, title: input.title, actor: "ui:user", reason: input.reason
+      projectId,memoryId:id,content:input.content,title:input.title,actor:"ui:user",
+      reason:input.reason,recallId:input.recallId
     }}, authority);
     return curateMemory(db, {operation: input.action, projectId, memoryId: id, actor: "ui:user", reason: input.reason}, authority);
   }

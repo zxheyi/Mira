@@ -419,7 +419,13 @@ function dashboardHtml(): string {
       state.recalls = receipts;
       state.memories = snapshot.memories;
       document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2><p class="muted">只对用户明确评价的通用 Memory 召回进行标注；Research Context receipt 独立审计。</p>' + receipts.map(receipt => {
-        const injected = receipt.injectedMemoryIds.map(id => '<li>' + escapeHtml(recallMemoryLabel(id)) + '</li>').join('') || '<li>无</li>';
+        const injected = receipt.injectedMemoryIds.map(id => {
+          const memory = state.memories.find(item => item.id === id);
+          const correct = memory?.status === 'active'
+            ? '<button data-recall-correct-memory="' + escapeHtml(id) + '" data-recall-id="' + escapeHtml(receipt.id) + '">纠正此 Memory</button>'
+            : '';
+          return '<li><span>' + escapeHtml(recallMemoryLabel(id)) + '</span>' + (correct ? '<div class="actions">' + correct + '</div>' : '') + '</li>';
+        }).join('') || '<li>无</li>';
         const dropped = receipt.dropped.map(item => '<li>' + escapeHtml(recallMemoryLabel(item.memoryId) + ' · ' + item.reason) + '</li>').join('') || '<li>无</li>';
         const feedback = receipt.feedback
           ? '<span class="badge ok">已标注 · ' + escapeHtml(receipt.feedback.outcome) + '</span><p>' + escapeHtml(receipt.feedback.reason) + '</p>'
@@ -459,8 +465,8 @@ function dashboardHtml(): string {
       const messages = outbox.map(item => '<article class="panel memory-card"><b>' + escapeHtml(item.status + ' · ' + item.topic) + '</b><p>尝试 ' + item.attempts + ' / ' + item.maxAttempts + '</p><div class="muted">可执行：' + escapeHtml(item.availableAt) + '</div><p class="error">' + escapeHtml(item.lastError || '') + '</p></article>').join('');
       document.getElementById('jobs').innerHTML = '<h2>后台任务</h2><p class="muted">Outbox 使用租约恢复；CLI outbox run --drain 处理事实提交后的可靠跟进。</p><h2>Domain Outbox</h2>' + (messages || '<div class="empty">暂无 Outbox 消息</div>') + '<h2>Distill Jobs</h2>' + (distill || '<div class="empty">暂无提炼任务</div>');
     }
-    function openEditor(resource, id, action) {
-      state.editing = {resource, id, action};
+    function openEditor(resource, id, action, context = {}) {
+      state.editing = {resource,id,action,...context};
       const item = resource === 'memory'
         ? state.memories.find(memory => memory.id === id)
         : resource === 'candidates'
@@ -477,9 +483,11 @@ function dashboardHtml(): string {
         reject: resource === 'research-claims' ? '拒绝 Claim' : '拒绝候选',
         retry:'重新排队', approve:'批准 Claim', request_changes:'要求修改 Claim', stale:'标记 Evidence 过期', verify:'校验 Evidence'
       })[action];
-      document.getElementById('edit-preview').textContent = item
+      const preview = item
         ? (item.title || item.statement || item.sourceTitle || id) + '\\n' + (item.content || item.excerpt || '')
         : id;
+      document.getElementById('edit-preview').textContent = preview
+        + (context.recallId ? '\\n关联召回：' + context.recallId : '');
       document.getElementById('content-field').hidden = action !== 'correct';
       document.getElementById('replacement-field').hidden = action !== 'accept';
       const contradictions = resource === 'research-claims' && action === 'approve'
@@ -529,6 +537,10 @@ function dashboardHtml(): string {
       if (researchCase) await loadResearchCase(researchCase.dataset.researchCase);
       const recallFeedback = event.target.closest('[data-recall-feedback]');
       if (recallFeedback) openRecallFeedback(recallFeedback.dataset.recallFeedback);
+      const recallCorrection = event.target.closest('[data-recall-correct-memory]');
+      if (recallCorrection) openEditor('memory',recallCorrection.dataset.recallCorrectMemory,'correct',{
+        recallId:recallCorrection.dataset.recallId,returnView:'recalls'
+      });
       const action = event.target.closest('[data-action]');
       if (action?.dataset.action === 'history') {
         const history = await api('/api/memory/' + encodeURIComponent(action.dataset.id) + '/history');
@@ -574,14 +586,17 @@ function dashboardHtml(): string {
       const button = event.target.querySelector('[type=submit]');
       button.disabled = true;
       try {
-        const {resource, id, action} = state.editing;
+        const {resource,id,action,recallId,returnView} = state.editing;
         const body = resource === 'candidates' || resource === 'research-claims'
           ? {decision: action}
           : {action};
         if (resource === 'research-evidence' && action === 'verify') body.caseId = state.selectedResearchCaseId;
         const reason = document.getElementById('edit-reason').value.trim();
         if (reason && resource !== 'jobs') body.reason = reason;
-        if (action === 'correct') body.content = document.getElementById('edit-content').value;
+        if (action === 'correct') {
+          body.content = document.getElementById('edit-content').value;
+          if (recallId) body.recallId = recallId;
+        }
         const replacement = document.getElementById('edit-replacement').value.trim();
         if (action === 'accept' && replacement) body.supersedesMemoryId = replacement;
         const contradictions = document.getElementById('edit-contradictions').value.trim();
@@ -591,7 +606,7 @@ function dashboardHtml(): string {
         await api('/api/' + resource + '/' + encodeURIComponent(id), body);
         document.getElementById('editor').close();
         document.getElementById('feedback').textContent = '已保存；历史记录保留。';
-        await show(resource.startsWith('research-') ? 'research' : resource);
+        await show(returnView || (resource.startsWith('research-') ? 'research' : resource));
       } catch (error) { document.getElementById('edit-error').textContent = error.message; }
       finally { button.disabled = false; }
     });

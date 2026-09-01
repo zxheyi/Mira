@@ -20,6 +20,7 @@ const db = openDatabase(dbPath); migrate(db);
 const project = ensureProjectForRoot(db, root);
 const thread = saveThread(db, {id: "synthetic_source", projectId: project.id, title: "示例来源会话", source: "synthetic-test", rawFormat: "markdown", rawText: "研究结论必须绑定可核验的原始资料。"});
 const recalledMemory = curateMemory(db, {operation: "add", input: {projectId: project.id, title: "示例研究流程", content: "每次研究先核对来源。", kind: "convention", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db, project.id, {actor: "test", reason: "Synthetic UI fixture"}));
+const lifecycleMemory = curateMemory(db, {operation:"add",input:{projectId:project.id,title:"生命周期示例",content:"保留普通记忆管理验收。",kind:"fact",source:"manual",confidence:1,importance:5}},authorizeCuration(db,project.id,{actor:"test",reason:"Synthetic lifecycle fixture"}));
 for (const title of ["待核对的证据规则", "待拒绝的自动归纳"]) curateMemory(db, {operation: "propose", input: {projectId: project.id, threadId: thread.id, sourceAgent: "synthetic-test", extractionMethod: "agent", candidates: [{title, content: title + "：结论保留原始出处。", kind: "decision", evidence: thread.rawText, confidence: 0.98, importance: 0.8}]}});
 const recall = prepareContext(db, project.id, {taskId: "research-demo", query:"示例研究流程",maxCharacters: 1200}).receipt;
 assert.deepEqual(recall.injectedMemoryIds,[recalledMemory.id]);
@@ -71,14 +72,14 @@ try {
   await page.locator("article").filter({hasText:"待拒绝的自动归纳"}).getByRole("button",{name:"拒绝",exact:true}).click();
   await submit();
   await nav("记忆");
-  const active = page.locator("article").filter({hasText:"示例研究流程"}).filter({has:page.locator('[data-action="correct"]')});
+  const active = page.locator("article").filter({hasText:lifecycleMemory.title}).filter({has:page.locator('[data-action="correct"]')});
   await active.getByRole("button",{name:"纠正",exact:true}).click();
   assert.equal(await page.locator("#replacement-field").isVisible(), false);
-  await page.getByLabel("更正内容").fill("已纠正：研究结论需要原始证据和审核记录。");
+  await page.getByLabel("更正内容").fill("已纠正：普通记忆仍保留不可变历史。");
   await submit();
-  await active.getByText("已纠正：研究结论需要原始证据和审核记录。",{exact:true}).waitFor();
+  await active.getByText("已纠正：普通记忆仍保留不可变历史。",{exact:true}).waitFor();
   await active.getByRole("button",{name:"归档",exact:true}).click(); await submit();
-  const archived = page.locator("article").filter({hasText:"示例研究流程"}).filter({has:page.locator('[data-action="restore"]')});
+  const archived = page.locator("article").filter({hasText:lifecycleMemory.title}).filter({has:page.locator('[data-action="restore"]')});
   await archived.getByRole("button",{name:"恢复",exact:true}).click(); await submit();
   await active.getByRole("button",{name:"查看历史",exact:true}).click();
   await page.locator("#memory-history pre").waitFor();
@@ -97,6 +98,19 @@ try {
   await page.locator("#recall-feedback-editor").waitFor({state:"hidden"});
   await page.locator("article").filter({hasText:"示例研究流程"})
     .getByText(/已标注 · partial/).waitFor();
+  const correctedReceiptCard = page.locator("article").filter({hasText:"示例研究流程"});
+  await correctedReceiptCard.getByText("Memory 明细",{exact:true}).click();
+  await correctedReceiptCard
+    .getByRole("button",{name:"纠正此 Memory",exact:true}).click();
+  await page.locator("#edit-preview").getByText("关联召回：" + recall.id,{exact:false}).waitFor();
+  await page.getByLabel("更正内容").fill("已纠正：研究流程必须绑定核验记录。");
+  await page.screenshot({path:join(root,"desktop-recall-correction.png"),fullPage:true});
+  await submit();
+  await nav("记忆");
+  const correctedRecallMemory = page.locator("article").filter({hasText:"已纠正：研究流程必须绑定核验记录。"});
+  await correctedRecallMemory.getByRole("button",{name:"查看历史",exact:true}).click();
+  await page.locator("#memory-history pre").waitFor();
+  assert.match(await page.locator("#memory-history").innerText(),new RegExp(recall.id));
   await nav("后台任务"); await page.getByRole("button",{name:"重新排队",exact:true}).click(); await submit();
   await page.getByText(/pending · synthetic_source/).waitFor();
   await nav("研究案例");
@@ -127,7 +141,7 @@ try {
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth), "narrow layout must not overflow horizontally");
   await page.screenshot({path:join(root,"narrow-research.png"), fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md","specs/029-recall-feedback/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","explicit recall feedback with missing Memory search","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
+  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md","specs/029-recall-feedback/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","explicit recall feedback with missing Memory search","receipt-linked Memory correction","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
 } finally {
   await browser?.close(); await server.close(); db.close();
 }
