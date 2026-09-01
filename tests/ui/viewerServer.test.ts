@@ -16,6 +16,7 @@ import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js"
 import { authorizeCuration, curateMemory } from "../../src/memory/curationService.js";
 import { getMemory } from "../../src/memory/memoryLifecycleStore.js";
 import { listRecallEvents } from "../../src/context/recallAuditStore.js";
+import { submitResearchPacket } from "../../src/research/researchService.js";
 
 let db: Database.Database | undefined;
 let handle: ViewerServerHandle | undefined;
@@ -59,8 +60,21 @@ This transcript appears in the UI.`
     failed: 0
   });
   rebuildProjectBriefing(db, project.id);
+  const research = submitResearchPacket(db, project.id, {
+    case: { title: "Public filing review", question: "What changed?", asOfDate: "2026-09-01" },
+    evidence: [{
+      key: "E1", sourceType: "regulatory_filing",
+      sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
+      excerpt: "Revenue increased.", accessedAt: "2026-09-01"
+    }],
+    claims: [{
+      key: "C1", statement: "Revenue increased.", evidenceStatus: "supported", confidence: 0.8,
+      thesisImpact: "watch", invalidationConditions: "A later filing reports a decline.",
+      links: [{ evidenceKey: "E1", relation: "supports", rationale: "Direct observation." }]
+    }]
+  }, "test");
   handle = await startViewerServer({ projectRoot: root, dbPath, host: "127.0.0.1", port: 0 });
-  return { root, dbPath, project, url: handle.url };
+  return { root, dbPath, project, research, url: handle.url };
 }
 
 async function json<T>(url: string): Promise<T> {
@@ -114,7 +128,54 @@ describe("viewer server", () => {
     expect(html).toContain("Mira 本地 Viewer");
     expect(html).toContain("总览");
     expect(html).toContain("会话");
+    expect(html).toContain("研究案例");
     expect(() => new Script(html.match(/<script>([\s\S]*?)<\/script>/)![1])).not.toThrow();
+  });
+
+  test("serves and governs Research Cases through same-origin UI routes", async () => {
+    const { url, research } = await setupServer();
+    const cases = await json<Array<{ id: string; status: string }>>(url + "/api/research-cases");
+    expect(cases).toEqual([
+      expect.objectContaining({ id: research.researchCase.id, status: "draft" })
+    ]);
+    const detail = await json<{ claims: Array<{ reviewStatus: string }>; evidence: Array<{ state: string }> }>(
+      url + "/api/research-cases/" + research.researchCase.id
+    );
+    expect(detail).toMatchObject({
+      claims: [expect.objectContaining({ reviewStatus: "pending" })],
+      evidence: [expect.objectContaining({ state: "current" })]
+    });
+    const exported = await json<{ markdown: string }>(
+      url + "/api/research-cases/" + research.researchCase.id + "/export"
+    );
+    expect(exported.markdown).toContain("# Research Case: Public filing review");
+
+    const session = await json<{ csrfToken: string }>(url + "/api/session");
+    const headers = {
+      "content-type": "application/json",
+      origin: url,
+      "x-mira-csrf": session.csrfToken
+    };
+    const reviewed = await fetch(url + "/api/research-claims/" + research.claims[0].id, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "approve", reason: "Checked primary source." })
+    });
+    expect(reviewed.status).toBe(200);
+    expect(await reviewed.json()).toMatchObject({
+      researchCase: { status: "completed" },
+      claims: [expect.objectContaining({ reviewStatus: "approved" })]
+    });
+    const stale = await fetch(url + "/api/research-evidence/" + research.evidence[0].id, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "stale", reason: "Superseded by a later filing." })
+    });
+    expect(stale.status).toBe(200);
+    expect(await stale.json()).toMatchObject({
+      researchCase: { status: "in_review" },
+      claims: [expect.objectContaining({ reviewStatus: "changes_requested" })]
+    });
   });
 
   test("serves read-only project APIs", async () => {

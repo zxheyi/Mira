@@ -1,10 +1,10 @@
 # Mira
 
-Mira 是一个本地优先的项目记忆系统，目标是让 Codex、Claude Code、Cursor、OpenClaw 等开发者 Agent 在同一个项目里连续工作，而不是每次新会话都从零开始理解上下文。
+Mira 是一个本地优先的项目连续记忆与证据约束型研究系统。它让 Codex、Claude Code、Cursor、OpenClaw 等开发者 Agent 在同一个项目里连续工作，并在投资研究场景中把 Evidence、Claim 和 Review 明确分离。
 
 一句话定位：
 
-> Mira 不是另一个通用 AI 工作台，也不是消费者个人记忆产品。Mira 是给 AI 编程 Agent 用的项目级连续记忆层，负责记录项目为什么走到今天，以及下一步应该怎么继续。
+> Mira 不是另一个通用 AI 工作台，也不是消费者个人记忆产品。它以项目级连续记忆为底座，并提供不自动修改 thesis 的证据约束型投资研究认知层。
 
 ## 为什么需要 Mira
 
@@ -40,6 +40,10 @@ Mira 关注的是项目连续性，不追求成为完整桌面 AI coworker、企
 
 SQLite 项目记忆的 Obsidian-ready 只读物化视图。它把 Briefing、Working Memory、全生命周期 Memory、Thread 和待审核候选组织成带 frontmatter 与 WikiLink 的 Markdown 文件，便于人类浏览和审计。
 
+### Research Case
+
+一个按项目和 as-of date 隔离的研究问题。Research Case 以 `Evidence Item → Claim → Review Event` 保存来源、支持/反驳关系、证据状态、审核状态、置信度、失效条件和 Thesis Impact Proposal。Proposal 只表达分析意图；Mira 不拥有或修改 thesis、仓位和交易状态。
+
 ## MVP 边界
 
 MVP 只做一条闭环：
@@ -69,6 +73,8 @@ MVP 包含：
 - 一键扫描并批量导入当前项目的 Codex / Claude Code 历史主会话，支持旧项目路径别名、幂等重跑和失败审计。
 - 提供持久化捕获检查点，避免重复处理未变化 transcript，失败后可在下次 Hook 重试。
 - 提供 Claude Code、Cursor 等接入示例，以及 AGENTS.md 行为引导模板。
+- 支持可审计的 Research Case、Evidence/Claim 关系、stale 传播、不可变 Claim 修订和人工审核。
+- 通过 CLI、MCP 和本地 Viewer 使用同一套研究治理规则，并确定性导出 Markdown 审计视图。
 
 MVP 暂不做：
 
@@ -79,6 +85,7 @@ MVP 暂不做：
 - 插件市场。
 - 大而全的 Agent 工作台。
 - 复杂向量检索，先用 SQLite FTS 跑通闭环。
+- thesis 状态、估值/目标价、仓位管理和交易执行。
 
 ## 设计原则
 
@@ -174,6 +181,13 @@ mira vault sync
 mira vault sync --out ./notes/mira
 mira export --format json --out ./export
 mira export --format markdown --out ./export
+mira research submit --path ./research-packet.json
+mira research list
+mira research show --case research_case_123
+mira research review --claim research_claim_123 --decision approve --reason "Checked primary sources"
+mira research evidence-stale --evidence research_evidence_123 --reason "Superseded by a later filing"
+mira research revise --claim research_claim_123 --path ./claim-revision.json --reason "Reframed after new evidence"
+mira research export --case research_case_123 --out ./research-case.md
 ```
 
 `mira thread save` 中 `--raw-format` 是 `--format` 的别名，保留 `--raw-format` 是为了与数据模型里的 `rawFormat` 命名一致。`mira wm` 是 `mira working` 的短别名。`project delete`、`memory clear` 与 `thread delete` 是隐私擦除入口，会连同生命周期历史和事件账本永久删除数据，因此必须显式传入 `--confirm-hard-delete`；日常停用记忆应使用 `memory archive`。
@@ -182,7 +196,7 @@ mira export --format markdown --out ./export
 
 `mira doctor` 是只读诊断命令：它报告当前项目根目录、数据库路径、schema 版本、项目/Thread/Memory/候选/历史导入批次数量、Codex / Claude Code 集成状态，以及 `.mira/integrations.log` 的最新时间戳。数据库不存在时它不会创建 `.mira` 或初始化 schema，适合在真实接入前先确认 Mira 是否看得到当前项目。
 
-`mira ui` 启动本地记忆管理 Viewer，默认绑定 `127.0.0.1:4317` 并输出 JSON URL。中文界面展示总览、会话、导入批次、简报/上下文预览、记忆、候选审核、召回审计和后台任务。支持明确确认后的候选批准/拒绝、记忆纠正/归档/恢复、历史查看和失败任务重新排队；不提供永久删除、导入、调用模型或安装集成按钮。预览不刷新 Briefing、不生成召回审计。只允许 loopback 绑定，写入校验 Host、Origin、JSON 和每次启动生成的防跨站令牌；未提供远程访问模式。
+`mira ui` 启动本地管理 Viewer，默认绑定 `127.0.0.1:4317` 并输出 JSON URL。中文界面展示总览、会话、导入批次、简报/上下文预览、记忆、候选审核、研究案例、召回审计和后台任务。支持明确确认后的候选批准/拒绝、记忆纠正/归档/恢复、Research Claim 审核、Evidence stale 处理、研究 Markdown 预览、历史查看和失败任务重新排队；不提供永久删除、导入、调用模型、thesis mutation 或安装集成按钮。预览不刷新 Briefing、不生成召回审计。只允许 loopback 绑定，写入校验 Host、Origin、JSON 和每次启动生成的防跨站令牌；未提供远程访问模式。
 
 ```bash
 mira --project-root /path/to/project ui

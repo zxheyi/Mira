@@ -14,10 +14,13 @@ import {
   getViewerContextBundle,
   getViewerMemorySnapshot,
   getViewerOverview,
+  getViewerResearchCase,
   getViewerThread,
   listViewerImportRuns,
-  listViewerThreads
+  listViewerThreads,
+  listViewerResearchCases
 } from "./viewerData.js";
+import { renderResearchCaseMarkdown } from "../research/researchExport.js";
 
 export type ViewerServerOptions = {
   projectRoot: string;
@@ -95,7 +98,7 @@ function dashboardHtml(): string {
     .badge.ok { color: var(--accent-strong); border-color: #9bd4c0; background: #edf8f4; }
     .badge.warn { color: var(--amber); border-color: #f0cc80; background: #fff8e8; }
     .grid { display: grid; gap: 14px; }
-    .stats { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+    .stats { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
     .card, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
     .card { padding: 14px; min-height: 86px; }
     .stat-value { font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 8px; }
@@ -139,6 +142,7 @@ function dashboardHtml(): string {
         <button data-view="briefing">简报</button>
         <button data-view="memory">记忆</button>
         <button data-view="candidates">候选审核</button>
+        <button data-view="research">研究案例</button>
         <button data-view="recalls">召回审计</button>
         <button data-view="jobs">后台任务</button>
       </nav>
@@ -158,6 +162,7 @@ function dashboardHtml(): string {
       <section id="briefing" class="view"></section>
       <section id="memory" class="view"></section>
       <section id="candidates" class="view"></section>
+      <section id="research" class="view"></section>
       <section id="recalls" class="view"></section>
       <section id="jobs" class="view"></section>
     </main>
@@ -174,7 +179,18 @@ function dashboardHtml(): string {
     </form>
   </dialog>
   <script>
-    const state = { overview: null, threads: [], memories: [], candidates: [], selectedThreadId: null, csrfToken: null, editing: null };
+    const state = {
+      overview: null,
+      threads: [],
+      memories: [],
+      candidates: [],
+      researchCases: [],
+      researchSnapshot: null,
+      selectedThreadId: null,
+      selectedResearchCaseId: null,
+      csrfToken: null,
+      editing: null
+    };
     const fmt = new Intl.NumberFormat();
     const bytes = (value) => {
       if (!value) return '0 B';
@@ -214,6 +230,7 @@ function dashboardHtml(): string {
           \${stat('会话', fmt.format(overview.counts.threads))}
           \${stat('记忆', fmt.format(overview.counts.memories))}
           \${stat('候选', fmt.format(overview.counts.memoryCandidates))}
+          \${stat('研究案例', fmt.format(overview.counts.researchCases))}
           \${stat('导入批次', fmt.format(overview.counts.historyImportRuns))}
           \${stat('数据库', bytes(overview.database.sizeBytes))}
         </div>
@@ -274,6 +291,69 @@ function dashboardHtml(): string {
       state.candidates = await api('/api/candidates');
       document.getElementById('candidates').innerHTML = '<h2>候选审核 · 先核对证据，再批准</h2><p class="muted">展示最近 100 条。批准仅影响记忆，不更新投资 thesis。</p>' + state.candidates.map(candidate => '<article class="panel memory-card"><h2>' + escapeHtml(candidate.title) + '</h2><p>' + escapeHtml(candidate.content) + '</p><div class="muted">' + escapeHtml(candidate.status + ' · ' + candidate.riskLevel + ' · ' + (candidate.reviewReason || '无待审原因')) + '</div><h3>原文证据</h3><div class="markdown">' + escapeHtml(candidate.evidence) + '</div><div class="actions"><button data-open-thread="' + escapeHtml(candidate.threadId) + '">查看来源会话</button>' + (candidate.status === 'pending_review' ? actionButton('candidates', candidate.id, 'accept', '批准') + actionButton('candidates', candidate.id, 'reject', '拒绝') : '') + '</div></article>').join('') + (!state.candidates.length ? '<div class="empty">暂无候选记忆</div>' : '');
     }
+    async function renderResearch() {
+      state.researchCases = await api('/api/research-cases');
+      if (!state.selectedResearchCaseId && state.researchCases[0]) {
+        state.selectedResearchCaseId = state.researchCases[0].id;
+      }
+      const list = state.researchCases.map(item =>
+        '<button class="' + (item.id === state.selectedResearchCaseId ? 'active' : '') + '" data-research-case="' + escapeHtml(item.id) + '">'
+        + '<div class="title">' + escapeHtml(item.title) + '</div>'
+        + '<div class="meta">' + escapeHtml(item.status + ' · as of ' + item.asOfDate) + '</div>'
+        + '<div class="meta">' + escapeHtml(item.question) + '</div></button>'
+      ).join('');
+      document.getElementById('research').innerHTML =
+        '<h2>研究案例 · Evidence → Claim → Review</h2>'
+        + '<p class="muted">Thesis impact 只是提案；Mira 不修改 thesis、仓位或交易状态。</p>'
+        + '<div class="split"><div class="list">' + (list || '<div class="empty">暂无研究案例；可通过 CLI 或 MCP 提交 draft packet</div>')
+        + '</div><div id="research-detail" class="panel"><div class="empty">请选择一个研究案例</div></div></div>';
+      if (state.selectedResearchCaseId) await loadResearchCase(state.selectedResearchCaseId);
+    }
+    async function loadResearchCase(id) {
+      state.selectedResearchCaseId = id;
+      document.querySelectorAll('[data-research-case]').forEach(button =>
+        button.classList.toggle('active', button.dataset.researchCase === id)
+      );
+      const snapshot = await api('/api/research-cases/' + encodeURIComponent(id));
+      state.researchSnapshot = snapshot;
+      const evidenceById = new Map(snapshot.evidence.map(item => [item.id, item]));
+      const evidence = snapshot.evidence.map(item =>
+        '<article class="panel memory-card"><h3>' + escapeHtml(item.sourceTitle) + '</h3>'
+        + '<div class="muted">' + escapeHtml(item.id + ' · ' + item.sourceType + ' · ' + item.state) + '</div>'
+        + '<p><a href="' + escapeHtml(item.sourceUri) + '" target="_blank" rel="noreferrer">打开来源</a> · ' + escapeHtml(item.locator) + '</p>'
+        + '<div class="markdown">' + escapeHtml(item.excerpt) + '</div>'
+        + (item.state === 'current' ? '<div class="actions">' + actionButton('research-evidence', item.id, 'stale', '标记过期') + '</div>' : '')
+        + '</article>'
+      ).join('');
+      const claims = snapshot.claims.map(claim => {
+        const links = claim.links.map(link => {
+          const source = evidenceById.get(link.evidenceId);
+          return '<li><b>' + escapeHtml(link.relation) + '</b> · ' + escapeHtml(source?.sourceTitle || link.evidenceId)
+            + '：' + escapeHtml(link.rationale) + '</li>';
+        }).join('');
+        const actions = claim.status === 'active'
+          ? '<div class="actions">'
+            + actionButton('research-claims', claim.id, 'approve', '批准')
+            + actionButton('research-claims', claim.id, 'reject', '拒绝')
+            + actionButton('research-claims', claim.id, 'request_changes', '要求修改')
+            + '</div>'
+          : '';
+        return '<article class="panel memory-card"><h3>' + escapeHtml(claim.statement) + '</h3>'
+          + '<div class="muted">' + escapeHtml(claim.id + ' · ' + claim.status + ' · evidence:' + claim.evidenceStatus + ' · review:' + claim.reviewStatus) + '</div>'
+          + '<p>置信度 ' + escapeHtml(claim.confidence) + ' · Thesis impact proposal: <b>' + escapeHtml(claim.thesisImpact) + '</b></p>'
+          + '<p><b>失效条件：</b>' + escapeHtml(claim.invalidationConditions) + '</p>'
+          + '<ul>' + links + '</ul>' + actions + '</article>';
+      }).join('');
+      const exported = await api('/api/research-cases/' + encodeURIComponent(id) + '/export');
+      document.getElementById('research-detail').innerHTML =
+        '<h2>' + escapeHtml(snapshot.researchCase.title) + '</h2>'
+        + '<div class="muted">' + escapeHtml(snapshot.researchCase.status + ' · as of ' + snapshot.researchCase.asOfDate) + '</div>'
+        + '<p>' + escapeHtml(snapshot.researchCase.question) + '</p>'
+        + '<h2>Claims</h2>' + (claims || '<div class="empty">暂无 Claim</div>')
+        + '<h2>Evidence Ledger</h2>' + (evidence || '<div class="empty">暂无 Evidence</div>')
+        + '<h2>Review Events</h2><pre>' + escapeHtml(JSON.stringify(snapshot.events, null, 2)) + '</pre>'
+        + '<details><summary>Markdown 导出预览</summary><pre>' + escapeHtml(exported.markdown) + '</pre></details>';
+    }
     async function renderRecalls() {
       const receipts = await api('/api/recalls');
       document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2>' + receipts.map(receipt => '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>').join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
@@ -284,12 +364,29 @@ function dashboardHtml(): string {
     }
     function openEditor(resource, id, action) {
       state.editing = {resource, id, action};
-      const item = resource === 'memory' ? state.memories.find(memory => memory.id === id) : state.candidates.find(candidate => candidate.id === id);
-      document.getElementById('edit-title').textContent = ({correct:'纠正记忆', archive:'归档记忆', restore:'恢复记忆', accept:'批准候选', reject:'拒绝候选', retry:'重新排队'})[action];
-      document.getElementById('edit-preview').textContent = item ? item.title + '\\n' + item.content : id;
+      const item = resource === 'memory'
+        ? state.memories.find(memory => memory.id === id)
+        : resource === 'candidates'
+          ? state.candidates.find(candidate => candidate.id === id)
+          : resource === 'research-claims'
+            ? state.researchSnapshot?.claims.find(claim => claim.id === id)
+            : resource === 'research-evidence'
+              ? state.researchSnapshot?.evidence.find(evidence => evidence.id === id)
+              : null;
+      document.getElementById('edit-title').textContent = ({
+        correct:'纠正记忆', archive:'归档记忆', restore:'恢复记忆', accept:'批准候选',
+        reject: resource === 'research-claims' ? '拒绝 Claim' : '拒绝候选',
+        retry:'重新排队', approve:'批准 Claim', request_changes:'要求修改 Claim', stale:'标记 Evidence 过期'
+      })[action];
+      document.getElementById('edit-preview').textContent = item
+        ? (item.title || item.statement || item.sourceTitle || id) + '\\n' + (item.content || item.excerpt || '')
+        : id;
       document.getElementById('content-field').hidden = action !== 'correct';
       document.getElementById('replacement-field').hidden = action !== 'accept';
       document.getElementById('reason-field').hidden = resource === 'jobs';
+      const governedResearch = resource === 'research-claims' || resource === 'research-evidence';
+      document.getElementById('edit-reason').required = governedResearch;
+      document.getElementById('reason-field').childNodes[0].nodeValue = governedResearch ? '操作原因（必填）' : '操作原因（可选）';
       document.getElementById('edit-content').value = item?.content || '';
       document.getElementById('edit-content').required = action === 'correct';
       document.getElementById('edit-reason').value = '';
@@ -305,6 +402,7 @@ function dashboardHtml(): string {
       if (view === 'briefing') await renderBriefing();
       if (view === 'memory') await renderMemory();
       if (view === 'candidates') await renderCandidates();
+      if (view === 'research') await renderResearch();
       if (view === 'recalls') await renderRecalls();
       if (view === 'jobs') await renderJobs();
       if (view === 'overview') { state.overview = await api('/api/overview'); renderOverview(); }
@@ -317,6 +415,8 @@ function dashboardHtml(): string {
       if (thread) await loadThread(thread.dataset.threadId);
       const openThread = event.target.closest('[data-open-thread]');
       if (openThread) { state.selectedThreadId = openThread.dataset.openThread; await show('threads'); }
+      const researchCase = event.target.closest('[data-research-case]');
+      if (researchCase) await loadResearchCase(researchCase.dataset.researchCase);
       const action = event.target.closest('[data-action]');
       if (action?.dataset.action === 'history') {
         const history = await api('/api/memory/' + encodeURIComponent(action.dataset.id) + '/history');
@@ -332,7 +432,9 @@ function dashboardHtml(): string {
       button.disabled = true;
       try {
         const {resource, id, action} = state.editing;
-        const body = resource === 'candidates' ? {decision: action} : {action};
+        const body = resource === 'candidates' || resource === 'research-claims'
+          ? {decision: action}
+          : {action};
         const reason = document.getElementById('edit-reason').value.trim();
         if (reason && resource !== 'jobs') body.reason = reason;
         if (action === 'correct') body.content = document.getElementById('edit-content').value;
@@ -341,7 +443,7 @@ function dashboardHtml(): string {
         await api('/api/' + resource + '/' + encodeURIComponent(id), body);
         document.getElementById('editor').close();
         document.getElementById('feedback').textContent = '已保存；历史记录保留。';
-        await show(resource);
+        await show(resource.startsWith('research-') ? 'research' : resource);
       } catch (error) { document.getElementById('edit-error').textContent = error.message; }
       finally { button.disabled = false; }
     });
@@ -412,7 +514,7 @@ async function routeRequest(
     if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") {
       sendJson(res, 415, {error: "JSON required"}); return;
     }
-    const match = pathname.match(/^\/api\/(memory|candidates|jobs)\/([^/]+)$/);
+    const match = pathname.match(/^\/api\/(memory|candidates|jobs|research-claims|research-evidence)\/([^/]+)$/);
     if (!match) { sendJson(res, 404, {error: "Not found"}); return; }
     if (Number(req.headers["content-length"] ?? 0) > 65_536) { sendJson(res, 413, {error: "Body too large"}); return; }
     try {
@@ -439,6 +541,18 @@ async function routeRequest(
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listRecallEvents(db, project.id, {taskId: url.searchParams.get("taskId") ?? undefined})); return; }
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
+    if (pathname === "/api/research-cases") {
+      sendJson(res, 200, listViewerResearchCases(db, project.id)); return;
+    }
+    const researchExportMatch = pathname.match(/^\/api\/research-cases\/([^/]+)\/export$/);
+    if (researchExportMatch) {
+      const snapshot = getViewerResearchCase(db, project.id, decodeURIComponent(researchExportMatch[1]));
+      sendJson(res, 200, {markdown: renderResearchCaseMarkdown(snapshot)}); return;
+    }
+    const researchCaseMatch = pathname.match(/^\/api\/research-cases\/([^/]+)$/);
+    if (researchCaseMatch) {
+      sendJson(res, 200, getViewerResearchCase(db, project.id, decodeURIComponent(researchCaseMatch[1]))); return;
+    }
     if (pathname.startsWith("/api/memory/") && pathname.endsWith("/history")) {
       const id = decodeURIComponent(pathname.slice("/api/memory/".length, -"/history".length));
       sendJson(res, 200, getMemoryHistory(db, project.id, id)); return;

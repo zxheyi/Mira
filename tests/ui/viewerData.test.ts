@@ -16,9 +16,12 @@ import {
   getViewerOverview,
   getViewerThread,
   listViewerImportRuns,
+  listViewerResearchCases,
+  getViewerResearchCase,
   listViewerThreads
 } from "../../src/ui/viewerData.js";
 import { setWorkingMemory } from "../../src/workingMemory/workingMemoryStore.js";
+import { submitResearchPacket } from "../../src/research/researchService.js";
 
 let db: Database.Database | undefined;
 afterEach(() => { db?.close(); db = undefined; });
@@ -72,7 +75,20 @@ Assistant: Added a local dashboard.`
     failed: 0
   });
   rebuildProjectBriefing(db, project.id);
-  return { root, dbPath, database: db, project };
+  const research = submitResearchPacket(db, project.id, {
+    case: { title: "Evidence review", question: "What changed?", asOfDate: "2026-09-01" },
+    evidence: [{
+      key: "E1", sourceType: "regulatory_filing",
+      sourceUri: "https://example.test/filing", sourceTitle: "Filing", locator: "p. 1",
+      excerpt: "Revenue increased.", accessedAt: "2026-09-01"
+    }],
+    claims: [{
+      key: "C1", statement: "Revenue increased.", evidenceStatus: "supported", confidence: 0.8,
+      thesisImpact: "watch", invalidationConditions: "A later filing reports a decline.",
+      links: [{ evidenceKey: "E1", relation: "supports", rationale: "Direct observation." }]
+    }]
+  });
+  return { root, dbPath, database: db, project, research };
 }
 
 describe("viewer data", () => {
@@ -89,7 +105,8 @@ describe("viewer data", () => {
       memories: 1,
       memoryCandidates: 0,
       historyImportRuns: 1,
-      workingMemory: 1
+      workingMemory: 1,
+      researchCases: 1
     });
     expect(overview.integrations).toMatchObject({
       codex: { installed: false },
@@ -97,6 +114,18 @@ describe("viewer data", () => {
     });
     expect(overview.latestImportRun).toMatchObject({ importedCount: 1, skippedCount: 3, failedCount: 0 });
     expect(overview.latestBriefing).toMatchObject({ version: 1, status: "complete" });
+  });
+
+  test("lists and reads project-scoped Research Cases", async () => {
+    const { database, project, research } = await setup();
+
+    expect(listViewerResearchCases(database, project.id)).toEqual([
+      expect.objectContaining({ id: research.researchCase.id, status: "draft" })
+    ]);
+    expect(getViewerResearchCase(database, project.id, research.researchCase.id)).toMatchObject({
+      researchCase: { title: "Evidence review" },
+      claims: [expect.objectContaining({ statement: "Revenue increased." })]
+    });
   });
 
   test("lists thread previews and returns full thread details", async () => {

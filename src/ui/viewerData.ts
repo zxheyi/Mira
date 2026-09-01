@@ -9,6 +9,7 @@ import { listAllMemoriesForProject, type Memory } from "../memory/memoryStore.js
 import type { Project } from "../projects/projectStore.js";
 import { getThread, listThreadsForProject, type Thread } from "../threads/threadStore.js";
 import { listWorkingMemory, type WorkingMemory } from "../workingMemory/workingMemoryStore.js";
+import { getResearchCaseSnapshot, listResearchCases } from "../research/researchStore.js";
 
 export type ViewerCounts = {
   threads: number;
@@ -16,6 +17,7 @@ export type ViewerCounts = {
   memoryCandidates: number;
   historyImportRuns: number;
   workingMemory: number;
+  researchCases: number;
 };
 
 export type ViewerOverview = {
@@ -83,7 +85,8 @@ export async function getViewerOverview(options: {
       memories: countProjectRows(options.db, "memories", options.project.id),
       memoryCandidates: countProjectRows(options.db, "memory_candidates", options.project.id),
       historyImportRuns: countProjectRows(options.db, "history_import_runs", options.project.id),
-      workingMemory: countProjectRows(options.db, "working_memory", options.project.id)
+      workingMemory: countProjectRows(options.db, "working_memory", options.project.id),
+      researchCases: countProjectRows(options.db, "research_cases", options.project.id)
     },
     integrations,
     latestImportRun: importRuns[0],
@@ -136,4 +139,12 @@ export function getViewerMemorySnapshot(db: Database.Database, projectId: string
     memories: listAllMemoriesForProject(db, projectId),
     workingMemory: listWorkingMemory(db, projectId)
   };
+}
+
+export function listViewerResearchCases(db: Database.Database, projectId: string) {
+  return listResearchCases(db, projectId);
+}
+
+export function getViewerResearchCase(db: Database.Database, projectId: string, caseId: string) {
+  return getResearchCaseSnapshot(db, projectId, caseId);
 }

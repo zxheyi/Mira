@@ -11,6 +11,7 @@ import { authorizeCuration, curateMemory } from "../dist/src/memory/curationServ
 import { prepareContext } from "../dist/src/context/contextPreparation.js";
 import { enqueueDistillJob, claimNextDistillJob, failDistillJob } from "../dist/src/distill/distillJobStore.js";
 import { startViewerServer } from "../dist/src/ui/viewerServer.js";
+import { submitResearchPacket } from "../dist/src/research/researchService.js";
 
 const {chromium} = await import(process.env.MIRA_PLAYWRIGHT_MODULE || "playwright");
 const root = await mkdtemp(join(tmpdir(), "mira-ui-acceptance-"));
@@ -24,6 +25,18 @@ prepareContext(db, project.id, {taskId: "research-demo", maxCharacters: 1200});
 enqueueDistillJob(db, project.id, thread.id, "cli");
 const job = claimNextDistillJob(db, project.id);
 failDistillJob(db, job.id, "Synthetic provider unavailable", job.attempts);
+const research = submitResearchPacket(db, project.id, {
+  case: {title: "公开公司季度研究", question: "本季度发生了什么变化？", asOfDate: "2026-09-01"},
+  evidence: [{
+    key: "E1", sourceType: "regulatory_filing", sourceUri: "https://example.test/filing",
+    sourceTitle: "季度监管文件", locator: "p. 1", excerpt: "报告收入同比增长。", accessedAt: "2026-09-01"
+  }],
+  claims: [{
+    key: "C1", statement: "报告收入仍保持同比增长。", evidenceStatus: "supported", confidence: 0.8,
+    thesisImpact: "watch", invalidationConditions: "后续监管文件报告同比下降。",
+    links: [{evidenceKey: "E1", relation: "supports", rationale: "监管文件直接报告该观察。"}]
+  }]
+}, "synthetic-test");
 const server = await startViewerServer({projectRoot: root, dbPath, port: 0});
 let browser;
 try {
@@ -69,15 +82,30 @@ try {
   await nav("召回审计"); await page.getByText(/完整注入 1/).waitFor();
   await nav("后台任务"); await page.getByRole("button",{name:"重新排队",exact:true}).click(); await submit();
   await page.getByText(/pending · synthetic_source/).waitFor();
+  await nav("研究案例");
+  await page.getByRole("heading",{name:"研究案例 · Evidence → Claim → Review",exact:true}).waitFor();
+  const claim = page.locator("article").filter({hasText:"报告收入仍保持同比增长。"});
+  await claim.getByRole("button",{name:"批准",exact:true}).click();
+  assert.equal(await page.getByLabel("操作原因（必填）").getAttribute("required"), "");
+  await page.getByLabel("操作原因（必填）").fill("已核对监管文件和定位");
+  await page.screenshot({path:join(root,"desktop-research-review.png"), fullPage:true});
+  await submit();
+  await page.locator("#research-detail").getByText(/completed · as of 2026-09-01/).waitFor();
+  const evidence = page.locator("article").filter({hasText:"季度监管文件"});
+  await evidence.getByRole("button",{name:"标记过期",exact:true}).click();
+  await page.getByLabel("操作原因（必填）").fill("已被后续监管文件替代");
+  await submit();
+  await page.locator("#research-detail").getByText(/review:changes_requested/).waitFor();
+  assert.match(await page.locator("#research-detail").innerText(), new RegExp(research.researchCase.id));
   await nav("会话"); await page.locator("#thread-detail pre").waitFor();
   assert.match(await page.locator("#thread-detail pre").innerText(), /研究结论必须绑定可核验的原始资料/);
   await nav("导入批次"); await page.locator("#runs").getByText("暂无导入批次",{exact:true}).waitFor();
-  await page.setViewportSize({width:390,height:844}); await nav("候选审核");
-  await page.getByRole("heading",{name:"候选审核 · 先核对证据，再批准",exact:true}).waitFor();
+  await page.setViewportSize({width:390,height:844}); await nav("研究案例");
+  await page.getByRole("heading",{name:"研究案例 · Evidence → Claim → Review",exact:true}).waitFor();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth), "narrow layout must not overflow horizontally");
-  await page.screenshot({path:join(root,"narrow-candidates.png"), fullPage:true});
+  await page.screenshot({path:join(root,"narrow-research.png"), fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:"passed", baseline:"specs/025-recovery-and-management-ui/spec.md", artifacts:root, checks:["review/cancel/reject","correct/archive/restore/history","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
+  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
 } finally {
   await browser?.close(); await server.close(); db.close();
 }
