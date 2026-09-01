@@ -6,8 +6,11 @@ runtime:
 scope:
   task_id: "required"
 recall:
-  before_research: "prepare_context"
-  recalled_memory_role: "prior_context_until_source_revalidated"
+  project_context: "prepare_context"
+  project_context_role: "prior_context_until_source_revalidated"
+  case_context: "prepare_research_context"
+  case_context_when: "existing_case_id_available"
+  case_context_role: "approved_prior_research_until_evidence_state_changes"
 capture:
   after_research: "hook_or_save_thread_fallback"
 persistence:
@@ -26,3 +29,4 @@ audit:
   claim_ids: "required"
   counterevidence: "required"
   invalidation_conditions: "required"
+  research_context_provenance: "required"

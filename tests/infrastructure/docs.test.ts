@@ -34,4 +34,18 @@ describe("documentation readiness", () => {
     }
     expect(agents).not.toContain("失败尝试要记录为 `lesson` 或 `constraint`");
   });
+
+  test("investment research skill recalls project and evidence-gated case context", async () => {
+    const skill = await readProjectFile("skills/mira-investment-research/SKILL.md");
+    const profile = await readProjectFile("skills/mira-investment-research/references/runtime-profile.yaml");
+
+    expect(skill).toContain("prepare_context");
+    expect(skill).toContain("prepare_research_context");
+    expect(skill).toContain("claimIds");
+    expect(skill).toContain("evidenceIds");
+    expect(skill).toContain("snapshotIds");
+    expect(profile).toContain('project_context: "prepare_context"');
+    expect(profile).toContain('case_context: "prepare_research_context"');
+    expect(profile).toContain('research_context_provenance: "required"');
+  });
 });
