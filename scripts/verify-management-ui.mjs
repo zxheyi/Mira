@@ -106,6 +106,13 @@ try {
   await page.getByLabel("更正内容").fill("已纠正：研究流程必须绑定核验记录。");
   await page.screenshot({path:join(root,"desktop-recall-correction.png"),fullPage:true});
   await submit();
+  const quality = page.locator("#recall-quality");
+  await quality.getByRole("heading",{name:"召回质量证据",exact:true}).waitFor();
+  await quality.getByText("100%",{exact:true}).waitFor();
+  await quality.getByText("1 / 20",{exact:true}).waitFor();
+  await quality.getByText("1 / 5",{exact:true}).waitFor();
+  await quality.getByText("insufficient_data",{exact:true}).waitFor();
+  await page.screenshot({path:join(root,"desktop-recall-quality.png"),fullPage:true});
   await nav("记忆");
   const correctedRecallMemory = page.locator("article").filter({hasText:"已纠正：研究流程必须绑定核验记录。"});
   await correctedRecallMemory.getByRole("button",{name:"查看历史",exact:true}).click();
@@ -136,12 +143,16 @@ try {
   await nav("会话"); await page.locator("#thread-detail pre").waitFor();
   assert.match(await page.locator("#thread-detail pre").innerText(), /研究结论必须绑定可核验的原始资料/);
   await nav("导入批次"); await page.locator("#runs").getByText("暂无导入批次",{exact:true}).waitFor();
-  await page.setViewportSize({width:390,height:844}); await nav("研究案例");
+  await page.setViewportSize({width:390,height:844}); await nav("召回审计");
+  await page.getByRole("heading",{name:"召回质量证据",exact:true}).waitFor();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth), "narrow quality dashboard must not overflow horizontally");
+  await page.screenshot({path:join(root,"narrow-recall-quality.png"),fullPage:true});
+  await nav("研究案例");
   await page.getByRole("heading",{name:"研究案例 · Evidence → Claim → Review",exact:true}).waitFor();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth), "narrow layout must not overflow horizontally");
   await page.screenshot({path:join(root,"narrow-research.png"), fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md","specs/029-recall-feedback/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","explicit recall feedback with missing Memory search","receipt-linked Memory correction","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
+  console.log(JSON.stringify({status:"passed", baseline:["specs/025-recovery-and-management-ui/spec.md","specs/027-investment-research-case/spec.md","specs/029-recall-feedback/spec.md"], artifacts:root, checks:["memory review/correct/lifecycle","research review/stale/export","explicit recall feedback with missing Memory search","receipt-linked Memory correction","read-only recall quality dashboard","recall/jobs/threads/empty-briefing","desktop/narrow/no-js-errors"]}));
 } finally {
   await browser?.close(); await server.close(); db.close();
 }

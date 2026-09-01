@@ -5,6 +5,7 @@ import { listMemoryCandidates } from "../distill/candidateService.js";
 import { listDistillJobs, sanitizeDistillError } from "../distill/distillJobStore.js";
 import { listOutboxMessages } from "../events/domainOutboxStore.js";
 import { getMemoryHistory } from "../memory/memoryLifecycleStore.js";
+import { getRecallQualityReport } from "../context/recallFeedbackStore.js";
 import { applyViewerAction } from "./viewerActions.js";
 import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
@@ -414,11 +415,36 @@ function dashboardHtml(): string {
       const memory = state.memories.find(item => item.id === id);
       return memory ? memory.title + ' · ' + id : id;
     }
+    function renderRecallQuality(report) {
+      const threshold = report.recommendation;
+      const list = ids => ids.length
+        ? '<ul>' + ids.map(id => '<li>' + escapeHtml(recallMemoryLabel(id)) + '</li>').join('') + '</ul>'
+        : '<div class="muted">无</div>';
+      const memoryQualityIds = [...new Set([
+        ...report.irrelevantMemoryIds,...report.correctedMemoryIds,...report.confirmedCorrectionMemoryIds
+      ])];
+      return '<section id="recall-quality" class="panel memory-card">'
+        + '<h2>召回质量证据</h2><p class="muted">该报告只提供决策证据，不会自动切换检索、修改 Research 或 thesis。</p>'
+        + '<div class="grid stats">'
+        + stat('标注覆盖率',Math.round(report.feedbackCoverage * 100) + '%')
+        + stat('已标注 Recall',report.labeledRecallCount + ' / ' + threshold.minimumLabeledRecalls)
+        + stat('真实检索缺失',report.retrievalMissRecordCount + ' / ' + threshold.minimumRetrievalMissRecords)
+        + stat('当前建议',threshold.status) + '</div>'
+        + '<div class="grid content-grid">'
+        + '<div><h3>Retrieval miss</h3>' + list(report.retrievalMissMemoryIds)
+        + '<h3>Ranking miss</h3>' + list(report.rankingMissMemoryIds) + '</div>'
+        + '<div><h3>Budget miss</h3>' + list(report.budgetMissMemoryIds)
+        + '<h3>Memory quality</h3>' + list(memoryQualityIds) + '</div></div>'
+        + (report.unexplainedMissingMemoryIds.length ? '<details><summary>未解释的缺失</summary>' + list(report.unexplainedMissingMemoryIds) + '</details>' : '')
+        + '</section>';
+    }
     async function renderRecalls() {
-      const [receipts, snapshot] = await Promise.all([api('/api/recalls'), api('/api/memory')]);
+      const [receipts,snapshot,quality] = await Promise.all([
+        api('/api/recalls'),api('/api/memory'),api('/api/recall-quality')
+      ]);
       state.recalls = receipts;
       state.memories = snapshot.memories;
-      document.getElementById('recalls').innerHTML = '<h2>召回审计 · 注入不等于使用成功</h2><p class="muted">只对用户明确评价的通用 Memory 召回进行标注；Research Context receipt 独立审计。</p>' + receipts.map(receipt => {
+      document.getElementById('recalls').innerHTML = renderRecallQuality(quality) + '<h2>召回审计 · 注入不等于使用成功</h2><p class="muted">只对用户明确评价的通用 Memory 召回进行标注；Research Context receipt 独立审计。</p>' + receipts.map(receipt => {
         const injected = receipt.injectedMemoryIds.map(id => {
           const memory = state.memories.find(item => item.id === id);
           const correct = memory?.status === 'active'
@@ -720,6 +746,7 @@ async function routeRequest(
   await withProject(options, async ({ db, project }) => {
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listViewerRecallEntries(db, project.id, url.searchParams.get("taskId") ?? undefined)); return; }
+    if (pathname === "/api/recall-quality") { sendJson(res, 200, getRecallQualityReport(db, project.id)); return; }
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
     if (pathname === "/api/outbox") { sendJson(res, 200, listOutboxMessages(db, project.id)); return; }
     if (pathname === "/api/research-cases") {

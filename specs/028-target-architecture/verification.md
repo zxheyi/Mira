@@ -26,7 +26,7 @@ This document maps every target-architecture requirement to current implementati
 
 ## Executable acceptance
 
-- `npm test`: 75 files, 308 tests.
+- `npm test`: 78 files, 311 tests.
 - `npm run build`: production TypeScript compilation.
 - `npm run verify:target-architecture`: no-network full path from Before Turn through Research export and Vault.
 - `npm run verify:research-pilot`: Apple FY2024 public-source case with 15 Snapshot-bound Evidence Items and eight Claims.
