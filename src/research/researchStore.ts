@@ -188,7 +188,9 @@ export function getResearchCaseSnapshot(
   const links = db.prepare(`
     select project_id, case_id, claim_id, evidence_id, relation, rationale
     from research_claim_evidence where project_id = ? and case_id = ?
-    order by claim_id asc, evidence_id asc, relation asc
+    order by claim_id asc,
+             case relation when 'supports' then 0 when 'contradicts' then 1 else 2 end,
+             evidence_id asc
   `).all(projectId, caseId).map((row) => toLink(row as ResearchLinkRow));
   const claims = db.prepare(`
     select id, project_id, case_id, statement, evidence_status, review_status, confidence,
@@ -200,7 +202,7 @@ export function getResearchCaseSnapshot(
   });
   const events = db.prepare(`
     select id, project_id, case_id, claim_id, evidence_id, event_type, receipt, created_at
-    from research_events where project_id = ? and case_id = ? order by created_at asc, id asc
+    from research_events where project_id = ? and case_id = ? order by created_at asc, rowid asc
   `).all(projectId, caseId).map((row) => toEvent(row as ResearchEventRow));
 
   return { researchCase: toResearchCase(caseRow), evidence, claims, events };
