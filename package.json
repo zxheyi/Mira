@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc",
     "benchmark:recall": "npm run build --silent && node scripts/run-recall-baseline.mjs",
+    "verify:multi-case-research": "npm run build --silent && node scripts/verify-multi-case-research.mjs",
     "verify:research-pilot": "npm run build --silent && node scripts/verify-research-pilot.mjs",
     "verify:target-architecture": "npm run build --silent && node scripts/verify-target-architecture.mjs",
     "dev": "tsx src/index.ts",

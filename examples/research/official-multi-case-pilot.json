@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "slug": "apple-fy2024",
+      "officialDomain": "sec.gov",
+      "packet": {
+        "case": {
+          "title": "Apple FY2024 net sales comparison",
+          "question": "截至 2024-11-01，Apple FY2024 总净销售额是否高于 FY2023？",
+          "asOfDate": "2024-11-01"
+        },
+        "snapshots": [
+          {
+            "key": "APPLE_FY2024_10K",
+            "canonicalUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+            "sourceTitle": "Apple Inc. 2024 Form 10-K",
+            "publishedAt": "2024-11-01",
+            "accessedAt": "2026-09-01",
+            "mediaType": "text/plain; profile=bounded-public-excerpt",
+            "content": "Part II, Item 8, Consolidated Statements of Operations\nFY2024 total net sales were $391.035 billion versus $383.285 billion in FY2023."
+          }
+        ],
+        "evidence": [
+          {
+            "key": "APPLE_NET_SALES",
+            "snapshotKey": "APPLE_FY2024_10K",
+            "sourceType": "regulatory_filing",
+            "sourceUri": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+            "sourceTitle": "Apple Inc. 2024 Form 10-K",
+            "locator": "Part II, Item 8, Consolidated Statements of Operations",
+            "excerpt": "FY2024 total net sales were $391.035 billion versus $383.285 billion in FY2023.",
+            "publishedAt": "2024-11-01",
+            "accessedAt": "2026-09-01"
+          }
+        ],
+        "claims": [
+          {
+            "key": "APPLE_NET_SALES_GREW",
+            "statement": "Apple FY2024 total net sales exceeded FY2023 total net sales.",
+            "evidenceStatus": "supported",
+            "confidence": 0.99,
+            "thesisImpact": "watch",
+            "invalidationConditions": "A later Apple filing restates either fiscal-year total net sales figure.",
+            "links": [
+              {
+                "evidenceKey": "APPLE_NET_SALES",
+                "relation": "supports",
+                "rationale": "The audited annual statement reports both comparable fiscal-year figures."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "microsoft-fy2024",
+      "officialDomain": "sec.gov",
+      "packet": {
+        "case": {
+          "title": "Microsoft FY2024 revenue comparison",
+          "question": "截至 2024-07-30，Microsoft FY2024 营收是否高于 FY2023？",
+          "asOfDate": "2024-07-30"
+        },
+        "snapshots": [
+          {
+            "key": "MICROSOFT_FY2024_10K",
+            "canonicalUri": "https://www.sec.gov/Archives/edgar/data/789019/000095017024087843/msft-20240630.htm",
+            "sourceTitle": "Microsoft Corporation 2024 Form 10-K",
+            "publishedAt": "2024-07-30",
+            "accessedAt": "2026-09-01",
+            "mediaType": "text/plain; profile=bounded-public-excerpt",
+            "content": "Item 7, Summary Results of Operations\nRevenue 2024: $245,122 million\nRevenue 2023: $211,915 million\nPercentage change: 16%"
+          }
+        ],
+        "evidence": [
+          {
+            "key": "MICROSOFT_REVENUE",
+            "snapshotKey": "MICROSOFT_FY2024_10K",
+            "sourceType": "regulatory_filing",
+            "sourceUri": "https://www.sec.gov/Archives/edgar/data/789019/000095017024087843/msft-20240630.htm",
+            "sourceTitle": "Microsoft Corporation 2024 Form 10-K",
+            "locator": "Item 7, Summary Results of Operations",
+            "excerpt": "Revenue 2024: $245,122 million\nRevenue 2023: $211,915 million",
+            "publishedAt": "2024-07-30",
+            "accessedAt": "2026-09-01"
+          }
+        ],
+        "claims": [
+          {
+            "key": "MICROSOFT_REVENUE_GREW",
+            "statement": "Microsoft FY2024 revenue exceeded FY2023 revenue.",
+            "evidenceStatus": "supported",
+            "confidence": 0.99,
+            "thesisImpact": "watch",
+            "invalidationConditions": "A later Microsoft filing restates either fiscal-year revenue figure.",
+            "links": [
+              {
+                "evidenceKey": "MICROSOFT_REVENUE",
+                "relation": "supports",
+                "rationale": "The annual filing reports both comparable fiscal-year revenue figures."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "slug": "nvidia-fy2025",
+      "officialDomain": "sec.gov",
+      "packet": {
+        "case": {
+          "title": "NVIDIA FY2025 revenue comparison",
+          "question": "截至 2025-02-26，NVIDIA FY2025 营收是否高于 FY2024？",
+          "asOfDate": "2025-02-26"
+        },
+        "snapshots": [
+          {
+            "key": "NVIDIA_FY2025_10K",
+            "canonicalUri": "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000023/nvda-20250126.htm",
+            "sourceTitle": "NVIDIA Corporation 2025 Form 10-K",
+            "publishedAt": "2025-02-26",
+            "accessedAt": "2026-09-01",
+            "mediaType": "text/plain; profile=bounded-public-excerpt",
+            "content": "Item 7, Results of Operations\nRevenue 2025: $130,497 million\nRevenue 2024: $60,922 million\nPercentage change: Up 114%"
+          }
+        ],
+        "evidence": [
+          {
+            "key": "NVIDIA_REVENUE",
+            "snapshotKey": "NVIDIA_FY2025_10K",
+            "sourceType": "regulatory_filing",
+            "sourceUri": "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000023/nvda-20250126.htm",
+            "sourceTitle": "NVIDIA Corporation 2025 Form 10-K",
+            "locator": "Item 7, Results of Operations",
+            "excerpt": "Revenue 2025: $130,497 million\nRevenue 2024: $60,922 million",
+            "publishedAt": "2025-02-26",
+            "accessedAt": "2026-09-01"
+          }
+        ],
+        "claims": [
+          {
+            "key": "NVIDIA_REVENUE_GREW",
+            "statement": "NVIDIA FY2025 revenue exceeded FY2024 revenue.",
+            "evidenceStatus": "supported",
+            "confidence": 0.99,
+            "thesisImpact": "watch",
+            "invalidationConditions": "A later NVIDIA filing restates either fiscal-year revenue figure.",
+            "links": [
+              {
+                "evidenceKey": "NVIDIA_REVENUE",
+                "relation": "supports",
+                "rationale": "The annual filing reports both comparable fiscal-year revenue figures."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

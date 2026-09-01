@@ -247,6 +247,8 @@ Context Bundle 的顺序是 Working Memory、Project Briefing 元数据、相关
 
 `npm run verify:research-pilot` 在临时数据库中重放 Apple FY2024 公开来源案例，覆盖官方来源边界、反驳证据、授权审核、stale 传播、不可变修订、CLI/MCP/UI 一致性，以及不写入 Memory/thesis 的隔离约束。案例材料见 [Apple FY2024 来源笔记](docs/research/apple-fy2024-source-notes.md) 和 [可重放 fixture](examples/research/apple-fy2024-pilot.json)。
 
+`npm run verify:multi-case-research` 在临时数据库中重放 Apple FY2024、Microsoft FY2024 和 NVIDIA FY2025 三个官方申报案例，覆盖审核前排除、授权批准、案例发现、case 隔离召回、无正文召回审计，以及不写入 Memory、Candidate 或 thesis 的边界。案例材料见 [三案例来源笔记](docs/research/official-multi-case-source-notes.md) 和 [可重放 fixture](examples/research/official-multi-case-pilot.json)。
+
 `mira vault sync` 默认完整重建 `<project>/.mira/vault/`，也可通过 `--out` 指定相对项目根目录或绝对路径。Vault 包含索引、Project Briefing、Working Memory、每条 Memory、每个 Thread 和待审核候选；全生命周期状态、来源和前驱/后继关系均可追溯。同步先写 staging，再原子替换目标，失败会恢复上一版。SQLite 始终是唯一事实源，Vault 中的手动编辑不会回写，并会在下次同步时被覆盖。为保护项目，输出目标不能是项目根目录、其祖先、`.git` 或 `.mira` 控制目录。
 
 Phase 2 进一步提供可信自动提炼。Agent 可通过 `submit_memory_candidates` MCP 工具提交带 Thread 原文证据的候选；也可配置 OpenAI-compatible Provider，让 Hook 在保存 transcript 后幂等入队并 detached 启动后台 Worker：

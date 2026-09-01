@@ -25,10 +25,11 @@ This document maps every target-architecture requirement to current implementati
 
 ## Executable acceptance
 
-- `npm test`: 66 files, 297 tests.
+- `npm test`: 67 files, 299 tests.
 - `npm run build`: production TypeScript compilation.
 - `npm run verify:target-architecture`: no-network full path from Before Turn through Research export and Vault.
 - `npm run verify:research-pilot`: Apple FY2024 public-source case with 15 Snapshot-bound Evidence Items and eight Claims.
+- `npm run verify:multi-case-research`: three official-filing cases prove discovery, pre-review exclusion, authorized approval, case isolation and body-free Research recall audit without Memory, Candidate or thesis writes.
 - `scripts/verify-management-ui.mjs`: real Chrome wide/narrow Viewer acceptance with zero page errors.
 - `git diff --check`: patch-format verification.
 - Legacy product-name scan: no match outside ignored build/dependency metadata.
