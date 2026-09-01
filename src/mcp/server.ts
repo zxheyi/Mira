@@ -51,7 +51,10 @@ import {
   THESIS_IMPACTS
 } from "../research/researchTypes.js";
 import { renderResearchCaseMarkdown } from "../research/researchExport.js";
-import { prepareResearchContext } from "../research/researchContext.js";
+import {
+  listResearchContextRecalls,
+  recallResearchContext
+} from "../research/researchContext.js";
 import { verifyEvidence } from "../research/evidenceVerification.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
@@ -80,6 +83,7 @@ export const MIRA_MCP_TOOL_NAMES = [
   "list_research_cases",
   "get_research_case",
   "prepare_research_context",
+  "list_research_context_recalls",
   "revise_research_claim",
   "verify_research_evidence",
   "mark_research_evidence_stale",
@@ -114,7 +118,8 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   submit_research_packet: "Submit one validated draft Research Case with bounded Evidence Items, Claims and explicit links; this never creates Memory or mutates thesis state.",
   list_research_cases: "List project-scoped Research Cases with stable ids, titles, questions, as-of dates and workflow status so a connected caller can select a case without guessing.",
   get_research_case: "Read one complete project-scoped Research Case snapshot with Source Snapshot metadata, Evidence Verification receipts, Claims, links and append-only review events.",
-  prepare_research_context: "Return a read-only evidence-gated Research Context containing only active approved Claims backed by current verified supporting Evidence; draft or stale research remains excluded.",
+  prepare_research_context: "Return an evidence-gated Research Context containing only active approved Claims backed by current verified supporting Evidence, and append a recall receipt without mutating research facts or thesis state.",
+  list_research_context_recalls: "Inspect append-only Research Context receipts for the bound project and optional case, including exactly which Claim, Evidence and Snapshot ids were injected and the output hash.",
   revise_research_claim: "Requires host confirmation policy. Create an immutable active successor with explicit Evidence links and supersede the predecessor.",
   verify_research_evidence: "Run deterministic integrity, source binding, locator, excerpt, publication and freshness checks against the bound Source Snapshot.",
   mark_research_evidence_stale: "Requires host confirmation policy. Mark current Evidence stale and atomically reopen every linked active Claim for review.",
@@ -299,6 +304,10 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   },
   prepare_research_context: {
     caseId: z.string().trim().min(1).max(200)
+  },
+  list_research_context_recalls: {
+    caseId: z.string().trim().min(1).max(200).optional(),
+    limit: z.number().int().min(1).max(100).optional()
   },
   revise_research_claim: {
     claimId: z.string().trim().min(1).max(200),
@@ -579,7 +588,15 @@ function executeMiraTool(
       case "get_research_case":
         return getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"));
       case "prepare_research_context":
-        return prepareResearchContext(db, projectId, stringArg(args, "caseId"));
+        return recallResearchContext(db, projectId, stringArg(args, "caseId"), {
+          taskId,
+          transport: "mcp"
+        });
+      case "list_research_context_recalls":
+        return listResearchContextRecalls(db, projectId, {
+          caseId: optionalStringArg(args, "caseId"),
+          limit: numberArg(args, "limit", 20)
+        });
       case "revise_research_claim":
         return reviseResearchClaim(db, projectId, stringArg(args, "claimId"), {
           statement: stringArg(args, "statement"),

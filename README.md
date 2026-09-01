@@ -356,6 +356,7 @@ submit_research_packet
 list_research_cases
 get_research_case
 prepare_research_context
+list_research_context_recalls
 revise_research_claim
 verify_research_evidence
 mark_research_evidence_stale
@@ -365,7 +366,7 @@ export_research_case
 
 MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，不是假设 Agent 能读取完整 transcript。
 
-`prepare_research_context` 是只读的独立研究上下文出口：它只返回 active、approved 且由 current、verified supporting Evidence 支撑的 Claim。draft、未验证或 stale 研究不会进入结果；该工具不授予审核权，也不修改 Memory 或 thesis。
+`prepare_research_context` 是对研究事实只读的独立研究上下文出口：它只返回 active、approved 且由 current、verified supporting Evidence 支撑的 Claim。draft、未验证或 stale 研究不会进入结果；该工具不授予审核权，也不修改研究事实、Memory 或 thesis；每次 MCP 调用会追加一条不含 Markdown 正文的 recall receipt，可通过 `list_research_context_recalls` 审计。
 
 ## 项目文档
 

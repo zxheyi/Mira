@@ -76,6 +76,7 @@ describe("Mira MCP tools", () => {
       "list_research_cases",
       "get_research_case",
       "prepare_research_context",
+      "list_research_context_recalls",
       "revise_research_claim",
       "verify_research_evidence",
       "mark_research_evidence_stale",
@@ -112,6 +113,7 @@ describe("Mira MCP tools", () => {
       "list_research_cases",
       "get_research_case",
       "prepare_research_context",
+      "list_research_context_recalls",
       "revise_research_claim",
       "verify_research_evidence",
       "mark_research_evidence_stale",
@@ -201,7 +203,13 @@ describe("Mira MCP tools", () => {
     ]);
     expect(callMiraTool(untrusted, "prepare_research_context", {
       caseId: submitted.researchCase.id
-    })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });
+    })).toMatchObject({
+      claimIds: [], evidenceIds: [], snapshotIds: [],
+      receipt: {
+        caseId: submitted.researchCase.id, transport: "mcp", claimIds: [],
+        outputHash: expect.stringMatching(/^[a-f0-9]{64}$/)
+      }
+    });
     expect(() => callMiraTool(untrusted, "review_research_claim", {
       claimId: submitted.claims[0].id, decision: "approve", reason: "Forged"
     })).toThrow(/authority/i);
@@ -236,6 +244,17 @@ describe("Mira MCP tools", () => {
     expect(callMiraTool(untrusted, "prepare_research_context", {
       caseId: submitted.researchCase.id
     })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });
+    const researchRecalls = callMiraTool(untrusted, "list_research_context_recalls", {
+      caseId: submitted.researchCase.id
+    }) as Array<{claimIds: string[]; evidenceIds: string[]; transport: string}>;
+    expect(researchRecalls).toHaveLength(3);
+    expect(researchRecalls.map((receipt) => receipt.claimIds)).toEqual([
+      [], [submitted.claims[0].id], []
+    ]);
+    expect(researchRecalls[1]).toMatchObject({
+      evidenceIds: [submitted.evidence[0].id], transport: "mcp"
+    });
+    expect(researchRecalls[1]).not.toHaveProperty("markdown");
     expect(() => callMiraTool(untrusted, "revise_research_claim", {
       claimId: submitted.claims[0].id,
       statement: "Revenue growth needs revalidation.",

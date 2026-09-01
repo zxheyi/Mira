@@ -38,7 +38,7 @@ Codex / Claude Code / Cursor / CLI / MCP / Viewer
 - 六类入口均通过可发现的 Host Adapter Registry 和 Unified Turn Lifecycle Port；Descriptor 同时区分 Source Host 与 Transport。
 - schema v13 已落地 Lifecycle Session/Turn、Capture Record、Domain Event/Outbox、Source Snapshot、Evidence Verification 和 handler receipt。
 - Research approve gate 要求 current verified supporting Evidence；结构化反证处置、Snapshot stale 级联和旧 Claim 重开均已实现。
-- Briefing 只展示 Research 状态摘要；独立 Research Context 只投影 active approved Claim 和 current verified support，并通过 CLI、Viewer 与只读 MCP `prepare_research_context` 暴露；通用 `prepareContext` 不自动混入研究结论。
+- Briefing 只展示 Research 状态摘要；独立 Research Context 只投影 active approved Claim 和 current verified support，并通过 CLI、Viewer 与 MCP `prepare_research_context` 暴露；MCP 对研究事实只读并追加不含正文的 recall receipt，通用 `prepareContext` 不自动混入研究结论。
 - Research Export、Markdown Vault 与 Viewer 公开 Snapshot 元数据、hash 和 Verification receipt，但不复制 Snapshot 正文。
 - `verify:target-architecture`、`verify:research-pilot`、真实浏览器宽/窄屏验收和全量测试共同证明运行时链路。
 

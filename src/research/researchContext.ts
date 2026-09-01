@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { createHash, randomUUID } from "node:crypto";
+import { appendDomainEvent } from "../events/domainOutboxStore.js";
 import { getResearchCaseSnapshot } from "./researchStore.js";
 import type {
   EvidenceVerification,
@@ -18,6 +20,26 @@ export type ResearchContextPacket = {
   snapshotIds: string[];
   characterCount: number;
   estimatedTokens: number;
+};
+
+export type ResearchContextRecallReceipt = {
+  id: string;
+  projectId: string;
+  caseId: string;
+  taskId?: string;
+  transport: "mcp" | "cli" | "ui";
+  claimIds: string[];
+  evidenceIds: string[];
+  snapshotIds: string[];
+  outputHash: string;
+  characterCount: number;
+  estimatedTokens: number;
+  recorded: true;
+  createdAt: string;
+};
+
+export type AuditedResearchContextPacket = ResearchContextPacket & {
+  receipt: ResearchContextRecallReceipt;
 };
 
 export type ResearchBriefingSummary = {
@@ -148,6 +170,65 @@ export function prepareResearchContext(
     characterCount: markdown.length,
     estimatedTokens: Math.ceil(markdown.length / 4)
   };
+}
+
+export function recallResearchContext(
+  db: Database.Database,
+  projectId: string,
+  caseId: string,
+  options: {taskId?: string; transport: "mcp" | "cli" | "ui"}
+): AuditedResearchContextPacket {
+  const packet = prepareResearchContext(db, projectId, caseId);
+  const receipt: ResearchContextRecallReceipt = {
+    id: `research_context_recall_${randomUUID()}`,
+    projectId,
+    caseId,
+    ...(options.taskId ? {taskId: options.taskId} : {}),
+    transport: options.transport,
+    claimIds: packet.claimIds,
+    evidenceIds: packet.evidenceIds,
+    snapshotIds: packet.snapshotIds,
+    outputHash: createHash("sha256").update(packet.markdown).digest("hex"),
+    characterCount: packet.characterCount,
+    estimatedTokens: packet.estimatedTokens,
+    recorded: true,
+    createdAt: new Date().toISOString()
+  };
+  appendDomainEvent(db, {
+    id: receipt.id,
+    projectId,
+    aggregateType: "research_case",
+    aggregateId: caseId,
+    eventType: "research_context_prepared",
+    payload: receipt,
+    createdAt: receipt.createdAt
+  });
+  return {...packet, receipt};
+}
+
+export function listResearchContextRecalls(
+  db: Database.Database,
+  projectId: string,
+  options: {caseId?: string; limit?: number} = {}
+): ResearchContextRecallReceipt[] {
+  const limit = options.limit ?? 20;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Research Context recall limit must be between 1 and 100");
+  }
+  const rows = options.caseId
+    ? db.prepare(`select payload from domain_events
+        where project_id = ? and aggregate_type = 'research_case'
+          and event_type = 'research_context_prepared' and aggregate_id = ?
+        order by created_at desc, rowid desc limit ?`)
+      .all(projectId, options.caseId, limit)
+    : db.prepare(`select payload from domain_events
+        where project_id = ? and aggregate_type = 'research_case'
+          and event_type = 'research_context_prepared'
+        order by created_at desc, rowid desc limit ?`)
+      .all(projectId, limit);
+  return rows.map((row) =>
+    JSON.parse((row as {payload: string}).payload) as ResearchContextRecallReceipt
+  );
 }
 
 export function listResearchBriefingSummaries(

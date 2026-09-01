@@ -42,6 +42,7 @@ describe("documentation readiness", () => {
     expect(skill).toContain("prepare_context");
     expect(skill).toContain("prepare_research_context");
     expect(skill).toContain("list_research_cases");
+    expect(skill).toContain("list_research_context_recalls");
     expect(skill).toContain("claimIds");
     expect(skill).toContain("evidenceIds");
     expect(skill).toContain("snapshotIds");
@@ -49,5 +50,6 @@ describe("documentation readiness", () => {
     expect(profile).toContain('case_discovery: "list_research_cases"');
     expect(profile).toContain('case_context: "prepare_research_context"');
     expect(profile).toContain('research_context_provenance: "required"');
+    expect(profile).toContain('research_context_receipts: "list_research_context_recalls"');
   });
 });

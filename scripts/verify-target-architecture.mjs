@@ -82,10 +82,17 @@ const mcpContext = callMiraTool(
   "prepare_research_context",
   {caseId:research.researchCase.id}
 );
+const mcpRecalls = callMiraTool(
+  {projectRoot:root,dbPath,db},
+  "list_research_context_recalls",
+  {caseId:research.researchCase.id}
+);
+const {receipt,...mcpPacket} = mcpContext;
 const vault = renderMarkdownVault(readVaultSnapshot(db, project));
 assert.match(markdown, /## Source Snapshot Ledger/);
 assert.deepEqual(context.claimIds, [research.claims[0].id]);
-assert.deepEqual(mcpContext, context);
+assert.deepEqual(mcpPacket, context);
+assert.deepEqual(mcpRecalls.map(item => item.id), [receipt.id]);
 assert.ok(vault.has(`research/${research.researchCase.id}.md`));
 assert.equal(Number(db.prepare("select count(*) from memories").pluck().get()), 1,
   "Research workflow must not create an additional Memory");
@@ -93,5 +100,5 @@ assert.equal(Number(db.prepare("select count(*) from memories").pluck().get()), 
 console.log(JSON.stringify({status:"passed",root,projectId:project.id,turnId:before.turn.id,
   candidateId:proposed[0].candidate.id,caseId:research.researchCase.id,
   checks:["before-turn","after-turn","outbox-drain","candidate-review","source-snapshot",
-    "evidence-verification","claim-review","research-context","mcp-research-context","export","vault","no-thesis-side-effect"]}));
+    "evidence-verification","claim-review","research-context","mcp-research-context","research-context-recall-audit","export","vault","no-thesis-side-effect"]}));
 db.close();

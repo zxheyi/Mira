@@ -47,6 +47,7 @@ describe("Mira MCP stdio research lifecycle", () => {
       await client.connect(transport);
       const tools = await client.listTools();
       expect(tools.tools.map((tool) => tool.name)).toContain("prepare_research_context");
+      expect(tools.tools.map((tool) => tool.name)).toContain("list_research_context_recalls");
 
       const submitted = await callJson<{
         researchCase: {id: string};
@@ -122,6 +123,17 @@ describe("Mira MCP stdio research lifecycle", () => {
       expect(await callJson(client, "prepare_research_context", {
         caseId: submitted.researchCase.id
       })).toMatchObject({ claimIds: [], evidenceIds: [], snapshotIds: [] });
+      const recalls = await callJson<Array<{
+        claimIds: string[];
+        evidenceIds: string[];
+        outputHash: string;
+      }>>(client, "list_research_context_recalls", {
+        caseId: submitted.researchCase.id
+      });
+      expect(recalls).toHaveLength(3);
+      expect(recalls.map((receipt) => receipt.claimIds)).toEqual([
+        [], [submitted.claims[0].id], []
+      ]);
     } finally {
       await client.close();
     }

@@ -31,3 +31,4 @@ audit:
   counterevidence: "required"
   invalidation_conditions: "required"
   research_context_provenance: "required"
+  research_context_receipts: "list_research_context_recalls"
