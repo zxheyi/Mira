@@ -1,3 +1,6 @@
+import {MiraError} from "../runtime/errors.js";
+import {runtimeStatus} from "../runtime/runtimeStatus.js";
+import {runDoctor} from "../doctor/doctor.js";
 import {assertExpectedProject} from "../context/contextScope.js";
 import {prepareContext} from "../context/contextPreparation.js";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
@@ -260,9 +263,11 @@ function dashboardHtml(): string {
         <span class="badge \${claude ? 'ok' : 'warn'}">Claude Code \${claude ? '已接入' : '未安装'}</span>\`;
     }
     function renderOverview() {
+      api('/api/status').then(status => { const target=document.getElementById('runtime-status'); if(target) target.textContent='MCP 连接：' + status.connection.state + ' · 宿主审批：unknown · 只读配置检查，不代表当前会话已授权。'; }).catch(()=>{});
       const overview = state.overview;
       const latest = overview.latestImportRun;
       document.getElementById('overview').innerHTML = \`
+        <div class="panel"><h2>运行状态</h2><p id="runtime-status">正在读取状态…</p></div>
         <div class="grid stats">
           \${stat('会话', fmt.format(overview.counts.threads))}
           \${stat('记忆', fmt.format(overview.counts.memories))}
@@ -735,10 +740,11 @@ async function routeRequest(
         );
       });
       sendJson(res, 200, result);
-    } catch (error) { sendJson(res, 400, {error: sanitizeDistillError(error)}); }
+    } catch (error) { sendJson(res, 400, {error: sanitizeDistillError(error),...(error instanceof MiraError ? error.toJSON() : {})}); }
     return;
   }
   if (pathname === "/api/session") { sendJson(res, 200, {csrfToken: options.csrfToken}); return; }
+  if (pathname === "/api/status") { sendJson(res,200,runtimeStatus({doctor:await runDoctor({projectRoot:options.projectRoot,dbPath:options.dbPath})})); return; }
   if (pathname === "/api/hosts") { sendJson(res, 200, createHostAdapterRegistry().list()); return; }
   if (pathname === "/" || pathname === "/index.html") {
     send(res, 200, "text/html; charset=utf-8", dashboardHtml());
@@ -819,7 +825,7 @@ export async function startViewerServer(options: ViewerServerOptions): Promise<V
   const server = createServer((req, res) => {
     routeRequest(required, req, res).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      if (!res.headersSent) sendJson(res, 500, { error: message });
+      if (!res.headersSent) sendJson(res, error instanceof MiraError ? 400 : 500, { error: message,...(error instanceof MiraError ? error.toJSON() : {}) });
       else res.end();
     });
   });

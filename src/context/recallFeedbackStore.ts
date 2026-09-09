@@ -1,3 +1,5 @@
+import {MiraError} from "../runtime/errors.js";
+import {requireCapability, scopesSchema} from "../runtime/capabilities.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -96,6 +98,7 @@ export function authorizeRecallFeedback(
 ): RecallFeedbackAuthority {
   const parsed = z.object({
     actor:z.string().trim().min(1).max(200),
+    scopes:scopesSchema,
     reason:z.string().trim().min(1).max(1000)
   }).strict().parse(policy);
   assertNoSensitiveInformation(`${parsed.actor}\n${parsed.reason}`, "Recall feedback authority");
@@ -111,7 +114,7 @@ function requireAuthority(
 ): ConfirmationPolicy {
   const policy = authority && authorities.get(authority);
   if (!policy || policy.db !== db || policy.projectId !== projectId) {
-    throw new Error("Recall feedback requires host-granted project authority");
+    throw new MiraError("PERMISSION_DENIED", "Recall feedback requires host-granted project authority", "Use local CLI/UI feedback or a host-granted scope");
   }
   return policy;
 }
@@ -152,6 +155,7 @@ export function recordRecallFeedback(
   authority?: RecallFeedbackAuthority
 ): RecallFeedback {
   const policy = requireAuthority(db, projectId, authority);
+  requireCapability(policy, "recall.feedback");
   const parsed = inputSchema.parse(input);
   assertNoSensitiveInformation(parsed.reason, "Recall feedback reason");
   const groups = [

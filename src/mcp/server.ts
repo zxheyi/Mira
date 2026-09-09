@@ -1,3 +1,9 @@
+import SQLite from "better-sqlite3";
+import {existsSync} from "node:fs";
+import {findProjectByRoot} from "../projects/projectStore.js";
+import {runtimeStatus} from "../runtime/runtimeStatus.js";
+import {MiraError} from "../runtime/errors.js";
+import {contextScope} from "../context/contextScope.js";
 import {assertExpectedProject} from "../context/contextScope.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
@@ -67,6 +73,7 @@ import {
 import { verifyEvidence } from "../research/evidenceVerification.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
+  "get_runtime_status",
   "list_host_adapters",
   "before_turn",
   "after_turn",
@@ -105,6 +112,7 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
+  get_runtime_status: "Read the bound project, registered tools and server delegation. Host approval remains unknown; this does not grant permissions.",
   list_host_adapters: "List every Host adapter accepted by the unified Turn Lifecycle Port, including phase support and native granularity.",
   before_turn: "Normalize one Host request, persist its stable Session and Turn, and return one audited Context Packet before execution.",
   after_turn: "Normalize and atomically capture one completed Host Turn, then enqueue candidate distillation and projection work without granting review authority.",
@@ -152,6 +160,7 @@ export type MiraMcpOptions = {
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
+  get_runtime_status: {},
   list_host_adapters: {},
   before_turn: {
     expectedProjectId: z.string().trim().min(1).max(500).optional(),
@@ -377,6 +386,8 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 
 type ToolSession = {
+  confirmationPolicy?:ConfirmationPolicy;
+  connectionObserved?:boolean;
   workspaceRoot: string;
   curationAuthority?: CurationAuthority;
   recallFeedbackAuthority?: RecallFeedbackAuthority;
@@ -464,6 +475,7 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
       db,
       projectId: project.id,
       workspaceRoot: options.projectRoot,
+      confirmationPolicy:options.confirmationPolicy,
       taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
       curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
       researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
@@ -485,6 +497,8 @@ function executeMiraTool(
   assertExpectedProject(projectId, optionalStringArg(args, "expectedProjectId"));
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
+      case "get_runtime_status":
+        return runtimeStatus({scope:contextScope(db,projectId,{workspaceRoot:session.workspaceRoot,taskId}),policy:session.confirmationPolicy,tools:MIRA_MCP_TOOL_NAMES,connectionObserved:session.connectionObserved});
       case "list_host_adapters":
         return createHostAdapterRegistry().list();
       case "before_turn": {
@@ -695,6 +709,15 @@ export function callMiraTool(
   args: ToolArgs
 ): unknown {
   const parsed = parseMiraToolArgs(name, args);
+  if (parsed.name === "get_runtime_status") {
+    const db=options.db ?? (existsSync(options.dbPath) ? new SQLite(options.dbPath,{readonly:true,fileMustExist:true}) : undefined);
+    try {
+      const hasProjects=db?.prepare("select 1 from sqlite_master where name='projects'").get();
+      const project=db && hasProjects ? findProjectByRoot(db,options.projectRoot) : undefined;
+      return runtimeStatus({scope:db && project ? contextScope(db,project.id,{workspaceRoot:options.projectRoot,taskId:options.taskId}) : undefined,
+        policy:options.confirmationPolicy,tools:MIRA_MCP_TOOL_NAMES});
+    } finally {if(db && !options.db) db.close();}
+  }
   return withToolSession(options, (session) => executeMiraTool(session, parsed.name, parsed.args));
 }
 
@@ -731,6 +754,7 @@ function toMcpToolResult(value: unknown) {
 function toMcpErrorResult(toolName: MiraMcpToolName, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return {
+    structuredContent:error instanceof MiraError ? error.toJSON() : {code:"OPERATION_FAILED",message,retryable:false,nextAction:"Inspect the request and reported domain constraint"},
     isError: true,
     content: [
       {
@@ -753,6 +777,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     db,
     projectId: project.id,
     workspaceRoot: options.projectRoot,
+    confirmationPolicy:options.confirmationPolicy,
     taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
     curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
     researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
@@ -776,7 +801,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
       },
       async (args: unknown) => {
         try {
-          return toMcpToolResult(executeMiraTool(session, toolName, parseMiraToolArgs(toolName, args).args));
+          return toMcpToolResult(executeMiraTool({...session,connectionObserved:true}, toolName, parseMiraToolArgs(toolName, args).args));
         } catch (error) {
           return toMcpErrorResult(toolName, error);
         }
