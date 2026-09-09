@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {pruneCompletedOutboxPayloads} from "./events/domainOutboxStore.js";
 import {getWorkflowProgress,listWorkflowProgress} from "./workflow/workflowProgress.js";
 import {selectToolProfile,type ToolProfile} from "./workflow/toolProfiles.js";
 import {replayContext,getContextDelivery,recordContextDelivery,authorizeContextDelivery} from "./context/contextJournal.js";
@@ -1156,6 +1157,8 @@ turn
   });
 
 const outbox = program.command("outbox").description("Inspect and run reliable Mira follow-up work");
+outbox.command("prune").description("Prune expired completed message payloads; retain event references and unfinished work")
+  .action(async()=>withProject(program.opts<GlobalOptions>(),session=>printJson(pruneCompletedOutboxPayloads(session.db,session.project.id))));
 
 outbox
   .command("list")

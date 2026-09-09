@@ -1,3 +1,4 @@
+import {validateOutboxPayload} from "./eventContracts.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { sanitizeDistillError } from "../distill/distillJobStore.js";
@@ -74,9 +75,12 @@ export function createOutboxRunner(options: {
     async runNext(projectId, handlers) {
       const claimed = claim(projectId);
       if (!claimed) return undefined;
-      const message = toMessage(claimed);
+      const message = {...toMessage({...claimed,payload:"{}"}),payload:{} as Record<string,unknown>};
       const handler = handlers[message.topic];
       try {
+        let payload:unknown;
+        try {payload=JSON.parse(claimed.payload);} catch {throw new Error('Invalid stored Outbox JSON');}
+        message.payload=validateOutboxPayload(message.topic,payload);
         if (!handler) throw new Error(`No Outbox handler registered for ${message.topic}`);
         await handler(message, {idempotencyKey: message.id});
         const completedAt = now().toISOString();

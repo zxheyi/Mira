@@ -1,3 +1,4 @@
+import {validateEventEnvelope,validateDomainPayload,validateOutboxPayload,OUTBOX_RETENTION_DAYS} from "./eventContracts.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 
@@ -54,7 +55,8 @@ const toMessage = (row: MessageRow): OutboxMessage => ({
 });
 
 export function appendDomainEvent(db: Database.Database, input: Omit<DomainEvent, "id" | "createdAt"> & {id?: string; createdAt?: string}): DomainEvent {
-  const event: DomainEvent = {...input, id: input.id ?? `domain_event_${randomUUID()}`, createdAt: input.createdAt ?? new Date().toISOString()};
+  const event: DomainEvent = {...input, payload:validateDomainPayload(input.eventType,input.payload), id: input.id ?? `domain_event_${randomUUID()}`, createdAt: input.createdAt ?? new Date().toISOString()};
+  validateEventEnvelope(event);
   db.prepare(`insert into domain_events (id, project_id, aggregate_type, aggregate_id, event_type, payload, created_at)
     values (?, ?, ?, ?, ?, ?, ?)`)
     .run(event.id, event.projectId, event.aggregateType, event.aggregateId, event.eventType, JSON.stringify(event.payload), event.createdAt);
@@ -65,10 +67,13 @@ export function enqueueOutboxMessage(db: Database.Database, input: {
   projectId: string; eventId: string; topic: OutboxTopic; payload: Record<string, unknown>;
   id?: string; maxAttempts?: number; availableAt?: string; createdAt?: string;
 }): OutboxMessage {
+  const payload=validateOutboxPayload(input.topic,input.payload);
+  if(!db.prepare('select 1 from domain_events where project_id=? and id=?').get(input.projectId,input.eventId)) throw new Error('Outbox event must belong to the same project');
+  if(input.maxAttempts!==undefined && (!Number.isInteger(input.maxAttempts)||input.maxAttempts<1||input.maxAttempts>100)) throw new Error('Outbox maxAttempts must be between 1 and 100');
   const now = input.createdAt ?? new Date().toISOString();
   const message: OutboxMessage = {
     id: input.id ?? `outbox_${randomUUID()}`, projectId: input.projectId, eventId: input.eventId,
-    topic: input.topic, payload: input.payload, status: "pending", attempts: 0,
+    topic: input.topic, payload, status: "pending", attempts: 0,
     maxAttempts: input.maxAttempts ?? 3, availableAt: input.availableAt ?? now,
     createdAt: now, updatedAt: now
   };
@@ -85,6 +90,7 @@ export function enqueueProjectionRefresh(db: Database.Database, input: {
   projectId:string;eventId:string;reason:string;aggregateId:string;createdAt?:string;
 }): OutboxMessage {
   const now = input.createdAt ?? new Date().toISOString();
+  validateOutboxPayload("projection.refresh.requested",{reason:input.reason,aggregateId:input.aggregateId});
   db.prepare(`update project_briefings
     set stale_at = coalesce(stale_at, ?)
     where project_id = ? and status = 'complete' and stale_at is null`)
@@ -119,4 +125,17 @@ export function listOutboxMessages(db: Database.Database, projectId: string, sta
     ? db.prepare("select * from outbox_messages where project_id = ? and status = ? order by created_at desc, rowid desc limit ?").all(projectId, status, limit)
     : db.prepare("select * from outbox_messages where project_id = ? order by created_at desc, rowid desc limit ?").all(projectId, limit);
   return rows.map(row => toMessage(row as MessageRow));
+}
+
+export function pruneCompletedOutboxPayloads(db:Database.Database,projectId:string,now=new Date()) {
+  if(!Number.isFinite(now.getTime())) throw new Error('Invalid retention time');
+  return db.transaction(()=>{
+    const counts:Record<string,number>={};
+    for(const [topic,days] of Object.entries(OUTBOX_RETENTION_DAYS)) {
+      const cutoff=new Date(now.getTime()-days*86_400_000).toISOString();
+      counts[topic]=db.prepare(`update outbox_messages set payload=? where project_id=? and topic=? and status='completed' and updated_at<=? and payload<>?`)
+        .run('{"retention":"expired"}',projectId,topic,cutoff,'{"retention":"expired"}').changes;
+    }
+    return {completedPayloadsPruned:counts,eventsRetained:true,pendingAndFailedRetained:true};
+  })();
 }

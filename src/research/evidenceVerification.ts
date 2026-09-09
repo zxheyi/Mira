@@ -80,7 +80,7 @@ export function registerSourceSnapshot(
       .run(id, projectId, parsed.canonicalUri, parsed.sourceTitle, parsed.publishedAt ?? null,
         parsed.accessedAt, parsed.mediaType, parsed.content, contentHash, now, now);
     appendDomainEvent(db, {projectId,aggregateType:"source_snapshot",aggregateId:id,
-      eventType:"source_snapshot_registered",payload:{canonicalUri:parsed.canonicalUri,contentHash},createdAt:now});
+      eventType:"source_snapshot_registered",payload:{sourceUriHash:sha256(parsed.canonicalUri),contentHash},createdAt:now});
     return toSnapshot(db.prepare("select * from source_snapshots where project_id = ? and id = ?")
       .get(projectId, id) as SnapshotRow);
   })();
