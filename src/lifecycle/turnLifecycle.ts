@@ -1,3 +1,4 @@
+import {buildSessionTranscript} from "./sessionTranscript.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -84,15 +85,7 @@ function findCapture(db: Database.Database, projectId: string, turnId: string): 
 }
 
 function sessionTranscript(db: Database.Database, projectId: string, session: SessionRow): string {
-  const turns = db.prepare("select * from lifecycle_turns where project_id = ? and session_id = ? and status = 'completed' order by started_at, rowid")
-    .all(projectId, session.id) as TurnRow[];
-  return turns.map(turn => [
-    `## Turn ${turn.host_turn_id}`,
-    `- host: ${session.host}`,
-    `- status: ${turn.outcome_status}`,
-    "### User", turn.query,
-    "### Assistant", turn.response ?? ""
-  ].join("\n")).join("\n\n");
+  return buildSessionTranscript(db, projectId, session.id, session.host).text;
 }
 
 export function createTurnLifecycle(options: {db: Database.Database; projectId: string; workspaceRoot?:string}): TurnLifecyclePort {

@@ -421,4 +421,4 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Nowledge Mem 逆向分析报告](docs/research/nowledge-mem-reverse-engineering.md)
 - [Rowboat 项目文档总结](docs/research/rowboat-summary.md)
 
-候选策略 v2 保留来源角色、原文/推断、片段位置、Thread 哈希、策略原因与接受方式。助手或工具发言以及无法归属的摘要待审；confidence 是提炼器自报分值，不是真实性概率。旧候选不回填猜测的来源。`memory candidate list --status pending_review --offset 0 --limit 50` 支持分页；Viewer 默认待审，可跳转到对应 Memory 纠正或归档。
+候选策略 v3 保留来源角色、原文/推断、片段位置、Thread 哈希、策略原因与接受方式。角色仅取自与生命周期存储精确匹配的正文范围；普通 Thread 的 Markdown 标题或 JSONL role 字段均不作为可信角色依据。助手或工具发言以及无法归属的摘要待审；confidence 是提炼器自报分值，不是真实性概率。旧候选不回填猜测的来源。`memory candidate list --status pending_review --offset 0 --limit 50` 支持分页；Viewer 默认待审，可跳转到对应 Memory 纠正或归档。

@@ -1,3 +1,4 @@
+import {storedTranscriptSpans} from "../lifecycle/sessionTranscript.js";
 import {locateCandidateEvidence} from "./candidateProvenance.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
@@ -219,7 +220,7 @@ export function submitMemoryCandidates(
     const reasons: CandidateReviewReason[] = existingMemory
       ? ["duplicate"]
       : candidateReviewReasons(candidate, hasMemoryConflict(db, input.projectId, candidate));
-    const provenance=locateCandidateEvidence(thread.raw_text,candidate.evidence,candidate.content);
+    const provenance=locateCandidateEvidence(thread.raw_text,candidate.evidence,candidate.content,storedTranscriptSpans(db,input.projectId,input.threadId,thread.raw_text));
     if(!existingMemory) {
       if(provenance.role==="unknown") reasons.push("source_unattributed");
       else if(provenance.role!=="user") reasons.push("assistant_or_tool_source");

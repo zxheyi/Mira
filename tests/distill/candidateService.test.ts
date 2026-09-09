@@ -1,3 +1,5 @@
+import {createTurnLifecycle} from "../../src/lifecycle/turnLifecycle.js";
+import {getThread} from "../../src/threads/threadStore.js";
 import { afterEach, describe, expect, test } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
@@ -24,20 +26,16 @@ function setup() {
   migrate(db);
   const project = createProject(db, { name: "Mira", rootPath: "/workspace/mira-candidates" });
   const rawText = [
-    "### User",
     "Mira stores durable project memory in local SQLite.",
     "We decided that architecture changes require human review.",
     "Use numbered migrations for every schema change.",
     "The replacement storage is a remote database."
   ].join("\n");
-  const thread = saveThread(db, {
-    id: "thread_candidates",
-    projectId: project.id,
-    title: "Candidate session",
-    source: "codex",
-    rawFormat: "markdown",
-    rawText
-  });
+  const lifecycle=createTurnLifecycle({db,projectId:project.id});
+  const command={host:'cli' as const,hostSessionId:'candidate-session',hostTurnId:'candidate-turn',query:rawText};
+  lifecycle.beforeTurn(command);
+  const captured=lifecycle.afterTurn({...command,response:'Acknowledged.',outcomeStatus:'succeeded'});
+  const thread=getThread(db,project.id,captured.capture.threadId!)!;
   return { database: db, project, thread };
 }
 
