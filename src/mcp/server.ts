@@ -1,3 +1,5 @@
+import {selectToolProfile,type ToolProfile} from "../workflow/toolProfiles.js";
+import {getWorkflowProgress,listWorkflowProgress} from "../workflow/workflowProgress.js";
 import {authorizeContextDelivery,recordContextDelivery,replayContext,getContextDelivery} from "../context/contextJournal.js";
 import SQLite from "better-sqlite3";
 import {existsSync} from "node:fs";
@@ -74,6 +76,7 @@ import {
 import { verifyEvidence } from "../research/evidenceVerification.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
+  "get_workflow_progress",
   "get_context_replay",
   "record_context_delivery",
   "get_runtime_status",
@@ -115,6 +118,7 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
+  get_workflow_progress:"Inspect durable capture, Outbox, distillation and candidate review stages for a turn or recent project turns; queued does not mean saved Memory.",
   get_context_replay:"Read retained context with hash verification, or report unavailable; delivery does not prove model use.",
   record_context_delivery:"Record a host-reported delivery of an exact context hash; requires context.delivery authority, never infer delivery from preparation.",
   get_runtime_status: "Read the bound project, registered tools and server delegation. Host approval remains unknown; this does not grant permissions.",
@@ -154,6 +158,7 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
 } satisfies Record<MiraMcpToolName, string>;
 
 export type MiraMcpOptions = {
+  profile?:ToolProfile;
   /** Trusted host configuration, never a tool argument. Absent means proposal/draft-only governed writes. */
   confirmationPolicy?: ConfirmationPolicy;
   projectRoot: string;
@@ -165,6 +170,7 @@ export type MiraMcpOptions = {
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
+  get_workflow_progress:{turnId:z.string().trim().min(1).max(500).optional(),limit:z.number().int().min(1).max(100).optional()},
   get_context_replay:{recallId:z.string().trim().min(1).max(500)},
   record_context_delivery:{recallId:z.string().trim().min(1).max(500),outputHash:z.string().regex(/^[a-f0-9]{64}$/)},
   get_runtime_status: {},
@@ -399,6 +405,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 
 type ToolSession = {
+  profile?:ToolProfile;
   confirmationPolicy?:ConfirmationPolicy;
   connectionObserved?:boolean;
   workspaceRoot: string;
@@ -488,7 +495,7 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
       db,
       projectId: project.id,
       workspaceRoot: options.projectRoot,
-      confirmationPolicy:options.confirmationPolicy,
+      confirmationPolicy:options.confirmationPolicy,profile:options.profile,
       taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
       curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
       researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
@@ -510,12 +517,14 @@ function executeMiraTool(
   assertExpectedProject(projectId, optionalStringArg(args, "expectedProjectId"));
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
+      case "get_workflow_progress":
+        return args.turnId?getWorkflowProgress(db,projectId,stringArg(args,"turnId")):listWorkflowProgress(db,projectId,numberArg(args,"limit",20));
       case "get_context_replay":
         return {...replayContext(db,projectId,stringArg(args,"recallId")),delivery:getContextDelivery(db,projectId,stringArg(args,"recallId"))};
       case "record_context_delivery":
         return recordContextDelivery(db,projectId,stringArg(args,"recallId"),stringArg(args,"outputHash"),session.confirmationPolicy?authorizeContextDelivery(db,projectId,session.confirmationPolicy):undefined);
       case "get_runtime_status":
-        return runtimeStatus({scope:contextScope(db,projectId,{workspaceRoot:session.workspaceRoot,taskId}),policy:session.confirmationPolicy,tools:MIRA_MCP_TOOL_NAMES,connectionObserved:session.connectionObserved});
+        return runtimeStatus({scope:contextScope(db,projectId,{workspaceRoot:session.workspaceRoot,taskId}),policy:session.confirmationPolicy,tools:selectToolProfile(MIRA_MCP_TOOL_NAMES,session.profile),connectionObserved:session.connectionObserved});
       case "list_host_adapters":
         return createHostAdapterRegistry().list();
       case "before_turn": {
@@ -729,13 +738,14 @@ export function callMiraTool(
   args: ToolArgs
 ): unknown {
   const parsed = parseMiraToolArgs(name, args);
+  if(!selectToolProfile(MIRA_MCP_TOOL_NAMES,options.profile).includes(parsed.name)) throw new MiraError("TOOL_NOT_IN_PROFILE","Tool is not registered in this profile","Select the research or admin profile at server startup");
   if (parsed.name === "get_runtime_status") {
     const db=options.db ?? (existsSync(options.dbPath) ? new SQLite(options.dbPath,{readonly:true,fileMustExist:true}) : undefined);
     try {
       const hasProjects=db?.prepare("select 1 from sqlite_master where name='projects'").get();
       const project=db && hasProjects ? findProjectByRoot(db,options.projectRoot) : undefined;
       return runtimeStatus({scope:db && project ? contextScope(db,project.id,{workspaceRoot:options.projectRoot,taskId:options.taskId}) : undefined,
-        policy:options.confirmationPolicy,tools:MIRA_MCP_TOOL_NAMES});
+        policy:options.confirmationPolicy,tools:selectToolProfile(MIRA_MCP_TOOL_NAMES,options.profile)});
     } finally {if(db && !options.db) db.close();}
   }
   return withToolSession(options, (session) => executeMiraTool(session, parsed.name, parsed.args));
@@ -789,6 +799,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   server: McpServer;
   toolNames: MiraMcpToolName[];
 } {
+  const toolNames=selectToolProfile(MIRA_MCP_TOOL_NAMES,options.profile);
   const server = new McpServer({ name: "mira", version: "0.1.0" });
   const db = options.db ?? openDatabase(options.dbPath);
   migrate(db);
@@ -797,7 +808,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     db,
     projectId: project.id,
     workspaceRoot: options.projectRoot,
-    confirmationPolicy:options.confirmationPolicy,
+    confirmationPolicy:options.confirmationPolicy,profile:options.profile,
     taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
     curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
     researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
@@ -811,7 +822,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     }
   };
 
-  for (const toolName of MIRA_MCP_TOOL_NAMES) {
+  for (const toolName of toolNames) {
     server.registerTool(
       toolName,
       {
@@ -829,5 +840,5 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     );
   }
 
-  return { server, toolNames: [...MIRA_MCP_TOOL_NAMES] };
+  return { server, toolNames };
 }

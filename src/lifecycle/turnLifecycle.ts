@@ -21,7 +21,7 @@ export type CaptureRecord = {
   outcome: "imported" | "updated" | "unchanged"; capturedAt: string;
 };
 export type BeforeTurnResult = {session: LifecycleSession; turn: LifecycleTurn; context: ContextPacket};
-export type AfterTurnResult = {session: LifecycleSession; turn: LifecycleTurn; capture: CaptureRecord; eventId: string; outboxMessageIds: string[]; duplicate: boolean};
+export type AfterTurnResult = {processing?:{capture:"persisted";downstream:"queued";memoryAcceptance:"not_implied"};session: LifecycleSession; turn: LifecycleTurn; capture: CaptureRecord; eventId: string; outboxMessageIds: string[]; duplicate: boolean};
 export type TurnLifecyclePort = {beforeTurn(command: BeforeTurnCommand): BeforeTurnResult; afterTurn(command: AfterTurnCommand): AfterTurnResult};
 
 type SessionRow = {id:string;project_id:string;host:MiraHost;host_session_id:string;status:"open"|"closed";opened_at:string;last_seen_at:string;closed_at:string|null};
@@ -167,7 +167,7 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
             enqueueOutboxMessage(db, {projectId,eventId:event.id,topic:"projection.refresh.requested",payload:{reason:"capture_repaired",turnId:turn.id},createdAt:now})
           ];
           const result: AfterTurnResult = {...stored,capture:repairedCapture,eventId:event.id,
-            outboxMessageIds:outbox.map(item=>item.id),duplicate:false};
+            processing:{capture:"persisted",downstream:"queued",memoryAcceptance:"not_implied"},outboxMessageIds:outbox.map(item=>item.id),duplicate:false};
           db.prepare("update lifecycle_turns set after_result = ? where project_id = ? and id = ?")
             .run(JSON.stringify(result), projectId, turn.id);
           return result;
@@ -200,7 +200,7 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
           enqueueOutboxMessage(db, {projectId,eventId:event.id,topic:"capture.distill.requested",payload:{captureRecordId:capture.id,threadId},createdAt:now}),
           enqueueOutboxMessage(db, {projectId,eventId:event.id,topic:"projection.refresh.requested",payload:{reason:"turn_completed",turnId:turn.id},createdAt:now})
         ];
-        const result: AfterTurnResult = {session:toSession(session),turn:toTurn(turn),capture,eventId:event.id,outboxMessageIds:outbox.map(item=>item.id),duplicate:false};
+        const result: AfterTurnResult = {session:toSession(session),turn:toTurn(turn),capture,eventId:event.id,processing:{capture:"persisted",downstream:"queued",memoryAcceptance:"not_implied"},outboxMessageIds:outbox.map(item=>item.id),duplicate:false};
         db.prepare("update lifecycle_turns set after_result = ? where project_id = ? and id = ?")
           .run(JSON.stringify(result), projectId, turn.id);
         return result;

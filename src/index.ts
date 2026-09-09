@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import {getWorkflowProgress,listWorkflowProgress} from "./workflow/workflowProgress.js";
+import {selectToolProfile,type ToolProfile} from "./workflow/toolProfiles.js";
 import {replayContext,getContextDelivery,recordContextDelivery,authorizeContextDelivery} from "./context/contextJournal.js";
 import {MiraError} from "./runtime/errors.js";
 import {runtimeStatus,renderRuntimeStatus} from "./runtime/runtimeStatus.js";
@@ -1359,17 +1361,19 @@ const mcp = program.command("mcp").description("Run the Mira MCP server");
 mcp
   .command("serve")
   .description("Start the Mira MCP stdio server")
+  .option("--profile <profile>","MCP tool surface: core, research, admin, full","full")
   .option("--allow-scopes <scopes>", "Comma-separated governed operation scopes; requires confirmation-policy")
   .option("--confirmation-policy <reason>", "Explicitly delegate governed memory and research writes to this trusted protocol (disabled by default)")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
-  .action(async (options: GlobalOptions & {confirmationPolicy?: string;allowScopes?:string}) => {
+  .action(async (options: GlobalOptions & {confirmationPolicy?: string;allowScopes?:string;profile:ToolProfile}) => {
     const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
     if (options.allowScopes !== undefined && !options.confirmationPolicy) throw new Error("--allow-scopes requires --confirmation-policy");
     const scopes = options.allowScopes === undefined ? undefined : scopesSchema.parse(options.allowScopes.split(",").filter(Boolean));
-    await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task,
+    selectToolProfile([],options.profile);
+    await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task, profile:options.profile,
       confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy, scopes} });
   });
 
@@ -1443,6 +1447,10 @@ integration
       process.stdout.write(result.stdout);
     }
   });
+
+program.command("workflow").description("Inspect capture, background work and candidate acceptance independently")
+  .option("--turn <id>","Turn ID").option("--limit <number>","Recent turns","20")
+  .action(async(options)=>withProject(program.opts<GlobalOptions>(),session=>printJson(options.turn?getWorkflowProgress(session.db,session.project.id,options.turn):listWorkflowProgress(session.db,session.project.id,integerInRange(options.limit,1,100,"limit")))));
 
 program.command("status").description("Explain installation, project binding and observed runtime status without writes")
   .option("--json", "Return structured status")

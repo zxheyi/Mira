@@ -1,3 +1,4 @@
+import {listWorkflowProgress} from "../workflow/workflowProgress.js";
 import {MiraError} from "../runtime/errors.js";
 import {runtimeStatus} from "../runtime/runtimeStatus.js";
 import {runDoctor} from "../doctor/doctor.js";
@@ -496,10 +497,10 @@ function dashboardHtml(): string {
       document.getElementById('recall-feedback-editor').showModal();
     }
     async function renderJobs() {
-      const [jobs, outbox] = await Promise.all([api('/api/jobs'), api('/api/outbox')]);
+      const [jobs, outbox, workflows] = await Promise.all([api('/api/jobs'), api('/api/outbox'),api('/api/workflows')]);
       const distill = jobs.map(job => '<article class="panel memory-card"><b>' + escapeHtml(job.status + ' · ' + job.threadId) + '</b><p>尝试 ' + job.attempts + ' / ' + job.maxAttempts + '</p><div class="muted">下次重试：' + escapeHtml(job.nextAttemptAt || '无') + '</div><p class="error">' + escapeHtml(job.lastError || '') + '</p>' + (job.status === 'failed' || (job.status === 'running' && Date.parse(job.updatedAt) <= Date.now() - 300000) ? '<div class="actions">' + actionButton('jobs', job.id, 'retry', '重新排队') + '</div>' : '') + '</article>').join('');
       const messages = outbox.map(item => '<article class="panel memory-card"><b>' + escapeHtml(item.status + ' · ' + item.topic) + '</b><p>尝试 ' + item.attempts + ' / ' + item.maxAttempts + '</p><div class="muted">可执行：' + escapeHtml(item.availableAt) + '</div><p class="error">' + escapeHtml(item.lastError || '') + '</p></article>').join('');
-      document.getElementById('jobs').innerHTML = '<h2>后台任务</h2><p class="muted">Outbox 使用租约恢复；CLI outbox run --drain 处理事实提交后的可靠跟进。</p><h2>Domain Outbox</h2>' + (messages || '<div class="empty">暂无 Outbox 消息</div>') + '<h2>Distill Jobs</h2>' + (distill || '<div class="empty">暂无提炼任务</div>');
+      document.getElementById('jobs').innerHTML = '<h2>轮次处理进度</h2>' + workflows.map(item=>'<article class="panel"><b>' + escapeHtml(item.stage) + '</b><p>' + escapeHtml(item.turnId) + '</p><p>' + escapeHtml(item.nextAction) + '</p><details><summary>阶段明细</summary><pre>' + escapeHtml(JSON.stringify(item,null,2)) + '</pre></details></article>').join('') + '<h2>后台任务</h2><p class="muted">Outbox 使用租约恢复；CLI outbox run --drain 处理事实提交后的可靠跟进。</p><h2>Domain Outbox</h2>' + (messages || '<div class="empty">暂无 Outbox 消息</div>') + '<h2>Distill Jobs</h2>' + (distill || '<div class="empty">暂无提炼任务</div>');
     }
     function openEditor(resource, id, action, context = {}) {
       state.editing = {resource,id,action,...context};
@@ -763,6 +764,7 @@ async function routeRequest(
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, (url.searchParams.get("status") || undefined) as "pending_review"|"accepted"|"rejected"|undefined, Number(url.searchParams.get("limit")??100),Number(url.searchParams.get("offset")??0))); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listViewerRecallEntries(db, project.id, url.searchParams.get("taskId") ?? undefined)); return; }
     if (pathname === "/api/recall-quality") { sendJson(res, 200, getRecallQualityReport(db, project.id)); return; }
+    if (pathname === "/api/workflows") {sendJson(res,200,listWorkflowProgress(db,project.id));return;}
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }
     if (pathname === "/api/outbox") { sendJson(res, 200, listOutboxMessages(db, project.id)); return; }
     if (pathname === "/api/research-cases") {
