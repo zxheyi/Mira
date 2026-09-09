@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -35,6 +35,7 @@ export function migrate(db: Database.Database): void {
   const requiresV12Setup = existingVersion === undefined || existingVersion < 12;
   const requiresV13Setup = existingVersion === undefined || existingVersion < 13;
   const requiresV14Setup = existingVersion === undefined || existingVersion < 14;
+  const requiresV15Setup = existingVersion === undefined || existingVersion < 15;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -803,7 +804,18 @@ export function migrate(db: Database.Database): void {
   if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
 
   if (existingVersion !== CURRENT_SCHEMA_VERSION) {
-    db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
+    if (requiresV15Setup) db.exec(`
+    create table if not exists context_payloads (
+      recall_id text primary key,
+      project_id text not null,
+      markdown text not null,
+      expires_at text not null,
+      foreign key(project_id, recall_id) references recall_events(project_id, id) on delete cascade
+    );
+    create index if not exists idx_context_payload_expiry on context_payloads(expires_at);
+  `);
+
+  db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString()
     );

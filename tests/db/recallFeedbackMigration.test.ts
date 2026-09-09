@@ -1,3 +1,4 @@
+import {CURRENT_SCHEMA_VERSION} from "../../src/db/schema.js";
 import { expect, test } from "vitest";
 import { openDatabase } from "../../src/db/client.js";
 import { migrate } from "../../src/db/schema.js";
@@ -26,7 +27,7 @@ test("v13 to v14 preserves Recall Receipts and Memories while adding feedback st
 
     expect(listRecallEvents(db, project.id)).toEqual([receipt]);
     expect(db.prepare("select content from memories where id = ?").pluck().get(memory.id)).toBe("Keep this Memory.");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
     const authority = authorizeRecallFeedback(db, project.id, {actor:"reviewer",reason:"Migration acceptance"});
     expect(recordRecallFeedback(db, project.id, {recallId:receipt.id,outcome:"useful",
       relevantMemoryIds:[memory.id],reason:"Expected Memory was returned."}, authority))

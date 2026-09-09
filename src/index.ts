@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {replayContext,getContextDelivery,recordContextDelivery,authorizeContextDelivery} from "./context/contextJournal.js";
 import {MiraError} from "./runtime/errors.js";
 import {runtimeStatus,renderRuntimeStatus} from "./runtime/runtimeStatus.js";
 import {scopesSchema} from "./runtime/capabilities.js";
@@ -980,6 +981,8 @@ briefing
 const context = program.command("context").description("Generate agent context");
 
 context.command("prepare")
+  .option("--research-cases <ids>","Comma-separated explicit Research Case IDs")
+  .option("--retain-for-seconds <seconds>","Opt-in replay payload retention, at most 86400 seconds")
   .description("Return bounded context and its recall receipt as JSON")
   .option("--query <query>", "Memory search query")
   .option("--memory-limit <number>", "Maximum durable memories", "8")
@@ -994,10 +997,18 @@ context.command("prepare")
         memoryLimit: numberInRange(options.memoryLimit, 1, 50, "memoryLimit"),
         maxCharacters: options.maxCharacters ? numberInRange(options.maxCharacters, 1, 1_000_000, "maxCharacters") : undefined,
         maxTokens: options.maxTokens ? numberInRange(options.maxTokens, 25, 250_000, "maxTokens") : undefined,
+        transport:"cli",researchCaseIds:options.researchCases?.split(","),retainForSeconds:options.retainForSeconds===undefined?undefined:Number(options.retainForSeconds),
         recordAudit: !options.preview
       }));
     });
   });
+
+context.command("replay").requiredOption("--recall <id>","Recall ID").action(async (options)=>{
+  await withProject(program.opts<GlobalOptions>(),session=>printJson({...replayContext(session.db,session.project.id,options.recall),delivery:getContextDelivery(session.db,session.project.id,options.recall)}));
+});
+context.command("delivery").requiredOption("--recall <id>","Recall ID").requiredOption("--output-hash <hash>","Exact delivered output hash").action(async(options)=>{
+  await withProject(program.opts<GlobalOptions>(),session=>printJson(recordContextDelivery(session.db,session.project.id,options.recall,options.outputHash,authorizeContextDelivery(session.db,session.project.id,{actor:"cli:user",reason:"Explicit delivery acknowledgement",scopes:["context.delivery"]}))));
+});
 
 context.command("recalls")
   .description("List recent recall receipts for this project/task")
@@ -1226,9 +1237,11 @@ research
   .command("context")
   .description("Prepare an evidence-gated context containing only approved Research Claims")
   .requiredOption("--case <id>", "Research Case id")
-  .action(async (options: { case: string }) => {
+  .option("--max-characters <number>","Context character budget")
+  .option("--max-tokens <number>","Conservative UTF-8 token upper bound")
+  .action(async (options: { case: string;maxCharacters?:string;maxTokens?:string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(prepareResearchContext(session.db, session.project.id, options.case, {workspaceRoot:session.projectRoot}));
+      printJson(prepareResearchContext(session.db, session.project.id, options.case, {workspaceRoot:session.projectRoot,maxCharacters:options.maxCharacters?Number(options.maxCharacters):undefined,maxTokens:options.maxTokens?Number(options.maxTokens):undefined}));
     });
   });
 

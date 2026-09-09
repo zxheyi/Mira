@@ -7,6 +7,7 @@ export type InvocationTransport = (typeof INVOCATION_TRANSPORTS)[number];
 export type TurnOutcomeStatus = "succeeded" | "failed" | "cancelled";
 
 export type ContextRequest = {
+  researchCaseIds?:string[];
   memoryLimit?: number;
   maxCharacters?: number;
   maxTokens?: number;
@@ -61,6 +62,7 @@ const identity = z.string().trim().min(1).max(500);
 const body = z.string().trim().min(1).max(50_000);
 const task = z.string().trim().min(1).max(500).optional();
 const contextSchema = z.object({
+  researchCaseIds:z.array(identity).max(10).optional(),
   memoryLimit: z.number().int().min(1).max(50).optional(),
   maxCharacters: z.number().int().min(1).max(1_000_000).optional(),
   maxTokens: z.number().int().min(25).max(250_000).optional()

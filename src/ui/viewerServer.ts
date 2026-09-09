@@ -463,7 +463,7 @@ function dashboardHtml(): string {
         const feedback = receipt.feedback
           ? '<span class="badge ok">已标注 · ' + escapeHtml(receipt.feedback.outcome) + '</span><p>' + escapeHtml(receipt.feedback.reason) + '</p>'
           : '<div class="actions"><button data-recall-feedback="' + escapeHtml(receipt.id) + '">标注召回</button></div>';
-        return '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 完整注入 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>Memory 明细</summary><h3>已注入</h3><ul>' + injected + '</ul><h3>已省略</h3><ul>' + dropped + '</ul></details>' + feedback + '<details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>';
+        return '<article class="panel memory-card"><b>' + escapeHtml(receipt.createdAt) + '</b><div class="muted">任务：' + escapeHtml(receipt.taskId || '项目共享') + ' · 查询：' + escapeHtml(receipt.query || '默认召回') + '</div><p>候选 ' + receipt.candidateMemoryIds.length + ' · 已生成条目 ' + receipt.injectedMemoryIds.length + ' · 省略 ' + receipt.dropped.length + ' · ' + receipt.characterCount + ' 字符</p><details><summary>Memory 明细</summary><h3>已注入</h3><ul>' + injected + '</ul><h3>已省略</h3><ul>' + dropped + '</ul></details>' + feedback + '<details><summary>全部上下文取舍 · 交付：' + escapeHtml(receipt.delivery?.state || 'unknown') + '</summary><pre>' + escapeHtml(JSON.stringify(receipt.selections || [],null,2)) + '</pre></details><details><summary>查看完整回执</summary><pre>' + escapeHtml(JSON.stringify(receipt, null, 2)) + '</pre></details></article>';
       }).join('') + (!receipts.length ? '<div class="empty">暂无召回记录；界面预览不会生成记录</div>' : '');
     }
     function renderRecallMissingOptions(query) {
@@ -802,7 +802,7 @@ async function routeRequest(
       return;
     }
     if (pathname === "/api/context-bundle") {
-      sendJson(res, 200, prepareContext(db, project.id, {workspaceRoot:options.projectRoot,maxCharacters:4000,recordAudit:false}));
+      sendJson(res, 200, prepareContext(db, project.id, {workspaceRoot:options.projectRoot,maxCharacters:4000,recordAudit:false,transport:"ui"}));
       return;
     }
     if (pathname === "/api/memory") {

@@ -1,3 +1,4 @@
+import {authorizeContextDelivery,recordContextDelivery,replayContext,getContextDelivery} from "../context/contextJournal.js";
 import SQLite from "better-sqlite3";
 import {existsSync} from "node:fs";
 import {findProjectByRoot} from "../projects/projectStore.js";
@@ -73,6 +74,8 @@ import {
 import { verifyEvidence } from "../research/evidenceVerification.js";
 
 export const MIRA_MCP_TOOL_NAMES = [
+  "get_context_replay",
+  "record_context_delivery",
   "get_runtime_status",
   "list_host_adapters",
   "before_turn",
@@ -112,6 +115,8 @@ export const MIRA_MCP_TOOL_NAMES = [
 export type MiraMcpToolName = (typeof MIRA_MCP_TOOL_NAMES)[number];
 
 export const MIRA_MCP_TOOL_DESCRIPTIONS = {
+  get_context_replay:"Read retained context with hash verification, or report unavailable; delivery does not prove model use.",
+  record_context_delivery:"Record a host-reported delivery of an exact context hash; requires context.delivery authority, never infer delivery from preparation.",
   get_runtime_status: "Read the bound project, registered tools and server delegation. Host approval remains unknown; this does not grant permissions.",
   list_host_adapters: "List every Host adapter accepted by the unified Turn Lifecycle Port, including phase support and native granularity.",
   before_turn: "Normalize one Host request, persist its stable Session and Turn, and return one audited Context Packet before execution.",
@@ -160,6 +165,8 @@ export type MiraMcpOptions = {
 type ToolArgs = Record<string, unknown>;
 
 export const MIRA_MCP_TOOL_SCHEMAS = {
+  get_context_replay:{recallId:z.string().trim().min(1).max(500)},
+  record_context_delivery:{recallId:z.string().trim().min(1).max(500),outputHash:z.string().regex(/^[a-f0-9]{64}$/)},
   get_runtime_status: {},
   list_host_adapters: {},
   before_turn: {
@@ -170,6 +177,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     query: z.string().trim().min(1).max(50_000),
     taskId: z.string().trim().min(1).max(500).optional(),
     context: z.object({
+      researchCaseIds:z.array(z.string().trim().min(1).max(200)).max(10).optional(),
       memoryLimit: z.number().int().min(1).max(50).optional(),
       maxCharacters: z.number().int().min(1).max(1_000_000).optional(),
       maxTokens: z.number().int().min(25).max(250_000).optional()
@@ -186,6 +194,8 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     taskId: z.string().trim().min(1).max(500).optional()
   },
   prepare_context: {
+    retainForSeconds:z.number().int().min(0).max(86400).optional(),
+    researchCaseIds:z.array(z.string().trim().min(1).max(200)).max(10).optional(),
     expectedProjectId: z.string().trim().min(1).max(500).optional(),
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
@@ -340,6 +350,8 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     caseId: z.string().trim().min(1).max(200)
   },
   prepare_research_context: {
+    maxCharacters:z.number().int().min(1).max(1_000_000).optional(),
+    maxTokens:z.number().int().min(1).max(250_000).optional(),
     expectedProjectId: z.string().trim().min(1).max(500).optional(),
     caseId: z.string().trim().min(1).max(200)
   },
@@ -497,6 +509,10 @@ function executeMiraTool(
   assertExpectedProject(projectId, optionalStringArg(args, "expectedProjectId"));
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
+      case "get_context_replay":
+        return {...replayContext(db,projectId,stringArg(args,"recallId")),delivery:getContextDelivery(db,projectId,stringArg(args,"recallId"))};
+      case "record_context_delivery":
+        return recordContextDelivery(db,projectId,stringArg(args,"recallId"),stringArg(args,"outputHash"),session.confirmationPolicy?authorizeContextDelivery(db,projectId,session.confirmationPolicy):undefined);
       case "get_runtime_status":
         return runtimeStatus({scope:contextScope(db,projectId,{workspaceRoot:session.workspaceRoot,taskId}),policy:session.confirmationPolicy,tools:MIRA_MCP_TOOL_NAMES,connectionObserved:session.connectionObserved});
       case "list_host_adapters":
@@ -528,6 +544,8 @@ function executeMiraTool(
           memoryLimit: numberArg(args, "memoryLimit", 8),
           maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined,
           maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : undefined,
+          transport:"mcp",retainForSeconds:args.retainForSeconds as number|undefined,
+          researchCaseIds:args.researchCaseIds as string[]|undefined,
           recordAudit: args.preview !== true
         });
       case "list_recall_events":
@@ -651,6 +669,7 @@ function executeMiraTool(
       case "prepare_research_context":
         return recallResearchContext(db, projectId, stringArg(args, "caseId"), {
           taskId, workspaceRoot:session.workspaceRoot,
+          maxCharacters:args.maxCharacters as number|undefined,maxTokens:args.maxTokens as number|undefined,
           transport: "mcp"
         });
       case "list_research_context_recalls":

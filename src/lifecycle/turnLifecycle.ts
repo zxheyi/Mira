@@ -31,7 +31,7 @@ const beforeSchema = z.object({
   host: z.enum(MIRA_HOSTS), transport:z.enum(INVOCATION_TRANSPORTS).optional(),hostSessionId: z.string().trim().min(1).max(500),
   hostTurnId: z.string().trim().min(1).max(500), query: z.string().trim().min(1).max(50_000),
   taskId: z.string().trim().min(1).max(500).optional(),
-  context: z.object({memoryLimit:z.number().int().min(1).max(50).optional(),maxCharacters:z.number().int().min(1).max(1_000_000).optional(),maxTokens:z.number().int().min(25).max(250_000).optional()}).strict().optional()
+  context: z.object({researchCaseIds:z.array(z.string().trim().min(1).max(200)).max(10).optional(),memoryLimit:z.number().int().min(1).max(50).optional(),maxCharacters:z.number().int().min(1).max(1_000_000).optional(),maxTokens:z.number().int().min(25).max(250_000).optional()}).strict().optional()
 }).strict();
 const afterSchema = z.object({
   host: z.enum(MIRA_HOSTS), transport:z.enum(INVOCATION_TRANSPORTS).optional(),hostSessionId: z.string().trim().min(1).max(500),
@@ -116,7 +116,7 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
           id, project_id, session_id, host_turn_id, task_id, query, status, before_input_hash, started_at
         ) values (?, ?, ?, ?, ?, ?, 'started', ?, ?)`)
           .run(turnId, projectId, session.id, input.hostTurnId, input.taskId ?? null, input.query, inputHash, now);
-        const context = prepareContext(db, projectId, {taskId:input.taskId, query:input.query, ...input.context, workspaceRoot:options.workspaceRoot, sessionId:session.id, turnId});
+        const context = prepareContext(db, projectId, {taskId:input.taskId, query:input.query, ...input.context, workspaceRoot:options.workspaceRoot, sessionId:session.id, turnId, transport:input.transport === "native" ? "internal" : input.transport});
         db.prepare("update lifecycle_turns set recall_event_id = ? where project_id = ? and id = ?")
           .run(context.receipt.id, projectId, turnId);
         const event = appendDomainEvent(db, {projectId, aggregateType:"turn", aggregateId:turnId,

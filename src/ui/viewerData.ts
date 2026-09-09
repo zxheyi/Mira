@@ -1,3 +1,4 @@
+import {getContextDelivery} from "../context/contextJournal.js";
 import { stat } from "node:fs/promises";
 import type Database from "better-sqlite3";
 import { getLatestCompleteProjectBriefing, type ProjectBriefing } from "../briefing/projectBriefingStore.js";
@@ -44,7 +45,7 @@ export type ViewerMemorySnapshot = {
   workingMemory: WorkingMemory[];
 };
 
-export type ViewerRecallEntry = RecallReceipt & {feedback?: RecallFeedback};
+export type ViewerRecallEntry = RecallReceipt & {feedback?: RecallFeedback;delivery?:ReturnType<typeof getContextDelivery>};
 
 function countProjectRows(db: Database.Database, table: string, projectId: string): number {
   return Number(db.prepare(`select count(*) from ${table} where project_id = ?`).pluck().get(projectId) ?? 0);
@@ -155,7 +156,7 @@ export function listViewerRecallEntries(
     listRecallFeedback(db, projectId, {limit:1000}).map((item) => [item.recallId, item])
   );
   return listRecallEvents(db, projectId, {taskId}).map((receipt) => ({
-    ...receipt,
+    ...receipt,delivery:getContextDelivery(db,projectId,receipt.id),
     ...(feedbackByRecall.get(receipt.id) ? {feedback:feedbackByRecall.get(receipt.id)} : {})
   }));
 }

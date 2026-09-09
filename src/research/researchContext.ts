@@ -1,3 +1,4 @@
+import {normalizeBudget, withinBudget, type ContextBudget, type ContextSelection} from "../context/contextBudget.js";
 import {contextScope, type ScopeRequest, type ContextScope} from "../context/contextScope.js";
 import {evaluateResearchClaim, evaluateResearchEvidence} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
@@ -14,6 +15,7 @@ import type {
 
 export type ResearchContextPacket = {
   schemaVersion:1; scope:ContextScope; generatedAt:string;
+  selections:ContextSelection[]; budget:Required<ContextBudget>; tokenUpperBound:number; deliveryState:"prepared";
   projectId: string;
   caseId: string;
   asOfDate: string;
@@ -26,11 +28,12 @@ export type ResearchContextPacket = {
 };
 
 export type ResearchContextRecallReceipt = {
+  schemaVersion?:2;scope?:ContextScope;selections?:ContextSelection[];deliveryState?:"prepared";budget?:Required<ContextBudget>;
   id: string;
   projectId: string;
   caseId: string;
   taskId?: string;
-  transport: "mcp" | "cli" | "ui";
+  transport: "mcp" | "cli" | "ui" | "internal";
   claimIds: string[];
   evidenceIds: string[];
   snapshotIds: string[];
@@ -87,11 +90,14 @@ export function prepareResearchContext(
   db: Database.Database,
   projectId: string,
   caseId: string,
-  options: ScopeRequest = {}
+  options: ScopeRequest & ContextBudget = {}
 ): ResearchContextPacket {
   const scope = contextScope(db, projectId, options);
+  const budget=normalizeBudget(options);
   const snapshot = getResearchCaseSnapshot(db, projectId, caseId);
   const claims = eligibleClaims(snapshot);
+  const selectedClaims:string[]=[];
+  const selections:ContextSelection[]=snapshot.claims.filter(claim=>!evaluateResearchClaim(snapshot,claim).eligible).map(claim=>({type:"claim",id:claim.id,caseId,selected:false,reasons:evaluateResearchClaim(snapshot,claim).reasons}));
   const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
   const snapshotsById = new Map(snapshot.snapshots.map((item) => [item.id, item]));
   const includedEvidence = new Set<string>();
@@ -112,6 +118,9 @@ export function prepareResearchContext(
   } else {
     lines.push("## Approved Claims", "");
     for (const claim of claims) {
+      const start=lines.length;
+      const previousEvidence=new Set(includedEvidence);
+      const previousSnapshots=new Set(includedSnapshots);
       lines.push(
         `- ${oneLine(claim.statement)} [claim:${claim.id}]`,
         `  - Confidence: ${claim.confidence}; thesis impact proposal: ${claim.thesisImpact}`,
@@ -145,22 +154,33 @@ export function prepareResearchContext(
           }
         }
       }
+      if (withinBudget(lines.join("\n") + "\n",budget)) {
+        selectedClaims.push(claim.id);
+        selections.push({type:"claim",id:claim.id,caseId,selected:true,reasons:["approved_current_verified_support"]});
+      } else {
+        lines.splice(start);
+        for (const id of includedEvidence) if(!previousEvidence.has(id)) includedEvidence.delete(id);
+        for (const id of includedSnapshots) if(!previousSnapshots.has(id)) includedSnapshots.delete(id);
+        selections.push({type:"claim",id:claim.id,caseId,selected:false,reasons:["budget"]});
+      }
     }
     lines.push("");
   }
 
-  const markdown = lines.join("\n");
+  const rendered = lines.join("\n");
+  const markdown = withinBudget(rendered,budget) ? rendered : "";
   return {
     schemaVersion:1, scope, generatedAt:new Date().toISOString(),
+    selections,budget,tokenUpperBound:Buffer.byteLength(markdown,"utf8"),deliveryState:"prepared",
     projectId,
     caseId,
     asOfDate: snapshot.researchCase.asOfDate,
     markdown,
-    claimIds: claims.map((claim) => claim.id),
+    claimIds: selectedClaims,
     evidenceIds: [...includedEvidence],
     snapshotIds: [...includedSnapshots],
     characterCount: markdown.length,
-    estimatedTokens: Math.ceil(markdown.length / 4)
+    estimatedTokens: Buffer.byteLength(markdown,"utf8")
   };
 }
 
@@ -168,10 +188,16 @@ export function recallResearchContext(
   db: Database.Database,
   projectId: string,
   caseId: string,
-  options: ScopeRequest & {transport: "mcp" | "cli" | "ui"}
+  options: ScopeRequest & ContextBudget & {transport: "mcp" | "cli" | "ui" | "internal"}
 ): AuditedResearchContextPacket {
   const packet = prepareResearchContext(db, projectId, caseId, options);
+  return recordPreparedResearchContext(db,packet,options);
+}
+
+export function recordPreparedResearchContext(db:Database.Database,packet:ResearchContextPacket,options:{taskId?:string;transport:"mcp"|"cli"|"ui"|"internal"}):AuditedResearchContextPacket {
+  const {projectId,caseId}=packet;
   const receipt: ResearchContextRecallReceipt = {
+    schemaVersion:2,scope:packet.scope,selections:packet.selections,deliveryState:"prepared",budget:packet.budget,
     id: `research_context_recall_${randomUUID()}`,
     projectId,
     caseId,

@@ -1,3 +1,4 @@
+import {CURRENT_SCHEMA_VERSION} from "../../src/db/schema.js";
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -98,7 +99,7 @@ describe("doctor CLI", () => {
       dbPath,
       database: {
         exists: true,
-        schemaVersion: 14,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         project: { id: project.id, rootPath: root },
         counts: { projects: 1, threads: 1, memories: 1, memoryCandidates: 0, historyImportRuns: 0 }
       },
