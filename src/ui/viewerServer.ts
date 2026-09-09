@@ -220,7 +220,7 @@ function dashboardHtml(): string {
       overview: null,
       threads: [],
       memories: [],
-      candidates: [],
+      candidates: [],candidateOffset:0,candidateStatus:"pending_review",
       researchCases: [],
       researchSnapshot: null,
       recalls: [],
@@ -326,13 +326,16 @@ function dashboardHtml(): string {
       return '<button data-resource="' + resource + '" data-id="' + escapeHtml(id) + '" data-action="' + action + '">' + label + '</button>';
     }
     function renderMemoryCards(query) {
-      const memories = state.memories.filter(memory => (memory.title + memory.content + memory.status).toLowerCase().includes(query.toLowerCase()));
+      const memories = state.memories.filter(memory => (memory.id + memory.title + memory.content + memory.status).toLowerCase().includes(query.toLowerCase()));
       document.getElementById('memory-cards').innerHTML = memories.map(memory => '<article class="panel memory-card"><h2>' + escapeHtml(memory.title) + '</h2><div class="muted">' + escapeHtml(memory.id + ' · ' + memory.kind + ' · ' + memory.status) + '</div><p>' + escapeHtml(memory.content) + '</p><div class="muted">来源：' + escapeHtml(memory.source) + '</div><div class="actions">' + (memory.status === 'active' ? actionButton('memory', memory.id, 'correct', '纠正') + actionButton('memory', memory.id, 'archive', '归档') : memory.status === 'archived' ? actionButton('memory', memory.id, 'restore', '恢复') : '') + actionButton('memory', memory.id, 'history', '查看历史') + '</div></article>').join('') || '<div class="empty">暂无匹配记忆</div>';
     }
     async function renderCandidates() {
-      state.candidates = await api('/api/candidates');
-      document.getElementById('candidates').innerHTML = '<h2>候选审核 · 先核对证据，再批准</h2><p class="muted">展示最近 100 条。批准仅影响记忆，不更新投资 thesis。</p>' + state.candidates.map(candidate => '<article class="panel memory-card"><h2>' + escapeHtml(candidate.title) + '</h2><p>' + escapeHtml(candidate.content) + '</p><div class="muted">' + escapeHtml(candidate.status + ' · ' + candidate.riskLevel + ' · ' + (candidate.reviewReason || '无待审原因')) + '</div><h3>原文证据</h3><div class="markdown">' + escapeHtml(candidate.evidence) + '</div><div class="actions"><button data-open-thread="' + escapeHtml(candidate.threadId) + '">查看来源会话</button>' + (candidate.status === 'pending_review' ? actionButton('candidates', candidate.id, 'accept', '批准') + actionButton('candidates', candidate.id, 'reject', '拒绝') : '') + '</div></article>').join('') + (!state.candidates.length ? '<div class="empty">暂无候选记忆</div>' : '');
+      state.candidates = await api('/api/candidates?limit=50&offset=' + state.candidateOffset + (state.candidateStatus ? '&status=' + state.candidateStatus : ''));
+      const cards=state.candidates.map(candidate=>'<article class="panel memory-card"><h2>' + escapeHtml(candidate.title) + '</h2><p>' + escapeHtml(candidate.content) + '</p><p>' + escapeHtml(candidate.status + ' · ' + (candidate.acceptanceMode || 'unknown')) + '</p><p>来源角色：' + escapeHtml(candidate.provenance?.role || 'unknown') + ' · ' + escapeHtml(candidate.provenance?.origin || 'unknown') + ' · 提炼器自报置信度：' + escapeHtml(candidate.confidence) + '</p><p>策略：' + escapeHtml(candidate.provenance?.policyVersion || 'unknown') + ' · ' + escapeHtml((candidate.provenance?.policyReasons || []).join(', ') || '无策略待审原因') + '</p><p>审核说明：' + escapeHtml(candidate.reviewReason || '无') + '</p><h3>原文证据</h3><div class="markdown">' + escapeHtml(candidate.evidence) + '</div><details><summary>来源定位与策略详情</summary><pre>' + escapeHtml(JSON.stringify(candidate.provenance || {role:'unknown'},null,2)) + '</pre></details><div class="actions"><button data-open-thread="' + escapeHtml(candidate.threadId) + '">查看来源会话</button>' + (candidate.status==='pending_review' ? actionButton('candidates',candidate.id,'accept','批准') + actionButton('candidates',candidate.id,'reject','拒绝') : '') + (candidate.acceptedMemoryId ? '<button data-candidate-memory="' + escapeHtml(candidate.acceptedMemoryId) + '">查看、纠正或归档记忆</button>' : '') + '</div></article>').join('');
+      document.getElementById('candidates').innerHTML='<h2>候选审核 · 先核对证据，再批准</h2><p>已接受记录保留历史；纠正或归档对应 Memory。冲突检查仅覆盖同类型同标题。</p><label>状态 <select id="candidate-status">' + [['pending_review','待审'],['accepted','已接受'],['rejected','已拒绝'],['','全部']].map(([value,label])=>'<option value="' + value + '"' + (value===state.candidateStatus?' selected':'') + '>' + label + '</option>').join('') + '</select></label><div class="actions"><button data-candidate-page="prev"' + (state.candidateOffset===0?' disabled':'') + '>上一页</button><span>起始位置 ' + state.candidateOffset + '</span><button data-candidate-page="next"' + (state.candidates.length<50?' disabled':'') + '>下一页</button></div>' + (cards || '<div class="empty">暂无候选记忆</div>');
+      document.getElementById('candidate-status').addEventListener('change',async event=>{state.candidateStatus=event.target.value;state.candidateOffset=0;await renderCandidates();});
     }
+
     async function renderResearch() {
       state.researchCases = await api('/api/research-cases');
       if (!state.selectedResearchCaseId && state.researchCases[0]) {
@@ -562,6 +565,10 @@ function dashboardHtml(): string {
       try {
       const nav = event.target.closest('[data-view]');
       if (nav) await show(nav.dataset.view);
+      const page=event.target.closest('[data-candidate-page]');
+      if(page) {state.candidateOffset=Math.max(0,state.candidateOffset+(page.dataset.candidatePage==='next'?50:-50));await renderCandidates();}
+      const candidateMemory=event.target.closest('[data-candidate-memory]');
+      if(candidateMemory) {await show('memory');document.getElementById('memory-filter').value=candidateMemory.dataset.candidateMemory;renderMemoryCards(candidateMemory.dataset.candidateMemory);}
       const thread = event.target.closest('[data-thread-id]');
       if (thread) await loadThread(thread.dataset.threadId);
       const openThread = event.target.closest('[data-open-thread]');
@@ -753,7 +760,7 @@ async function routeRequest(
 
   await withProject(options, async ({ db, project }) => {
     assertExpectedProject(project.id, url.searchParams.get("expectedProjectId") ?? undefined);
-    if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
+    if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, (url.searchParams.get("status") || undefined) as "pending_review"|"accepted"|"rejected"|undefined, Number(url.searchParams.get("limit")??100),Number(url.searchParams.get("offset")??0))); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listViewerRecallEntries(db, project.id, url.searchParams.get("taskId") ?? undefined)); return; }
     if (pathname === "/api/recall-quality") { sendJson(res, 200, getRecallQualityReport(db, project.id)); return; }
     if (pathname === "/api/jobs") { sendJson(res, 200, listDistillJobs(db, project.id)); return; }

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -36,6 +36,7 @@ export function migrate(db: Database.Database): void {
   const requiresV13Setup = existingVersion === undefined || existingVersion < 13;
   const requiresV14Setup = existingVersion === undefined || existingVersion < 14;
   const requiresV15Setup = existingVersion === undefined || existingVersion < 15;
+  const requiresV16Setup = existingVersion === undefined || existingVersion < 16;
   const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
   if (hasLegacyMemories && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
 
@@ -814,6 +815,12 @@ export function migrate(db: Database.Database): void {
     );
     create index if not exists idx_context_payload_expiry on context_payloads(expires_at);
   `);
+
+  if (requiresV16Setup) {
+    const columns=new Set((db.prepare("pragma table_info(memory_candidates)").all() as Array<{name:string}>).map(row=>row.name));
+    if(!columns.has("provenance")) db.exec("alter table memory_candidates add column provenance text");
+    if(!columns.has("acceptance_mode")) db.exec("alter table memory_candidates add column acceptance_mode text");
+  }
 
   db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,

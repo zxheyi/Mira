@@ -1,3 +1,5 @@
+import {storedTranscriptSpans} from "../lifecycle/sessionTranscript.js";
+import {locateCandidateEvidence} from "./candidateProvenance.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { addMemory, type Memory, type MemoryKind } from "../memory/memoryStore.js";
@@ -20,6 +22,7 @@ import type {
 } from "./candidateTypes.js";
 
 type CandidateRow = {
+  provenance:string|null;acceptance_mode:MemoryCandidate["acceptanceMode"]|null;
   id: string;
   project_id: string;
   thread_id: string;
@@ -45,6 +48,8 @@ type CandidateRow = {
 
 function toCandidate(row: CandidateRow): MemoryCandidate {
   return {
+    provenance:row.provenance?JSON.parse(row.provenance):undefined,
+    acceptanceMode:row.acceptance_mode??"unknown",
     id: row.id,
     projectId: row.project_id,
     threadId: row.thread_id,
@@ -167,9 +172,9 @@ function acceptCandidate(
   const reviewedAt = new Date().toISOString();
   db.prepare(
     `update memory_candidates
-     set status = 'accepted', review_reason = ?, reviewed_at = ?, accepted_memory_id = ?
+     set status = 'accepted', review_reason = ?, reviewed_at = ?, accepted_memory_id = ?, acceptance_mode = ?
      where id = ?`
-  ).run(reason ?? null, reviewedAt, memory.id, candidate.id);
+  ).run(reason ?? null, reviewedAt, memory.id, actor ? "reviewed" : "automatic", candidate.id);
   const accepted = selectCandidate(db, candidate.projectId, candidate.id);
   if (!accepted) throw new Error(`Memory candidate disappeared during acceptance: ${candidate.id}`);
   return { candidate: accepted, outcome: "accepted", reasons: [], memory };
@@ -215,6 +220,12 @@ export function submitMemoryCandidates(
     const reasons: CandidateReviewReason[] = existingMemory
       ? ["duplicate"]
       : candidateReviewReasons(candidate, hasMemoryConflict(db, input.projectId, candidate));
+    const provenance=locateCandidateEvidence(thread.raw_text,candidate.evidence,candidate.content,storedTranscriptSpans(db,input.projectId,input.threadId,thread.raw_text));
+    if(!existingMemory) {
+      if(provenance.role==="unknown") reasons.push("source_unattributed");
+      else if(provenance.role!=="user") reasons.push("assistant_or_tool_source");
+    }
+    provenance.policyReasons=[...reasons];
     const createdAt = new Date().toISOString();
     const inserted: MemoryCandidate = {
       id: `candidate_${randomUUID()}`,
@@ -226,6 +237,7 @@ export function submitMemoryCandidates(
       sourceModel: sourceModel || undefined,
       extractionMethod: input.extractionMethod,
       ...candidate,
+      provenance,acceptanceMode:"unknown",
       status: "pending_review",
       reviewReason: reasons.length ? reasons.join(",") : undefined,
       createdAt
@@ -234,14 +246,14 @@ export function submitMemoryCandidates(
       `insert into memory_candidates (
         id, project_id, thread_id, job_id, thread_input_hash, title, kind, content, confidence, importance,
         source_agent, source_model, extraction_method, evidence, content_hash, risk_level,
-        status, review_reason, reviewed_at, accepted_memory_id, created_at
+        status, review_reason, reviewed_at, accepted_memory_id, created_at, provenance, acceptance_mode
       ) values (
         @id, @projectId, @threadId, @jobId, @threadInputHash, @title, @kind, @content, @confidence, @importance,
         @sourceAgent, @sourceModel, @extractionMethod, @evidence, @contentHash, @riskLevel,
-        @status, @reviewReason, null, null, @createdAt
+        @status, @reviewReason, null, null, @createdAt, @provenance, @acceptanceMode
       )`
     ).run({
-      ...inserted,
+      ...inserted,provenance:JSON.stringify(provenance),
       jobId: inserted.jobId ?? null,
       sourceModel: inserted.sourceModel ?? null,
       reviewReason: inserted.reviewReason ?? null
@@ -251,7 +263,7 @@ export function submitMemoryCandidates(
       const reviewedAt = new Date().toISOString();
       db.prepare(
         `update memory_candidates
-         set status = 'accepted', review_reason = 'duplicate', reviewed_at = ?, accepted_memory_id = ?
+         set status = 'accepted', review_reason = 'duplicate', acceptance_mode = 'duplicate_link', reviewed_at = ?, accepted_memory_id = ?
          where id = ?`
       ).run(reviewedAt, existingMemory.id, inserted.id);
       const linked = selectCandidate(db, input.projectId, inserted.id);
@@ -268,14 +280,17 @@ export function listMemoryCandidates(
   db: Database.Database,
   projectId: string,
   status?: CandidateStatus,
-  limit = 50
+  limit = 50,
+  offset = 0
 ): MemoryCandidate[] {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Candidate limit must be between 1 and 100");
+  if(!Number.isInteger(offset)||offset<0||offset>1_000_000) throw new Error("Candidate offset must be between 0 and 1000000");
+  if(status && !["pending_review","accepted","rejected"].includes(status)) throw new Error("Invalid candidate status");
   const rows = status
-    ? db.prepare("select * from memory_candidates where project_id = ? and status = ? order by created_at desc, rowid desc limit ?")
-      .all(projectId, status, limit)
-    : db.prepare("select * from memory_candidates where project_id = ? order by created_at desc, rowid desc limit ?")
-      .all(projectId, limit);
+    ? db.prepare("select * from memory_candidates where project_id = ? and status = ? order by created_at desc, rowid desc limit ? offset ?")
+      .all(projectId, status, limit, offset)
+    : db.prepare("select * from memory_candidates where project_id = ? order by created_at desc, rowid desc limit ? offset ?")
+      .all(projectId, limit, offset);
   return rows.map((row) => toCandidate(row as CandidateRow));
 }
 
@@ -329,7 +344,7 @@ export function reviewMemoryCandidate(
       if (!thread.raw_text.includes(candidate.evidence)) {
         throw new Error(`Memory candidate evidence is no longer present; resubmit the candidate: ${candidateId}`);
       }
-      return acceptCandidate(db, candidate, normalizedReason, supersedesMemoryId, actor);
+      return acceptCandidate(db, candidate, normalizedReason, supersedesMemoryId, actor ?? "local:reviewer");
     }
 
     const reviewedAt = new Date().toISOString();

@@ -1,3 +1,4 @@
+import {listMemoryCandidates} from "../../src/distill/candidateService.js";
 import { execFile, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -139,7 +140,8 @@ describe("integration CLI", () => {
         migrate(db);
         const project = ensureProjectForRoot(db, projectRoot);
         completed = listDistillJobs(db, project.id, "completed").length === 1
-          && listMemoriesForProject(db, project.id).some((memory) => memory.title === "Detached worker");
+          && listMemoryCandidates(db, project.id, "pending_review").some(candidate => candidate.title === "Detached worker");
+        expect(listMemoriesForProject(db, project.id)).toEqual([]);
         db.close();
       }
       expect(completed).toBe(true);

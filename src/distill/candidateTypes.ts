@@ -1,9 +1,12 @@
+import type {CandidateProvenance} from "./candidateProvenance.js";
 import type { Memory, MemoryKind } from "../memory/memoryStore.js";
 
 export const CANDIDATE_STATUSES = ["pending_review", "accepted", "rejected"] as const;
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
 
 export const CANDIDATE_REVIEW_REASONS = [
+  "source_unattributed",
+  "assistant_or_tool_source",
   "non_verbatim_claim",
   "low_confidence",
   "high_impact_kind",
@@ -25,6 +28,8 @@ export type MemoryCandidateInput = {
 };
 
 export type MemoryCandidate = MemoryCandidateInput & {
+  provenance?:CandidateProvenance;
+  acceptanceMode?:"automatic"|"reviewed"|"duplicate_link"|"unknown";
   id: string;
   projectId: string;
   threadId: string;
