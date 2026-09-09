@@ -1,9 +1,11 @@
+import type {SelectionManifest} from "./selectionManifest.js";
 import type {ContextScope} from "./contextScope.js";
 import type {ContextSelection} from "./contextBudget.js";
 import type Database from "better-sqlite3";
 import { normalizeTaskId } from "../workingMemory/workingMemoryStore.js";
 
 export type RecallReceipt = {
+  selectionManifest?:SelectionManifest;
   schemaVersion?:2;deliveryState?:"prepared";scope?:ContextScope;selections?:ContextSelection[];budgetPolicy?:string;researchRecallIds?:string[];replay?:"references_only"|"retained_payload";
   id: string;
   projectId: string;

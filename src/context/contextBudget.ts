@@ -12,4 +12,4 @@ export function normalizeBudget(input:ContextBudget):Required<ContextBudget> {
 export function withinBudget(text:string,budget:Required<ContextBudget>):boolean {
  return text.length<=budget.maxCharacters && Buffer.byteLength(text,'utf8')<=budget.maxTokens;
 }
-export type ContextSelection={type:'working_memory'|'memory'|'briefing'|'claim';id:string;selected:boolean;reasons:string[];contentHash?:string;caseId?:string};
+export type ContextSelection={type:'working_memory'|'memory'|'briefing'|'claim';id:string;selected:boolean;reasons:string[];contentHash?:string;caseId?:string;section?:string;version?:string;rank?:number|null;cost?:{characters:number;tokenUpperBound:number}|null;sources?:Array<{type:string;id:string;version:string;contentHash:string}>};

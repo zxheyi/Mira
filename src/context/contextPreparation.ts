@@ -1,3 +1,4 @@
+import {createSelectionManifest,selectionHash,textCost} from "./selectionManifest.js";
 import {persistContextPacket} from "./contextJournal.js";
 import {normalizeBudget, withinBudget, type ContextSelection} from "./contextBudget.js";
 import {prepareResearchContext,recordPreparedResearchContext,type ResearchContextPacket} from "../research/researchContext.js";
@@ -114,8 +115,24 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   }
   for(const memory of ordered) selections.push({type:"memory",id:memory.id,selected:injected.includes(memory.id),reasons:[injected.includes(memory.id)?(query?"query_match":"project_priority"):dropped.find(item=>item.memoryId===memory.id)?.reason??"not_selected"],contentHash:createHash("sha256").update(memory.content).digest("hex")});
   if (!pool.some(memory => !warningKinds.has(memory.kind))) append("## Long-Term Memory\nNo matching long-term memory.");
+  for(const selection of selections) {
+    if(selection.type==='claim') continue;
+    const memory=ordered.find(item=>selection.type==='memory'&&item.id===selection.id);
+    const workingItem=[...shared,...task].find(item=>selection.type==='working_memory'&&item.id===selection.id);
+    const entity=memory??workingItem??briefing;
+    if(!entity) continue;
+    selection.contentHash=selectionHash(entity);
+    selection.version=memory?memory.id:workingItem?workingItem.updatedAt:String(briefing!.version);
+    selection.section=memory?(warningKinds.has(memory.kind)?'warnings':'long_term_memory'):workingItem?'working_memory':'project_briefing';
+    selection.rank=memory?ordered.indexOf(memory)+1:workingItem?(working.indexOf(workingItem)>=0?working.indexOf(workingItem)+1:null):1;
+    selection.cost=textCost(memory?renderMemory(memory)+'\n\n':workingItem?`### ${workingItem.kind}\n- updatedAt: ${workingItem.updatedAt}\n${workingItem.content}\n\n`:`## Project Briefing\nProject: ${project.name} · v${briefing!.version}${briefing!.staleAt?' (stale)':''}\n\n`);
+  }
   if (dropped.length) append(`Some memories omitted; inspect the recall receipt. (${dropped.length} omitted)`);
   const receipt: RecallReceipt = {
+    selectionManifest:createSelectionManifest({projectId,taskId:taskId??null,queryHash:selectionHash(query??null),
+      retrieval:{coverage:'bounded_pool',requestedLimit:Math.min(200,(options.memoryLimit??8)*4),candidateCount:pool.length,
+        mode:query?'fts_phrase_then_or_terms':'project_priority',ordering:'warnings_first_preserve_retrieval_order',outsidePool:'not_evaluated'},
+      memoryLimit:options.memoryLimit??8,researchCaseIds,briefingVersion:briefing?.version??null},selections,budget,markdown),
     schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:(options.retainForSeconds??0)>0?"retained_payload":"references_only",
     id: `recall_${randomUUID()}`, projectId, ...(taskId ? {taskId} : {}),
     ...(query ? {query: containsSensitiveInformation(query) ? "[REDACTED]" : query} : {}),

@@ -26,7 +26,10 @@ for (const validThrough of ['2026-08-15','2026-09-01']) test(`approval and recal
       expect(listResearchBriefingSummaries(db,project.id)[0]).toMatchObject({approvedClaimCount:1,eligibleClaimCount:0});
     } else {
       approve();
-      expect(prepareResearchContext(db,project.id,packet.researchCase.id).evidenceIds).toHaveLength(2);
+      const context=prepareResearchContext(db,project.id,packet.researchCase.id);
+      expect(context.evidenceIds).toHaveLength(2);
+      expect(context.selectionManifest.selections[0]).toMatchObject({section:'research.claims',version:packet.claims[0].id,rank:1,cost:{characters:expect.any(Number)},sources:expect.arrayContaining([expect.objectContaining({type:'verification',contentHash:expect.stringMatching(/^[a-f0-9]{64}$/)})])});
+      expect(context.selectionManifest.overheadCost.characters).toBeGreaterThanOrEqual(0);
     }
   } finally {db.close();}
 });
