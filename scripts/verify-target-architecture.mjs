@@ -91,7 +91,11 @@ const {receipt,...mcpPacket} = mcpContext;
 const vault = renderMarkdownVault(readVaultSnapshot(db, project));
 assert.match(markdown, /## Source Snapshot Ledger/);
 assert.deepEqual(context.claimIds, [research.claims[0].id]);
-assert.deepEqual(mcpPacket, context);
+const {generatedAt:mcpGeneratedAt,...mcpStable}=mcpPacket;
+const {generatedAt:contextGeneratedAt,...contextStable}=context;
+assert.ok(Number.isFinite(Date.parse(mcpGeneratedAt)));
+assert.ok(Number.isFinite(Date.parse(contextGeneratedAt)));
+assert.deepEqual(mcpStable, contextStable);
 assert.deepEqual(mcpRecalls.map(item => item.id), [receipt.id]);
 assert.ok(vault.has(`research/${research.researchCase.id}.md`));
 assert.equal(Number(db.prepare("select count(*) from memories").pluck().get()), 1,
