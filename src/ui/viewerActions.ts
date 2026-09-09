@@ -1,3 +1,4 @@
+import {semanticAssessmentSchema} from "../research/semanticReview.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { authorizeCuration, curateMemory } from "../memory/curationService.js";
@@ -39,6 +40,7 @@ const reviewAction = z.object({decision: z.enum(["accept", "reject"]), reason,
   supersedesMemoryId: z.string().trim().min(1).max(500).optional()}).strict();
 const requiredReason = z.string().trim().min(1).max(2000);
 const researchClaimAction = z.object({
+  semanticAssessment:semanticAssessmentSchema.optional(),
   decision: z.enum(["approve", "reject", "request_changes"]),
   reason: requiredReason,
   contradictionDispositions: z.array(z.object({
@@ -87,7 +89,8 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
       input.decision,
       input.reason,
       authorizeResearch(db, projectId, {actor: "ui:user", scopes:["research.review"],reason: "Explicit local Research Claim review"}),
-      input.contradictionDispositions ?? []
+      input.contradictionDispositions ?? [],
+      input.semanticAssessment
     );
   }
   if (resource === "research-evidence") {

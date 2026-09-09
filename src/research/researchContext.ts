@@ -132,7 +132,8 @@ function prepareResearchContextInTransaction(db:Database.Database,projectId:stri
       lines.push(
         `- ${oneLine(claim.statement)} [claim:${claim.id}]`,
         `  - Confidence: ${claim.confidence}; thesis impact proposal: ${claim.thesisImpact}`,
-        `  - Invalidation: ${oneLine(claim.invalidationConditions)}`
+        `  - Invalidation: ${oneLine(claim.invalidationConditions)}`,
+        `  - Semantic review: ${claim.semanticReview?.state??"not_recorded"}${claim.semanticReview?.assessment?`; entailment: ${claim.semanticReview.assessment.entailment}; method: ${claim.semanticReview.assessment.reportedMethod} (reviewer-reported)`:""}`
       );
       for (const link of claim.links) {
         const evidence = evidenceById.get(link.evidenceId);

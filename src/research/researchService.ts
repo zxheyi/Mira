@@ -1,3 +1,4 @@
+import {semanticAssessmentSchema,semanticSubjectHash,type SemanticAssessment} from "./semanticReview.js";
 import {MiraError} from "../runtime/errors.js";
 import {requireCapability, scopesSchema, legacyDelegationSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
 import {evaluateResearchClaim} from "./researchEligibility.js";
@@ -301,11 +302,13 @@ export function reviewResearchClaim(
   decision: ResearchReviewDecision,
   reason: string,
   authority?: ResearchAuthority,
-  contradictionDispositions: ContradictionDisposition[] = []
+  contradictionDispositions: ContradictionDisposition[] = [],
+  semanticAssessment?: SemanticAssessment
 ): ResearchCaseSnapshot {
   const policy = requireResearchAuthority(db, projectId, authority);
   requireCapability(policy, "research.review");
   const parsed = z.object({
+    semanticAssessment:semanticAssessmentSchema.optional(),
     decision: z.enum(["approve", "reject", "request_changes"]),
     reason: text(2000),
     contradictionDispositions: z.array(z.object({
@@ -313,12 +316,14 @@ export function reviewResearchClaim(
       disposition: z.enum(CONTRADICTION_DISPOSITIONS),
       rationale: text(2000)
     }).strict()).max(100)
-  }).parse({ decision, reason, contradictionDispositions });
+  }).parse({ decision, reason, contradictionDispositions,semanticAssessment });
   assertNoSensitiveInformation(parsed.reason + "\n" + parsed.contradictionDispositions.map((item) => item.rationale).join("\n"), "Research review reason");
 
   return db.transaction(() => {
     const { snapshot, claim } = requireActiveClaim(db, projectId, claimId);
     if (parsed.decision === "approve") {
+      const semantic=parsed.semanticAssessment;
+      if(semantic && (semantic.entailment!=='supported'||semantic.scope!=='matched'||semantic.timeRange!=='matched'||!['matched','not_applicable'].includes(semantic.units))) throw new Error('Approval cannot override an uncertain or negative semantic assessment');
       if (claim.evidenceStatus !== "observed" && claim.evidenceStatus !== "supported") {
         throw new Error("Approval requires observed or supported Evidence Status");
       }
@@ -358,6 +363,7 @@ export function reviewResearchClaim(
       eventType: "claim_reviewed",
       receipt: {
         operation: "reviewResearchClaim",
+        ...(parsed.semanticAssessment?{semanticReview:{assessment:parsed.semanticAssessment,subjectHash:semanticSubjectHash(snapshot,claim),binding:'claim_and_linked_evidence_versions',methodObservation:'reviewer_reported'}}:{}),
         actor: policy.actor,
         authorityReason: policy.reason,
         reason: parsed.reason,

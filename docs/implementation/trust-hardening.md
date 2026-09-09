@@ -23,3 +23,11 @@ Domain events and Outbox topics have strict allowlists, a 16 KiB UTF-8 payload c
 Schema v17 stores detailed Research recall receipts in research_context_recalls. Research domain events retain receipt IDs and hashes only. Existing full-receipt events remain readable without retroactively rewriting their history.
 
 `mira outbox prune` removes payloads only from completed messages: projection requests after one day; capture/distillation and evidence-verification requests after seven days. It retains message identity, status, completion time, handler receipts and all domain events. Pending, running and failed work is never pruned, so retries and recovery keep their input. Pruning is explicit maintenance, not a claim that a background scheduler has run. Lifecycle transcript/result retention and context payload TTL remain separate policies.
+
+## Structural checks and semantic review (PR 4)
+
+Evidence verification now explicitly reports `verificationScope: snapshot_binding_and_excerpt_integrity` and `semanticEntailment: not_evaluated`. The existing integrity, source binding, locator, excerpt, publication and freshness checks remain separate values. A successful structural check does not prove a Claim's inference.
+
+The existing Claim review accepts an optional semanticAssessment through MCP, `research review --semantic-assessment file.json`, and the Viewer review form. It records reportedMethod (human/model_assisted), entailment, scope, timeRange and units. An approval with an uncertain or negative supplied assessment is rejected. Omitting the assessment preserves ordinary Claim-review compatibility and reports `not_recorded`; no legacy semantic conclusion is invented.
+
+An assessment is bound to a hash of the Claim subject, linked Evidence, current verifications, snapshots and Case as-of date. A changed subject reports `stale`, while historical review events remain intact. Reviewer identity comes from existing scoped authority; method is explicitly reviewer-reported, not an independent authentication or truth guarantee. Viewer and Research Context expose the separate semantic state.
