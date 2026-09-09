@@ -131,7 +131,7 @@ async function contextResult(options: HookRuntimeOptions, input: HookInput): Pro
       task_id: stableThreadId(options.agent, input.session_id),
       context: {maxCharacters: options.contextMaxCharacters ?? 4_000}
     });
-    const result = createTurnLifecycle({db, projectId: project.id}).beforeTurn(command);
+    const result = createTurnLifecycle({db, projectId: project.id, workspaceRoot:options.projectRoot}).beforeTurn(command);
     return {
       status: "context",
       stdout: result.context.markdown
@@ -211,7 +211,7 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
         }
       }
     });
-    const captured = createTurnLifecycle({db, projectId: project.id}).afterTurn(command);
+    const captured = createTurnLifecycle({db, projectId: project.id, workspaceRoot:options.projectRoot}).afterTurn(command);
     if (!captured.capture.threadId) throw new Error("Lifecycle capture did not retain its Thread reference");
     capturedThreadId = captured.capture.threadId;
     duplicate = captured.duplicate;

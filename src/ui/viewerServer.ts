@@ -1,3 +1,5 @@
+import {assertExpectedProject} from "../context/contextScope.js";
+import {prepareContext} from "../context/contextPreparation.js";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -744,6 +746,7 @@ async function routeRequest(
   }
 
   await withProject(options, async ({ db, project }) => {
+    assertExpectedProject(project.id, url.searchParams.get("expectedProjectId") ?? undefined);
     if (pathname === "/api/candidates") { sendJson(res, 200, listMemoryCandidates(db, project.id, undefined, 100)); return; }
     if (pathname === "/api/recalls") { sendJson(res, 200, listViewerRecallEntries(db, project.id, url.searchParams.get("taskId") ?? undefined)); return; }
     if (pathname === "/api/recall-quality") { sendJson(res, 200, getRecallQualityReport(db, project.id)); return; }
@@ -793,7 +796,7 @@ async function routeRequest(
       return;
     }
     if (pathname === "/api/context-bundle") {
-      sendJson(res, 200, { markdown: getViewerContextBundle(db, project.id) });
+      sendJson(res, 200, prepareContext(db, project.id, {workspaceRoot:options.projectRoot,maxCharacters:4000,recordAudit:false}));
       return;
     }
     if (pathname === "/api/memory") {

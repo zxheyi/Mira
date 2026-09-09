@@ -11,3 +11,5 @@ This series preserves SQLite as the fact source and the existing lifecycle/curat
 7. Migration and cross-entrypoint verification.
 
 Phase 1 validation covers mixed expired/current supports and inclusive validity boundaries, in addition to the research lifecycle suite. Verification certifies snapshot/excerpt binding, not the correctness of Claim inference.
+
+Phase 2: structured context packets carry schemaVersion, scope and generatedAt. Scope distinguishes the registered primary root from the invoking workspace and leaves absent session identity null. MCP context/lifecycle requests accept expectedProjectId; CLI accepts --expected-project-id; Viewer read requests accept the same query parameter. A mismatch is rejected before context/turn writes. Legacy Markdown consumers retain their string contract, including small-budget behavior.

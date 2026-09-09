@@ -1,3 +1,4 @@
+import {contextScope, type ScopeRequest, type ContextScope} from "./contextScope.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { ensureFreshProjectBriefing, getLatestCompleteProjectBriefing } from "../briefing/projectBriefingStore.js";
@@ -6,11 +7,11 @@ import { listTopMemoriesForProject, searchMemories, type Memory } from "../memor
 import { listWorkingMemory, normalizeTaskId } from "../workingMemory/workingMemoryStore.js";
 import { recordRecallEvent, type RecallReceipt } from "./recallAuditStore.js";
 
-export type PrepareContextOptions = {
+export type PrepareContextOptions = ScopeRequest & {
   taskId?: string; query?: string; memoryLimit?: number; maxCharacters?: number; maxTokens?: number;
   recordAudit?: boolean;
 };
-export type ContextPacket = { markdown: string; receipt: RecallReceipt };
+export type ContextPacket = { schemaVersion: 1; scope: ContextScope; generatedAt: string; markdown: string; receipt: RecallReceipt };
 const warningKinds = new Set(["failed_attempt", "lesson", "constraint"]);
 const workingPriority = ["blocker", "current_task", "current_phase", "next_step", "recent_decision", "preference", "decision", "note"];
 
@@ -36,6 +37,7 @@ function renderMemory(memory: Memory): string {
 
 /** One public interface owns selection, rendering and the evidence of what was injected. */
 export function prepareContext(db: Database.Database, projectId: string, options: PrepareContextOptions = {}): ContextPacket {
+  const scope = contextScope(db, projectId, options);
   const started = Date.now();
   validateInteger(options.memoryLimit, "memoryLimit", 1, 50);
   validateInteger(options.maxCharacters, "maxCharacters", 1, 1_000_000);
@@ -97,5 +99,5 @@ export function prepareContext(db: Database.Database, projectId: string, options
     recorded: options.recordAudit !== false, createdAt: new Date().toISOString()
   };
   if (receipt.recorded) recordRecallEvent(db, receipt);
-  return {markdown, receipt};
+  return {schemaVersion:1, scope, generatedAt:receipt.createdAt, markdown, receipt};
 }
