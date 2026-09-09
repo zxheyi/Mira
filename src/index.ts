@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import {MiraError} from "./runtime/errors.js";
+import {runtimeStatus,renderRuntimeStatus} from "./runtime/runtimeStatus.js";
+import {scopesSchema} from "./runtime/capabilities.js";
 import {assertExpectedProject} from "./context/contextScope.js";
 import { Command } from "commander";
 import Database from "better-sqlite3";
@@ -1342,15 +1345,18 @@ const mcp = program.command("mcp").description("Run the Mira MCP server");
 mcp
   .command("serve")
   .description("Start the Mira MCP stdio server")
+  .option("--allow-scopes <scopes>", "Comma-separated governed operation scopes; requires confirmation-policy")
   .option("--confirmation-policy <reason>", "Explicitly delegate governed memory and research writes to this trusted protocol (disabled by default)")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
-  .action(async (options: GlobalOptions & {confirmationPolicy?: string}) => {
+  .action(async (options: GlobalOptions & {confirmationPolicy?: string;allowScopes?:string}) => {
     const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
+    if (options.allowScopes !== undefined && !options.confirmationPolicy) throw new Error("--allow-scopes requires --confirmation-policy");
+    const scopes = options.allowScopes === undefined ? undefined : scopesSchema.parse(options.allowScopes.split(",").filter(Boolean));
     await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task,
-      confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy} });
+      confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy, scopes} });
   });
 
 const integration = program.command("integration").description("Manage automatic coding-agent integration");
@@ -1422,6 +1428,15 @@ integration
     if (result.stdout) {
       process.stdout.write(result.stdout);
     }
+  });
+
+program.command("status").description("Explain installation, project binding and observed runtime status without writes")
+  .option("--json", "Return structured status")
+  .action(async (options:{json?:boolean})=>{
+    const global=program.opts<GlobalOptions>();
+    const projectRoot=await resolveProjectRoot(global);
+    const status=runtimeStatus({doctor:await runDoctor({projectRoot,dbPath:resolveDbPath(projectRoot,global)})});
+    if(options.json) printJson(status); else console.log(renderRuntimeStatus(status));
   });
 
 program
@@ -1588,7 +1603,7 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.includes("commander")) {
-    console.error(message);
+    console.error(error instanceof MiraError ? JSON.stringify(error.toJSON()) : message);
     console.error(`Run 'mira ${commandPathFromArgs(process.argv.slice(2))} --help' for usage.`);
   }
   process.exitCode = 1;

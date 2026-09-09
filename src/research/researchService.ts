@@ -1,3 +1,5 @@
+import {MiraError} from "../runtime/errors.js";
+import {requireCapability, scopesSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
 import {evaluateResearchClaim} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
@@ -97,7 +99,7 @@ const revisionSchema = z.object({
 export type SubmitResearchPacketInput = z.infer<typeof packetSchema>;
 export type ReviseResearchClaimInput = z.infer<typeof revisionSchema>;
 export type ResearchReviewDecision = "approve" | "reject" | "request_changes";
-export type ResearchConfirmationPolicy = { actor: string; reason: string };
+export type ResearchConfirmationPolicy = CapabilityPolicy;
 
 declare const authorityBrand: unique symbol;
 export type ResearchAuthority = { readonly [authorityBrand]: true };
@@ -111,7 +113,7 @@ export function authorizeResearch(
   projectId: string,
   policy: ResearchConfirmationPolicy
 ): ResearchAuthority {
-  const parsed = z.object({ actor: text(200), reason: text(1000) }).strict().parse(policy);
+  const parsed = z.object({ actor: text(200), reason: text(1000), scopes:scopesSchema }).strict().parse(policy);
   assertNoSensitiveInformation(parsed.actor + "\n" + parsed.reason, "Research authority");
   const authority = Object.freeze({}) as ResearchAuthority;
   authorities.set(authority, { db, projectId, ...parsed });
@@ -125,9 +127,7 @@ function requireResearchAuthority(
 ): ResearchConfirmationPolicy {
   const policy = authority && authorities.get(authority);
   if (!policy || policy.db !== db || policy.projectId !== projectId) {
-    throw new Error(
-      "Research review requires host-granted project authority; use the local CLI/UI or a host confirmation policy"
-    );
+    throw new MiraError("PERMISSION_DENIED", "Research review requires host-granted project authority", "Use local CLI/UI or a host-granted scope");
   }
   return policy;
 }
@@ -304,6 +304,7 @@ export function reviewResearchClaim(
   contradictionDispositions: ContradictionDisposition[] = []
 ): ResearchCaseSnapshot {
   const policy = requireResearchAuthority(db, projectId, authority);
+  requireCapability(policy, "research.review");
   const parsed = z.object({
     decision: z.enum(["approve", "reject", "request_changes"]),
     reason: text(2000),
@@ -380,6 +381,7 @@ export function markResearchEvidenceStale(
   authority?: ResearchAuthority
 ): ResearchCaseSnapshot {
   const policy = requireResearchAuthority(db, projectId, authority);
+  requireCapability(policy, "research.mutate");
   const parsedReason = text(2000).parse(reason);
   assertNoSensitiveInformation(parsedReason, "Research evidence stale reason");
   return db.transaction(() => {
@@ -442,6 +444,7 @@ export function markResearchSourceSnapshotStale(
   authority?: ResearchAuthority
 ): ResearchCaseSnapshot[] {
   const policy = requireResearchAuthority(db, projectId, authority);
+  requireCapability(policy, "research.mutate");
   const parsedReason = text(2000).parse(reason);
   assertNoSensitiveInformation(parsedReason, "Source Snapshot stale reason");
   return db.transaction(() => {
@@ -502,6 +505,7 @@ export function reviseResearchClaim(
   authority?: ResearchAuthority
 ): ResearchCaseSnapshot {
   const policy = requireResearchAuthority(db, projectId, authority);
+  requireCapability(policy, "research.mutate");
   const parsed = revisionSchema.parse(input);
   const parsedReason = text(2000).parse(reason);
   assertNoSensitiveInformation(JSON.stringify({ ...parsed, reason: parsedReason }), "Research claim revision");

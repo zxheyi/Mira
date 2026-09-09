@@ -1,3 +1,5 @@
+import {MiraError} from "../runtime/errors.js";
+import {requireCapability, scopesSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { addMemory, listMemoriesForProject, MEMORY_KINDS, type AddMemoryInput, type Memory, type UpdateMemoryInput } from "./memoryStore.js";
@@ -24,7 +26,7 @@ export type CurationCommand = ConfirmedCommand | ReviewCommand | ProposeCommand 
 
 declare const authorityBrand: unique symbol;
 export type CurationAuthority = { readonly [authorityBrand]: true };
-export type ConfirmationPolicy = { actor: string; reason: string };
+export type ConfirmationPolicy = CapabilityPolicy;
 const authorities = new WeakMap<CurationAuthority, ConfirmationPolicy & {db: Database.Database; projectId: string}>();
 
 /** Trusted application configuration only. Never construct authority from model/tool arguments.
@@ -36,14 +38,14 @@ export function authorizeCuration(db: Database.Database, projectId: string, poli
   if (!actor || actor.length > 200 || !reason || reason.length > 1000) throw new Error("Curation authority requires an actor and reason within audit limits");
   assertNoSensitiveInformation(`${actor}\n${reason}`, "Curation authority");
   const authority = Object.freeze({}) as CurationAuthority;
-  authorities.set(authority, {db, projectId, actor, reason});
+  authorities.set(authority, {db, projectId, actor, reason, scopes:scopesSchema.parse(policy.scopes)});
   return authority;
 }
 
 export function requireCurationAuthority(db: Database.Database, projectId: string, authority?: CurationAuthority): ConfirmationPolicy {
   const policy = authority && authorities.get(authority);
   if (!policy || policy.db !== db || policy.projectId !== projectId) {
-    throw new Error("Confirmed curation requires host-granted project authority; submit candidates or use the local review CLI/UI");
+    throw new MiraError("PERMISSION_DENIED", "Confirmed curation requires host-granted project authority", "Submit candidates or use the local review CLI/UI");
   }
   return policy;
 }
@@ -62,6 +64,7 @@ export function curateMemory(db: Database.Database, command: CurationCommand, au
   if (command.operation === "replace_thread") return replaceThreadMemories(db, command, authority);
   const projectId = "input" in command ? command.input.projectId : command.projectId;
   const policy = requireCurationAuthority(db, projectId, authority);
+  requireCapability(policy, command.operation === "review" ? "memory.review" : "memory.mutate");
   return db.transaction(() => {
     const result = (() => {
       switch (command.operation) {
@@ -94,6 +97,7 @@ const batchMemorySchema = z.object({
 function replaceThreadMemories(db: Database.Database, command: ReplaceThreadCommand, authority?: CurationAuthority): Memory[] {
   const {projectId, threadId} = command;
   const policy = requireCurationAuthority(db, projectId, authority);
+  requireCapability(policy, "memory.mutate");
   if (command.method !== "deterministic" && command.method !== "reviewed-file") throw new Error("Unsupported batch extraction method");
   const inputs = z.array(batchMemorySchema).parse(command.memories);
   const identity = (memory: BatchMemory) => `${memory.kind}\u0000${memory.content}`;
