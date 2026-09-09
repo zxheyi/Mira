@@ -1,3 +1,4 @@
+import {contextScope, type ScopeRequest, type ContextScope} from "../context/contextScope.js";
 import {evaluateResearchClaim, evaluateResearchEvidence} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
@@ -12,6 +13,7 @@ import type {
 } from "./researchTypes.js";
 
 export type ResearchContextPacket = {
+  schemaVersion:1; scope:ContextScope; generatedAt:string;
   projectId: string;
   caseId: string;
   asOfDate: string;
@@ -84,8 +86,10 @@ function renderEvidence(
 export function prepareResearchContext(
   db: Database.Database,
   projectId: string,
-  caseId: string
+  caseId: string,
+  options: ScopeRequest = {}
 ): ResearchContextPacket {
+  const scope = contextScope(db, projectId, options);
   const snapshot = getResearchCaseSnapshot(db, projectId, caseId);
   const claims = eligibleClaims(snapshot);
   const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
@@ -147,6 +151,7 @@ export function prepareResearchContext(
 
   const markdown = lines.join("\n");
   return {
+    schemaVersion:1, scope, generatedAt:new Date().toISOString(),
     projectId,
     caseId,
     asOfDate: snapshot.researchCase.asOfDate,
@@ -163,9 +168,9 @@ export function recallResearchContext(
   db: Database.Database,
   projectId: string,
   caseId: string,
-  options: {taskId?: string; transport: "mcp" | "cli" | "ui"}
+  options: ScopeRequest & {transport: "mcp" | "cli" | "ui"}
 ): AuditedResearchContextPacket {
-  const packet = prepareResearchContext(db, projectId, caseId);
+  const packet = prepareResearchContext(db, projectId, caseId, options);
   const receipt: ResearchContextRecallReceipt = {
     id: `research_context_recall_${randomUUID()}`,
     projectId,

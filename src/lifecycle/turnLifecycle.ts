@@ -95,7 +95,7 @@ function sessionTranscript(db: Database.Database, projectId: string, session: Se
   ].join("\n")).join("\n\n");
 }
 
-export function createTurnLifecycle(options: {db: Database.Database; projectId: string}): TurnLifecyclePort {
+export function createTurnLifecycle(options: {db: Database.Database; projectId: string; workspaceRoot?:string}): TurnLifecyclePort {
   const {db, projectId} = options;
   requireProject(db, projectId);
   return {
@@ -116,7 +116,7 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
           id, project_id, session_id, host_turn_id, task_id, query, status, before_input_hash, started_at
         ) values (?, ?, ?, ?, ?, ?, 'started', ?, ?)`)
           .run(turnId, projectId, session.id, input.hostTurnId, input.taskId ?? null, input.query, inputHash, now);
-        const context = prepareContext(db, projectId, {taskId:input.taskId, query:input.query, ...input.context});
+        const context = prepareContext(db, projectId, {taskId:input.taskId, query:input.query, ...input.context, workspaceRoot:options.workspaceRoot, sessionId:session.id, turnId});
         db.prepare("update lifecycle_turns set recall_event_id = ? where project_id = ? and id = ?")
           .run(context.receipt.id, projectId, turnId);
         const event = appendDomainEvent(db, {projectId, aggregateType:"turn", aggregateId:turnId,

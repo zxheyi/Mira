@@ -1,3 +1,4 @@
+import {assertExpectedProject} from "../context/contextScope.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
@@ -153,6 +154,7 @@ type ToolArgs = Record<string, unknown>;
 export const MIRA_MCP_TOOL_SCHEMAS = {
   list_host_adapters: {},
   before_turn: {
+    expectedProjectId: z.string().trim().min(1).max(500).optional(),
     host: z.enum(MIRA_HOSTS),
     sessionId: z.string().trim().min(1).max(500),
     turnId: z.string().trim().min(1).max(500),
@@ -165,6 +167,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     }).strict().optional()
   },
   after_turn: {
+    expectedProjectId: z.string().trim().min(1).max(500).optional(),
     host: z.enum(MIRA_HOSTS),
     sessionId: z.string().trim().min(1).max(500),
     turnId: z.string().trim().min(1).max(500),
@@ -174,6 +177,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     taskId: z.string().trim().min(1).max(500).optional()
   },
   prepare_context: {
+    expectedProjectId: z.string().trim().min(1).max(500).optional(),
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
     memoryLimit: z.number().int().min(1).max(50).optional(),
@@ -196,6 +200,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
   },
   get_recall_quality_report: {},
   get_context_bundle: {
+    expectedProjectId: z.string().trim().min(1).max(500).optional(),
     taskId: z.string().trim().min(1).max(500).optional(),
     query: z.string().trim().min(1).max(1_000).optional(),
     memoryLimit: z.number().int().min(1).max(50).optional(),
@@ -326,6 +331,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     caseId: z.string().trim().min(1).max(200)
   },
   prepare_research_context: {
+    expectedProjectId: z.string().trim().min(1).max(500).optional(),
     caseId: z.string().trim().min(1).max(200)
   },
   list_research_context_recalls: {
@@ -371,6 +377,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
 
 
 type ToolSession = {
+  workspaceRoot: string;
   curationAuthority?: CurationAuthority;
   recallFeedbackAuthority?: RecallFeedbackAuthority;
   researchAuthority?: ResearchAuthority;
@@ -456,6 +463,7 @@ function withToolSession<T>(options: MiraMcpOptions, run: (session: ToolSession)
     return run({
       db,
       projectId: project.id,
+      workspaceRoot: options.projectRoot,
       taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
       curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
       researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
@@ -474,6 +482,7 @@ function executeMiraTool(
   args: ToolArgs
 ): unknown {
   const { db, projectId } = session;
+  assertExpectedProject(projectId, optionalStringArg(args, "expectedProjectId"));
   const taskId = optionalStringArg(args, "taskId") ?? session.taskId;
     switch (name) {
       case "list_host_adapters":
@@ -486,7 +495,7 @@ function executeMiraTool(
           ...(taskId ? {taskId} : {}),
           ...(args.context ? {context: args.context} : {})
         }, "mcp");
-        return createTurnLifecycle({db, projectId}).beforeTurn(command);
+        return createTurnLifecycle({db, projectId, workspaceRoot:session.workspaceRoot}).beforeTurn(command);
       }
       case "after_turn": {
         const command = createHostAdapterRegistry().normalizeAfterTurn(stringArg(args, "host"), {
@@ -497,11 +506,11 @@ function executeMiraTool(
           status: stringArg(args, "status"),
           ...(taskId ? {taskId} : {})
         }, "mcp");
-        return createTurnLifecycle({db, projectId}).afterTurn(command);
+        return createTurnLifecycle({db, projectId, workspaceRoot:session.workspaceRoot}).afterTurn(command);
       }
       case "prepare_context":
         return prepareContext(db, projectId, {
-          taskId, query: optionalStringArg(args, "query"),
+          workspaceRoot: session.workspaceRoot, taskId, query: optionalStringArg(args, "query"),
           memoryLimit: numberArg(args, "memoryLimit", 8),
           maxCharacters: typeof args.maxCharacters === "number" ? args.maxCharacters : undefined,
           maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : undefined,
@@ -627,7 +636,7 @@ function executeMiraTool(
         return getResearchCaseSnapshot(db, projectId, stringArg(args, "caseId"));
       case "prepare_research_context":
         return recallResearchContext(db, projectId, stringArg(args, "caseId"), {
-          taskId,
+          taskId, workspaceRoot:session.workspaceRoot,
           transport: "mcp"
         });
       case "list_research_context_recalls":
@@ -743,6 +752,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   const session = {
     db,
     projectId: project.id,
+    workspaceRoot: options.projectRoot,
     taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
     curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
     researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),

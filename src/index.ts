@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {assertExpectedProject} from "./context/contextScope.js";
 import { Command } from "commander";
 import Database from "better-sqlite3";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -118,6 +119,7 @@ import { prepareResearchContext } from "./research/researchContext.js";
 import type { ContradictionDisposition } from "./research/researchTypes.js";
 
 type GlobalOptions = {
+  expectedProjectId?:string;
   db?: string;
   projectRoot?: string;
   task?: string;
@@ -201,6 +203,7 @@ async function withProject<T>(
   run: (session: ProjectSession) => Promise<T> | T
 ): Promise<T> {
   return withDatabase(options, async (db, dbPath, projectRoot) => {
+    if (options.expectedProjectId) assertExpectedProject(findProjectByRoot(db, projectRoot)?.id, options.expectedProjectId);
     const project = ensureProjectForRoot(db, projectRoot);
     return run({ db, dbPath, projectRoot, project });
   });
@@ -473,6 +476,7 @@ program
   .version("0.1.0")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
+  .option("--expected-project-id <id>", "Reject operations against a different project")
   .option("--task <id>", "Isolate transient working state for this task");
 
 program
@@ -982,6 +986,7 @@ context.command("prepare")
   .action(async (options) => {
     await withProject(program.opts<GlobalOptions>(), session => {
       printJson(prepareContext(session.db, session.project.id, {
+        workspaceRoot:session.projectRoot,
         taskId: selectedTask(session.projectRoot), query: options.query,
         memoryLimit: numberInRange(options.memoryLimit, 1, 50, "memoryLimit"),
         maxCharacters: options.maxCharacters ? numberInRange(options.maxCharacters, 1, 1_000_000, "maxCharacters") : undefined,
@@ -1103,7 +1108,7 @@ turn
         ...(taskId ? {taskId} : {}),
         ...(Object.keys(contextOptions).length ? {context: contextOptions} : {})
       }, "cli");
-      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id}).beforeTurn(command));
+      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id, workspaceRoot:session.projectRoot}).beforeTurn(command));
     });
   });
 
@@ -1129,7 +1134,7 @@ turn
         status: options.status,
         ...(taskId ? {taskId} : {})
       }, "cli");
-      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id}).afterTurn(command));
+      printJson(createTurnLifecycle({db: session.db, projectId: session.project.id, workspaceRoot:session.projectRoot}).afterTurn(command));
     });
   });
 
@@ -1220,7 +1225,7 @@ research
   .requiredOption("--case <id>", "Research Case id")
   .action(async (options: { case: string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
-      printJson(prepareResearchContext(session.db, session.project.id, options.case));
+      printJson(prepareResearchContext(session.db, session.project.id, options.case, {workspaceRoot:session.projectRoot}));
     });
   });
 
