@@ -4,8 +4,14 @@ import type {DoctorReport} from '../doctor/doctor.js';
 
 export function runtimeStatus(input:{scope?:ContextScope;policy?:CapabilityPolicy;tools?:readonly string[];doctor?:DoctorReport;connectionObserved?:boolean}) {
   const observedAt=new Date().toISOString();
+  const project=input.doctor?.database.project;
+  const scope=input.scope ?? (project && input.doctor ? {
+    schemaVersion:1 as const,projectId:project.id,primaryRoot:project.rootPath,workspaceRoot:input.doctor.projectRoot,
+    bindingReason:project.rootPath===input.doctor.projectRoot?'registered_root' as const:'registered_workspace_alias' as const,
+    scopeKind:'project' as const,taskId:null,sessionId:null,turnId:null,sessionReason:'not_supplied' as const
+  } : null);
   return {
-    schemaVersion:1,observedAt,scope:input.scope??null,
+    schemaVersion:1,observedAt,scope,
     configuration:input.doctor ? {state:'observed',source:'project_configuration',observedAt,hosts:input.doctor.integrations}
       : {state:'unknown',source:'not_inspected',observedAt},
     connection:{state:input.connectionObserved?'connected':'unknown',source:input.connectionObserved?'current_mcp_request':'not_observed',observedAt},

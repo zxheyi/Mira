@@ -14,7 +14,7 @@ export type PrepareContextOptions = ScopeRequest & {
   taskId?: string; query?: string; memoryLimit?: number; maxCharacters?: number; maxTokens?: number;
   recordAudit?: boolean; transport?:"mcp"|"cli"|"ui"|"internal"; researchCaseIds?:string[]; retainForSeconds?:number;
 };
-export type ContextPacket = { schemaVersion: 1; scope: ContextScope; generatedAt: string; markdown: string; receipt: RecallReceipt };
+export type ContextPacket = { freshness:{briefing:"current"|"stale"|"missing";research:Array<{caseId:string;asOfDate:string}>}; schemaVersion: 1; scope: ContextScope; generatedAt: string; markdown: string; receipt: RecallReceipt };
 const warningKinds = new Set(["failed_attempt", "lesson", "constraint"]);
 const workingPriority = ["blocker", "current_task", "current_phase", "next_step", "recent_decision", "preference", "decision", "note"];
 
@@ -40,6 +40,10 @@ function renderMemory(memory: Memory): string {
 
 /** One public interface owns selection, rendering and the evidence of what was injected. */
 export function prepareContext(db: Database.Database, projectId: string, options: PrepareContextOptions = {}): ContextPacket {
+  return db.transaction(()=>prepareContextInTransaction(db,projectId,options))();
+}
+
+function prepareContextInTransaction(db:Database.Database,projectId:string,options:PrepareContextOptions):ContextPacket {
   if(options.retainForSeconds!==undefined && (!Number.isInteger(options.retainForSeconds)||options.retainForSeconds<0||options.retainForSeconds>86400)) throw new Error("retainForSeconds must be between 0 and 86400");
   const scope = contextScope(db, projectId, options);
   const budget=normalizeBudget(options);
@@ -112,7 +116,7 @@ export function prepareContext(db: Database.Database, projectId: string, options
   if (!pool.some(memory => !warningKinds.has(memory.kind))) append("## Long-Term Memory\nNo matching long-term memory.");
   if (dropped.length) append(`Some memories omitted; inspect the recall receipt. (${dropped.length} omitted)`);
   const receipt: RecallReceipt = {
-    schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:"references_only",
+    schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:(options.retainForSeconds??0)>0?"retained_payload":"references_only",
     id: `recall_${randomUUID()}`, projectId, ...(taskId ? {taskId} : {}),
     ...(query ? {query: containsSensitiveInformation(query) ? "[REDACTED]" : query} : {}),
     candidateMemoryIds: pool.map(memory => memory.id), injectedMemoryIds: injected, dropped,
@@ -126,5 +130,5 @@ export function prepareContext(db: Database.Database, projectId: string, options
     receipt.researchRecallIds=includedResearch.map(packet=>recordPreparedResearchContext(db,packet,{taskId,transport:options.transport??"internal"}).receipt.id);
     persistContextPacket(db,receipt,markdown,options.retainForSeconds??0);
   })();
-  return {schemaVersion:1, scope, generatedAt:receipt.createdAt, markdown, receipt};
+  return {freshness:{briefing:!briefing?"missing":briefing.staleAt?"stale":"current",research:research.map(packet=>({caseId:packet.caseId,asOfDate:packet.asOfDate}))},schemaVersion:1, scope, generatedAt:receipt.createdAt, markdown, receipt};
 }

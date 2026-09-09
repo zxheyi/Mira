@@ -92,6 +92,10 @@ export function prepareResearchContext(
   caseId: string,
   options: ScopeRequest & ContextBudget = {}
 ): ResearchContextPacket {
+  return db.transaction(()=>prepareResearchContextInTransaction(db,projectId,caseId,options))();
+}
+
+function prepareResearchContextInTransaction(db:Database.Database,projectId:string,caseId:string,options:ScopeRequest & ContextBudget):ResearchContextPacket {
   const scope = contextScope(db, projectId, options);
   const budget=normalizeBudget(options);
   const snapshot = getResearchCaseSnapshot(db, projectId, caseId);
@@ -190,8 +194,10 @@ export function recallResearchContext(
   caseId: string,
   options: ScopeRequest & ContextBudget & {transport: "mcp" | "cli" | "ui" | "internal"}
 ): AuditedResearchContextPacket {
-  const packet = prepareResearchContext(db, projectId, caseId, options);
-  return recordPreparedResearchContext(db,packet,options);
+  return db.transaction(()=>{
+    const packet = prepareResearchContext(db, projectId, caseId, options);
+    return recordPreparedResearchContext(db,packet,options);
+  })();
 }
 
 export function recordPreparedResearchContext(db:Database.Database,packet:ResearchContextPacket,options:{taskId?:string;transport:"mcp"|"cli"|"ui"|"internal"}):AuditedResearchContextPacket {

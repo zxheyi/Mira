@@ -765,7 +765,7 @@ function parseMiraToolArgs(name: string, args: unknown): { name: MiraMcpToolName
     const details = result.error.issues
       .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
       .join("; ");
-    throw new Error(`Invalid MCP arguments for ${name}: ${details}`);
+    throw new MiraError("INVALID_ARGUMENT",`Invalid MCP arguments for ${name}: ${details}`,"Check the tool schema and correct the request");
   }
   return { name, args: result.data as ToolArgs };
 }
@@ -799,6 +799,7 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
   server: McpServer;
   toolNames: MiraMcpToolName[];
 } {
+  const confirmationPolicy=options.confirmationPolicy ? {...options.confirmationPolicy,scopes:options.confirmationPolicy.scopes ? [...options.confirmationPolicy.scopes] : undefined} : undefined;
   const toolNames=selectToolProfile(MIRA_MCP_TOOL_NAMES,options.profile);
   const server = new McpServer({ name: "mira", version: "0.1.0" });
   const db = options.db ?? openDatabase(options.dbPath);
@@ -808,11 +809,11 @@ export function createMiraMcpServer(options: MiraMcpOptions): {
     db,
     projectId: project.id,
     workspaceRoot: options.projectRoot,
-    confirmationPolicy:options.confirmationPolicy,profile:options.profile,
+    confirmationPolicy,profile:options.profile,
     taskId: options.taskId ?? repositoryLocation(options.projectRoot).workspaceTaskId,
-    curationAuthority: options.confirmationPolicy && authorizeCuration(db, project.id, options.confirmationPolicy),
-    researchAuthority: options.confirmationPolicy && authorizeResearch(db, project.id, options.confirmationPolicy),
-    recallFeedbackAuthority: options.confirmationPolicy && authorizeRecallFeedback(db, project.id, options.confirmationPolicy)
+    curationAuthority: confirmationPolicy && authorizeCuration(db, project.id, confirmationPolicy),
+    researchAuthority: confirmationPolicy && authorizeResearch(db, project.id, confirmationPolicy),
+    recallFeedbackAuthority: confirmationPolicy && authorizeRecallFeedback(db, project.id, confirmationPolicy)
   };
   const originalClose = server.close.bind(server);
   server.close = async () => {
