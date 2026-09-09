@@ -16,7 +16,8 @@
     "pretest": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepare": "tsc && chmod +x dist/src/index.js"
+    "prepare": "tsc && chmod +x dist/src/index.js",
+    "verify:trust": "node scripts/verify-trust.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

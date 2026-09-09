@@ -1,4 +1,4 @@
-import {validateEventEnvelope,validateDomainPayload,validateOutboxPayload,OUTBOX_RETENTION_DAYS} from "./eventContracts.js";
+import {validateOutboxEnvelope,validateEventEnvelope,validateDomainPayload,validateOutboxPayload,OUTBOX_RETENTION_DAYS} from "./eventContracts.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 
@@ -77,6 +77,7 @@ export function enqueueOutboxMessage(db: Database.Database, input: {
     maxAttempts: input.maxAttempts ?? 3, availableAt: input.availableAt ?? now,
     createdAt: now, updatedAt: now
   };
+  validateOutboxEnvelope(message);
   db.prepare(`insert into outbox_messages (
     id, project_id, event_id, topic, payload, status, attempts, max_attempts,
     available_at, lease_expires_at, last_error, created_at, updated_at
@@ -89,6 +90,7 @@ export function enqueueOutboxMessage(db: Database.Database, input: {
 export function enqueueProjectionRefresh(db: Database.Database, input: {
   projectId:string;eventId:string;reason:string;aggregateId:string;createdAt?:string;
 }): OutboxMessage {
+  return db.transaction(() => {
   const now = input.createdAt ?? new Date().toISOString();
   validateOutboxPayload("projection.refresh.requested",{reason:input.reason,aggregateId:input.aggregateId});
   db.prepare(`update project_briefings
@@ -99,6 +101,7 @@ export function enqueueProjectionRefresh(db: Database.Database, input: {
     projectId:input.projectId,eventId:input.eventId,topic:"projection.refresh.requested",
     payload:{reason:input.reason,aggregateId:input.aggregateId},createdAt:now
   });
+  })();
 }
 
 export function requestProjectionRefresh(db: Database.Database, input: {

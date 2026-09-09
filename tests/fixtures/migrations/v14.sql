@@ -1,58 +1,17 @@
-import type Database from "better-sqlite3";
-
-export const CURRENT_SCHEMA_VERSION = 18;
-
-export function migrate(db: Database.Database): void {
-  db.exec(`
-    create table if not exists schema_version (
+-- Schema v14; source 1c5a61bcb3713df69e04e3ea61769369075298ee
+CREATE TABLE schema_version (
       version integer primary key,
       applied_at text not null
     );
-  `);
 
-  const existingVersion = db
-    .prepare("select version from schema_version order by version desc limit 1")
-    .pluck()
-    .get() as number | undefined;
-
-  if (existingVersion !== undefined && existingVersion > CURRENT_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported Mira schema version ${existingVersion}; this Mira supports schema version ${CURRENT_SCHEMA_VERSION}`
-    );
-  }
-
-  const hasLegacyMemories = existingVersion !== undefined && existingVersion < 4 && Boolean(
-    db.prepare("select 1 from sqlite_master where type = 'table' and name = 'memories'").get()
-  );
-  const requiresV4Setup = existingVersion === undefined || existingVersion < 4;
-  const requiresV5Setup = existingVersion === undefined || existingVersion < 5;
-  const requiresV6Setup = existingVersion === undefined || existingVersion < 6;
-  const requiresV7Setup = existingVersion === undefined || existingVersion < 7;
-  const requiresV8Setup = existingVersion === undefined || existingVersion < 8;
-  const requiresV9Setup = existingVersion === undefined || existingVersion < 9;
-  const requiresV10Setup = existingVersion === undefined || existingVersion < 10;
-  const requiresV11Setup = existingVersion === undefined || existingVersion < 11;
-  const requiresV12Setup = existingVersion === undefined || existingVersion < 12;
-  const requiresV13Setup = existingVersion === undefined || existingVersion < 13;
-  const requiresV14Setup = existingVersion === undefined || existingVersion < 14;
-  const requiresV15Setup = existingVersion === undefined || existingVersion < 15;
-  const requiresV16Setup = existingVersion === undefined || existingVersion < 16;
-  const requiresJobRebuild=existingVersion!==undefined && existingVersion<18 && (db.prepare("pragma table_info(distill_jobs)").all() as Array<{name:string;notnull:number}>).some(column=>column.name==='thread_id'&&column.notnull===1);
-  const foreignKeysEnabled = Number(db.pragma("foreign_keys", { simple: true })) === 1;
-  if ((hasLegacyMemories || requiresJobRebuild) && foreignKeysEnabled) db.pragma("foreign_keys = OFF");
-
-  try {
-    db.transaction(() => {
-
-  if (requiresV4Setup) db.exec(`
-    create table if not exists projects (
+CREATE TABLE projects (
       id text primary key,
       name text not null,
       root_path text not null unique,
       created_at text not null
-    );
+    , repository_key text);
 
-    create table if not exists threads (
+CREATE TABLE threads (
       id text primary key,
       project_id text not null,
       title text not null,
@@ -64,7 +23,7 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create table if not exists working_memory (
+CREATE TABLE working_memory (
       id text primary key,
       project_id text not null,
       kind text not null,
@@ -74,7 +33,7 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create table if not exists memories (
+CREATE TABLE memories (
       id text primary key,
       project_id text not null,
       thread_id text,
@@ -94,19 +53,7 @@ export function migrate(db: Database.Database): void {
       foreign key (supersedes_memory_id) references memories(id) on delete restrict
     );
 
-    create index if not exists idx_memories_project
-      on memories(project_id);
-
-    create index if not exists idx_memories_project_thread
-      on memories(project_id, thread_id);
-
-    create index if not exists idx_memories_thread
-      on memories(thread_id);
-
-    create index if not exists idx_threads_project
-      on threads(project_id);
-
-    create table if not exists integration_cursors (
+CREATE TABLE integration_cursors (
       project_id text not null,
       agent text not null,
       session_id text not null,
@@ -118,7 +65,7 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create table if not exists distill_jobs (
+CREATE TABLE distill_jobs (
       id text primary key,
       project_id text not null,
       thread_id text,
@@ -129,19 +76,13 @@ export function migrate(db: Database.Database): void {
       attempts integer not null default 0 check (attempts >= 0),
       last_error text,
       created_at text not null,
-      updated_at text not null,
+      updated_at text not null, next_attempt_at text, max_attempts integer not null default 3,
       unique(project_id, thread_id, channel, input_hash),
       foreign key (project_id) references projects(id) on delete cascade,
       foreign key (thread_id) references threads(id) on delete cascade
     );
 
-    create index if not exists idx_distill_jobs_status_created
-      on distill_jobs(status, created_at);
-
-    create index if not exists idx_distill_jobs_project_thread
-      on distill_jobs(project_id, thread_id);
-
-    create table if not exists memory_candidates (
+CREATE TABLE memory_candidates (
       id text primary key,
       project_id text not null,
       thread_id text not null,
@@ -170,16 +111,7 @@ export function migrate(db: Database.Database): void {
       foreign key (accepted_memory_id) references memories(id) on delete set null
     );
 
-    create index if not exists idx_memory_candidates_project_status
-      on memory_candidates(project_id, status, created_at);
-
-    create index if not exists idx_memory_candidates_thread
-      on memory_candidates(thread_id);
-
-    create index if not exists idx_memory_candidates_job
-      on memory_candidates(job_id);
-
-    create table if not exists memory_events (
+CREATE TABLE memory_events (
       id text primary key,
       memory_id text not null,
       project_id text not null,
@@ -192,118 +124,14 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create index if not exists idx_memory_events_memory_created
-      on memory_events(memory_id, created_at);
-
-    create index if not exists idx_memory_events_project_created
-      on memory_events(project_id, created_at);
-
-    create virtual table if not exists memory_fts using fts5(
+CREATE VIRTUAL TABLE memory_fts using fts5(
       id unindexed,
       project_id unindexed,
       title,
       content
     );
 
-  `);
-
-  if (hasLegacyMemories) {
-    db.exec(`
-      drop trigger if exists memories_after_insert_sync_fts;
-      drop trigger if exists memories_after_update_sync_fts;
-      drop trigger if exists memories_after_delete_cleanup_fts;
-
-      create table memories_v4 (
-        id text primary key,
-        project_id text not null,
-        thread_id text,
-        title text not null,
-        kind text not null,
-        content text not null,
-        source text not null,
-        confidence real not null,
-        content_hash text not null,
-        importance integer not null,
-        created_at text not null,
-        status text not null default 'active' check (status in ('active', 'superseded', 'archived', 'rejected')),
-        supersedes_memory_id text,
-        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        foreign key (project_id) references projects(id) on delete cascade,
-        foreign key (thread_id) references threads(id) on delete cascade,
-        foreign key (supersedes_memory_id) references memories_v4(id) on delete restrict
-      );
-
-      insert into memories_v4 (
-        id, project_id, thread_id, title, kind, content, source, confidence, content_hash,
-        importance, created_at, status, supersedes_memory_id, updated_at
-      )
-      select id, project_id, thread_id, title, kind, content, source, confidence, content_hash,
-             importance, created_at, 'active', null, created_at
-      from memories;
-
-      drop table memories;
-      alter table memories_v4 rename to memories;
-    `);
-  }
-
-  if (requiresV4Setup) db.exec(`
-    drop index if exists memories_thread_content_unique;
-    drop index if exists memories_project_content_unique;
-
-    create unique index memories_thread_content_unique
-      on memories(project_id, thread_id, kind, content_hash)
-      where thread_id is not null and status = 'active';
-
-    create unique index memories_project_content_unique
-      on memories(project_id, kind, content_hash)
-      where thread_id is null and status = 'active';
-
-    create index if not exists idx_memories_project
-      on memories(project_id);
-
-    create index if not exists idx_memories_project_thread
-      on memories(project_id, thread_id);
-
-    create index if not exists idx_memories_thread
-      on memories(thread_id);
-
-    create unique index if not exists idx_memories_single_successor
-      on memories(supersedes_memory_id)
-      where supersedes_memory_id is not null;
-
-    drop trigger if exists memories_after_insert_sync_fts;
-    drop trigger if exists memories_after_update_sync_fts;
-    drop trigger if exists memories_after_delete_cleanup_fts;
-
-    create trigger memories_after_insert_sync_fts
-    after insert on memories when new.status = 'active'
-    begin
-      insert into memory_fts (id, project_id, title, content)
-      values (new.id, new.project_id, new.title, new.content);
-    end;
-
-    create trigger memories_after_update_sync_fts
-    after update of project_id, title, content, status on memories
-    begin
-      delete from memory_fts where id = old.id;
-      insert into memory_fts (id, project_id, title, content)
-      select new.id, new.project_id, new.title, new.content
-      where new.status = 'active';
-    end;
-
-    create trigger memories_after_delete_cleanup_fts
-    after delete on memories
-    begin
-      delete from memory_fts where id = old.id;
-    end;
-
-    delete from memory_fts;
-    insert into memory_fts (id, project_id, title, content)
-      select id, project_id, title, content from memories where status = 'active';
-  `);
-
-  if (requiresV5Setup) db.exec(`
-    create table if not exists project_briefings (
+CREATE TABLE project_briefings (
       id text primary key,
       project_id text not null,
       version integer not null check (version > 0),
@@ -325,63 +153,7 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create index if not exists idx_project_briefings_project_version
-      on project_briefings(project_id, version desc);
-
-    create index if not exists idx_project_briefings_project_status
-      on project_briefings(project_id, status, version desc);
-
-    create trigger if not exists memories_after_insert_stale_briefing
-    after insert on memories
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = new.project_id and status = 'complete' and stale_at is null;
-    end;
-
-    create trigger if not exists memories_after_update_stale_briefing
-    after update on memories
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = new.project_id and status = 'complete' and stale_at is null;
-    end;
-
-    create trigger if not exists memories_after_delete_stale_briefing
-    after delete on memories
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = old.project_id and status = 'complete' and stale_at is null;
-    end;
-
-    create trigger if not exists working_memory_after_insert_stale_briefing
-    after insert on working_memory
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = new.project_id and status = 'complete' and stale_at is null;
-    end;
-
-    create trigger if not exists working_memory_after_update_stale_briefing
-    after update on working_memory
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = new.project_id and status = 'complete' and stale_at is null;
-    end;
-
-    create trigger if not exists working_memory_after_delete_stale_briefing
-    after delete on working_memory
-    begin
-      update project_briefings
-      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      where project_id = old.project_id and status = 'complete' and stale_at is null;
-    end;
-  `);
-
-  if (requiresV6Setup) db.exec(`
-    create table if not exists history_import_runs (
+CREATE TABLE history_import_runs (
       id text primary key,
       project_id text not null,
       status text not null
@@ -404,10 +176,7 @@ export function migrate(db: Database.Database): void {
       foreign key (project_id) references projects(id) on delete cascade
     );
 
-    create index if not exists idx_history_import_runs_project_started
-      on history_import_runs(project_id, started_at desc);
-
-    create table if not exists history_import_items (
+CREATE TABLE history_import_items (
       id text primary key,
       run_id text not null,
       agent text not null check (agent in ('codex', 'claude-code')),
@@ -427,22 +196,12 @@ export function migrate(db: Database.Database): void {
       foreign key (thread_id) references threads(id) on delete set null
     );
 
-    create index if not exists idx_history_import_items_run_outcome
-      on history_import_items(run_id, outcome, created_at);
-
-    create index if not exists idx_history_import_items_thread
-      on history_import_items(thread_id);
-  `);
-
-  if (requiresV7Setup) db.exec(`
-    alter table projects add column repository_key text;
-    create unique index idx_projects_repository_key on projects(repository_key) where repository_key is not null;
-    create table project_roots (
+CREATE TABLE project_roots (
       root_path text primary key,
       project_id text not null references projects(id) on delete cascade
     );
-    insert into project_roots (root_path, project_id) select root_path, id from projects;
-    create table task_working_memory (
+
+CREATE TABLE task_working_memory (
       id text primary key,
       project_id text not null references projects(id) on delete cascade,
       task_id text not null check(length(trim(task_id)) between 1 and 500),
@@ -451,27 +210,16 @@ export function migrate(db: Database.Database): void {
       updated_at text not null,
       unique(project_id, task_id, kind)
     );
-  `);
 
-  if (requiresV8Setup) db.exec(`
-    create table recall_events (
+CREATE TABLE recall_events (
       id text primary key,
       project_id text not null references projects(id) on delete cascade,
       task_id text,
       receipt text not null check(json_valid(receipt)),
       created_at text not null
     );
-    create index idx_recall_events_project_task on recall_events(project_id, task_id, created_at desc);
-  `);
 
-  if (requiresV9Setup) {
-    const columns = db.prepare("pragma table_info(distill_jobs)").all() as Array<{name: string}>;
-    if (!columns.some(column => column.name === "next_attempt_at")) db.exec("alter table distill_jobs add column next_attempt_at text");
-    if (!columns.some(column => column.name === "max_attempts")) db.exec("alter table distill_jobs add column max_attempts integer not null default 3");
-  }
-
-  if (requiresV10Setup) db.exec(`
-    create table if not exists curation_events (
+CREATE TABLE curation_events (
       id text primary key,
       project_id text not null references projects(id) on delete cascade,
       memory_id text references memories(id) on delete cascade,
@@ -479,11 +227,8 @@ export function migrate(db: Database.Database): void {
       receipt text not null check(json_valid(receipt)),
       created_at text not null
     );
-    create index if not exists idx_curation_events_project on curation_events(project_id, created_at desc);
-  `);
 
-  if (requiresV11Setup) db.exec(`
-    create table if not exists research_cases (
+CREATE TABLE research_cases (
       id text primary key,
       project_id text not null,
       title text not null check(length(trim(title)) between 1 and 500),
@@ -495,10 +240,8 @@ export function migrate(db: Database.Database): void {
       unique(project_id, id),
       foreign key(project_id) references projects(id) on delete cascade
     );
-    create index if not exists idx_research_cases_project_updated
-      on research_cases(project_id, updated_at desc);
 
-    create table if not exists research_evidence (
+CREATE TABLE research_evidence (
       id text primary key,
       project_id text not null,
       case_id text not null,
@@ -516,14 +259,12 @@ export function migrate(db: Database.Database): void {
       content_hash text not null,
       state text not null check(state in ('current', 'stale', 'archived')),
       created_at text not null,
-      updated_at text not null,
+      updated_at text not null, snapshot_id text,
       unique(project_id, case_id, id),
       foreign key(project_id, case_id) references research_cases(project_id, id) on delete cascade
     );
-    create index if not exists idx_research_evidence_case
-      on research_evidence(project_id, case_id, created_at);
 
-    create table if not exists research_claims (
+CREATE TABLE research_claims (
       id text primary key,
       project_id text not null,
       case_id text not null,
@@ -548,13 +289,8 @@ export function migrate(db: Database.Database): void {
       foreign key(project_id, case_id, supersedes_claim_id)
         references research_claims(project_id, case_id, id) on delete restrict
     );
-    create index if not exists idx_research_claims_case
-      on research_claims(project_id, case_id, status, created_at);
-    create unique index if not exists idx_research_claims_single_successor
-      on research_claims(supersedes_claim_id)
-      where supersedes_claim_id is not null;
 
-    create table if not exists research_claim_evidence (
+CREATE TABLE research_claim_evidence (
       project_id text not null,
       case_id text not null,
       claim_id text not null,
@@ -567,10 +303,8 @@ export function migrate(db: Database.Database): void {
       foreign key(project_id, case_id, evidence_id)
         references research_evidence(project_id, case_id, id) on delete cascade
     );
-    create index if not exists idx_research_claim_evidence_case
-      on research_claim_evidence(project_id, case_id, claim_id);
 
-    create table if not exists research_events (
+CREATE TABLE research_events (
       id text primary key,
       project_id text not null,
       case_id text not null,
@@ -587,12 +321,8 @@ export function migrate(db: Database.Database): void {
       foreign key(project_id, case_id, evidence_id)
         references research_evidence(project_id, case_id, id) on delete cascade
     );
-    create index if not exists idx_research_events_case_created
-      on research_events(project_id, case_id, created_at, id);
-  `);
 
-  if (requiresV12Setup) db.exec(`
-    create table if not exists lifecycle_sessions (
+CREATE TABLE lifecycle_sessions (
       id text primary key,
       project_id text not null,
       host text not null check(host in ('codex', 'claude-code', 'cursor', 'cli', 'mcp', 'ui')),
@@ -605,10 +335,8 @@ export function migrate(db: Database.Database): void {
       unique(project_id, host, host_session_id),
       foreign key(project_id) references projects(id) on delete cascade
     );
-    create index if not exists idx_lifecycle_sessions_project_seen
-      on lifecycle_sessions(project_id, last_seen_at desc);
 
-    create table if not exists lifecycle_turns (
+CREATE TABLE lifecycle_turns (
       id text primary key,
       project_id text not null,
       session_id text not null,
@@ -629,10 +357,8 @@ export function migrate(db: Database.Database): void {
       unique(project_id, session_id, host_turn_id),
       foreign key(project_id, session_id) references lifecycle_sessions(project_id, id) on delete cascade
     );
-    create index if not exists idx_lifecycle_turns_session_started
-      on lifecycle_turns(project_id, session_id, started_at);
 
-    create table if not exists capture_records (
+CREATE TABLE capture_records (
       id text primary key,
       project_id text not null,
       turn_id text not null,
@@ -645,10 +371,8 @@ export function migrate(db: Database.Database): void {
       foreign key(project_id, turn_id) references lifecycle_turns(project_id, id) on delete cascade,
       foreign key(thread_id) references threads(id) on delete set null
     );
-    create index if not exists idx_capture_records_project_captured
-      on capture_records(project_id, captured_at desc);
 
-    create table if not exists domain_events (
+CREATE TABLE domain_events (
       id text primary key,
       project_id text not null,
       aggregate_type text not null check(length(trim(aggregate_type)) between 1 and 100),
@@ -659,10 +383,8 @@ export function migrate(db: Database.Database): void {
       unique(project_id, id),
       foreign key(project_id) references projects(id) on delete cascade
     );
-    create index if not exists idx_domain_events_project_created
-      on domain_events(project_id, created_at desc, id desc);
 
-    create table if not exists outbox_messages (
+CREATE TABLE outbox_messages (
       id text primary key,
       project_id text not null,
       event_id text not null,
@@ -679,21 +401,14 @@ export function migrate(db: Database.Database): void {
       lease_expires_at text,
       last_error text,
       created_at text not null,
-      updated_at text not null,
+      updated_at text not null, lease_token text,
       unique(project_id, id),
       unique(event_id, topic),
       foreign key(project_id, event_id) references domain_events(project_id, id) on delete cascade,
       foreign key(project_id) references projects(id) on delete cascade
     );
-    create index if not exists idx_outbox_messages_due
-      on outbox_messages(status, available_at, created_at);
-    create index if not exists idx_outbox_messages_project_status
-      on outbox_messages(project_id, status, created_at desc);
-  `);
 
-  if (requiresV13Setup) {
-    db.exec(`
-      create table if not exists source_snapshots (
+CREATE TABLE source_snapshots (
         id text primary key,
         project_id text not null,
         canonical_uri text not null check(length(trim(canonical_uri)) between 1 and 4000),
@@ -710,23 +425,8 @@ export function migrate(db: Database.Database): void {
         unique(project_id, canonical_uri, content_hash),
         foreign key(project_id) references projects(id) on delete cascade
       );
-      create index if not exists idx_source_snapshots_project_uri
-        on source_snapshots(project_id, canonical_uri, created_at desc);
-    `);
 
-    const evidenceColumns = db.prepare("pragma table_info(research_evidence)").all() as Array<{name: string}>;
-    if (!evidenceColumns.some((column) => column.name === "snapshot_id")) {
-      db.exec("alter table research_evidence add column snapshot_id text");
-    }
-    const outboxColumns = db.prepare("pragma table_info(outbox_messages)").all() as Array<{name: string}>;
-    if (!outboxColumns.some((column) => column.name === "lease_token")) {
-      db.exec("alter table outbox_messages add column lease_token text");
-    }
-    db.exec(`
-      create index if not exists idx_research_evidence_snapshot
-        on research_evidence(project_id, snapshot_id);
-
-      create table if not exists evidence_verifications (
+CREATE TABLE evidence_verifications (
         id text primary key,
         project_id text not null,
         case_id text not null,
@@ -748,12 +448,8 @@ export function migrate(db: Database.Database): void {
           references source_snapshots(project_id, id) on delete restrict,
         foreign key(supersedes_verification_id) references evidence_verifications(id) on delete set null
       );
-      create unique index if not exists idx_evidence_verifications_current
-        on evidence_verifications(project_id, evidence_id) where is_current = 1;
-      create index if not exists idx_evidence_verifications_case
-        on evidence_verifications(project_id, case_id, created_at);
 
-      create table if not exists outbox_handler_receipts (
+CREATE TABLE outbox_handler_receipts (
         message_id text primary key,
         project_id text not null,
         topic text not null,
@@ -761,26 +457,8 @@ export function migrate(db: Database.Database): void {
         completed_at text not null,
         foreign key(project_id, message_id) references outbox_messages(project_id, id) on delete cascade
       );
-      create index if not exists idx_outbox_handler_receipts_project
-        on outbox_handler_receipts(project_id, completed_at desc);
 
-      update research_claims
-      set review_status = 'changes_requested',
-          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      where review_status = 'approved';
-      update research_cases
-      set status = 'in_review',
-          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      where id in (
-        select distinct case_id from research_claims where review_status = 'changes_requested'
-      );
-    `);
-  }
-
-  if (requiresV14Setup) db.exec(`
-    create unique index if not exists idx_recall_events_project_id
-      on recall_events(project_id, id);
-    create table if not exists recall_feedback (
+CREATE TABLE recall_feedback (
       id text primary key,
       project_id text not null,
       recall_event_id text not null,
@@ -798,55 +476,204 @@ export function migrate(db: Database.Database): void {
       foreign key(project_id, recall_event_id)
         references recall_events(project_id, id) on delete cascade
     );
-    create index if not exists idx_recall_feedback_project_created
+
+CREATE INDEX idx_memories_project
+      on memories(project_id);
+
+CREATE INDEX idx_memories_project_thread
+      on memories(project_id, thread_id);
+
+CREATE INDEX idx_memories_thread
+      on memories(thread_id);
+
+CREATE INDEX idx_threads_project
+      on threads(project_id);
+
+CREATE INDEX idx_distill_jobs_status_created
+      on distill_jobs(status, created_at);
+
+CREATE INDEX idx_distill_jobs_project_thread
+      on distill_jobs(project_id, thread_id);
+
+CREATE INDEX idx_memory_candidates_project_status
+      on memory_candidates(project_id, status, created_at);
+
+CREATE INDEX idx_memory_candidates_thread
+      on memory_candidates(thread_id);
+
+CREATE INDEX idx_memory_candidates_job
+      on memory_candidates(job_id);
+
+CREATE INDEX idx_memory_events_memory_created
+      on memory_events(memory_id, created_at);
+
+CREATE INDEX idx_memory_events_project_created
+      on memory_events(project_id, created_at);
+
+CREATE UNIQUE INDEX memories_thread_content_unique
+      on memories(project_id, thread_id, kind, content_hash)
+      where thread_id is not null and status = 'active';
+
+CREATE UNIQUE INDEX memories_project_content_unique
+      on memories(project_id, kind, content_hash)
+      where thread_id is null and status = 'active';
+
+CREATE UNIQUE INDEX idx_memories_single_successor
+      on memories(supersedes_memory_id)
+      where supersedes_memory_id is not null;
+
+CREATE INDEX idx_project_briefings_project_version
+      on project_briefings(project_id, version desc);
+
+CREATE INDEX idx_project_briefings_project_status
+      on project_briefings(project_id, status, version desc);
+
+CREATE INDEX idx_history_import_runs_project_started
+      on history_import_runs(project_id, started_at desc);
+
+CREATE INDEX idx_history_import_items_run_outcome
+      on history_import_items(run_id, outcome, created_at);
+
+CREATE INDEX idx_history_import_items_thread
+      on history_import_items(thread_id);
+
+CREATE UNIQUE INDEX idx_projects_repository_key on projects(repository_key) where repository_key is not null;
+
+CREATE INDEX idx_recall_events_project_task on recall_events(project_id, task_id, created_at desc);
+
+CREATE INDEX idx_curation_events_project on curation_events(project_id, created_at desc);
+
+CREATE INDEX idx_research_cases_project_updated
+      on research_cases(project_id, updated_at desc);
+
+CREATE INDEX idx_research_evidence_case
+      on research_evidence(project_id, case_id, created_at);
+
+CREATE INDEX idx_research_claims_case
+      on research_claims(project_id, case_id, status, created_at);
+
+CREATE UNIQUE INDEX idx_research_claims_single_successor
+      on research_claims(supersedes_claim_id)
+      where supersedes_claim_id is not null;
+
+CREATE INDEX idx_research_claim_evidence_case
+      on research_claim_evidence(project_id, case_id, claim_id);
+
+CREATE INDEX idx_research_events_case_created
+      on research_events(project_id, case_id, created_at, id);
+
+CREATE INDEX idx_lifecycle_sessions_project_seen
+      on lifecycle_sessions(project_id, last_seen_at desc);
+
+CREATE INDEX idx_lifecycle_turns_session_started
+      on lifecycle_turns(project_id, session_id, started_at);
+
+CREATE INDEX idx_capture_records_project_captured
+      on capture_records(project_id, captured_at desc);
+
+CREATE INDEX idx_domain_events_project_created
+      on domain_events(project_id, created_at desc, id desc);
+
+CREATE INDEX idx_outbox_messages_due
+      on outbox_messages(status, available_at, created_at);
+
+CREATE INDEX idx_outbox_messages_project_status
+      on outbox_messages(project_id, status, created_at desc);
+
+CREATE INDEX idx_source_snapshots_project_uri
+        on source_snapshots(project_id, canonical_uri, created_at desc);
+
+CREATE INDEX idx_research_evidence_snapshot
+        on research_evidence(project_id, snapshot_id);
+
+CREATE UNIQUE INDEX idx_evidence_verifications_current
+        on evidence_verifications(project_id, evidence_id) where is_current = 1;
+
+CREATE INDEX idx_evidence_verifications_case
+        on evidence_verifications(project_id, case_id, created_at);
+
+CREATE INDEX idx_outbox_handler_receipts_project
+        on outbox_handler_receipts(project_id, completed_at desc);
+
+CREATE UNIQUE INDEX idx_recall_events_project_id
+      on recall_events(project_id, id);
+
+CREATE INDEX idx_recall_feedback_project_created
       on recall_feedback(project_id, created_at desc);
-  `);
 
-  const foreignKeyViolation = db.prepare("pragma foreign_key_check").get();
-  if (foreignKeyViolation) throw new Error("Mira schema migration produced a foreign key violation");
+CREATE TRIGGER memories_after_insert_sync_fts
+    after insert on memories when new.status = 'active'
+    begin
+      insert into memory_fts (id, project_id, title, content)
+      values (new.id, new.project_id, new.title, new.content);
+    end;
 
-  if (existingVersion !== CURRENT_SCHEMA_VERSION) {
-    if (requiresV15Setup) db.exec(`
-    create table if not exists context_payloads (
-      recall_id text primary key,
-      project_id text not null,
-      markdown text not null,
-      expires_at text not null,
-      foreign key(project_id, recall_id) references recall_events(project_id, id) on delete cascade
-    );
-    create index if not exists idx_context_payload_expiry on context_payloads(expires_at);
-  `);
+CREATE TRIGGER memories_after_update_sync_fts
+    after update of project_id, title, content, status on memories
+    begin
+      delete from memory_fts where id = old.id;
+      insert into memory_fts (id, project_id, title, content)
+      select new.id, new.project_id, new.title, new.content
+      where new.status = 'active';
+    end;
 
-  if (requiresV16Setup) {
-    const columns=new Set((db.prepare("pragma table_info(memory_candidates)").all() as Array<{name:string}>).map(row=>row.name));
-    if(!columns.has("provenance")) db.exec("alter table memory_candidates add column provenance text");
-    if(!columns.has("acceptance_mode")) db.exec("alter table memory_candidates add column acceptance_mode text");
-  }
+CREATE TRIGGER memories_after_delete_cleanup_fts
+    after delete on memories
+    begin
+      delete from memory_fts where id = old.id;
+    end;
 
-  db.exec(`create table if not exists research_context_recalls (
-    id text primary key,project_id text not null,case_id text not null,receipt text not null check(json_valid(receipt)),created_at text not null,
-    foreign key(project_id) references projects(id) on delete cascade
-  );
-  create index if not exists idx_research_context_recalls_project on research_context_recalls(project_id,created_at desc);`);
+CREATE TRIGGER memories_after_insert_stale_briefing
+    after insert on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
 
-  if(requiresJobRebuild) {
-    const original=db.prepare("select sql from sqlite_master where type='table' and name='distill_jobs'").pluck().get() as string;
-    const indexes=db.prepare("select sql from sqlite_master where type='index' and tbl_name='distill_jobs' and sql is not null").all() as Array<{sql:string}>;
-    const ddl=original.replace(/create table (?:if not exists )?["`]?distill_jobs["`]?/i,'create table distill_jobs_v18').replace(/(\bthread_id\s+text)\s+not\s+null\b/i,'$1');
-    if(ddl===original || /thread_id\s+text\s+not\s+null/i.test(ddl)) throw new Error('Unsupported legacy distillation queue schema');
-    db.exec(ddl);
-    db.exec('insert into distill_jobs_v18 select * from distill_jobs; drop table distill_jobs; alter table distill_jobs_v18 rename to distill_jobs;');
-    for(const index of indexes) db.exec(index.sql);
-    if(db.prepare('pragma foreign_key_check').get()) throw new Error('Queue migration violated foreign keys');
-  }
+CREATE TRIGGER memories_after_update_stale_briefing
+    after update on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
 
-  db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
-      CURRENT_SCHEMA_VERSION,
-      new Date().toISOString()
-    );
-  }
-    })();
-  } finally {
-    if ((hasLegacyMemories || requiresJobRebuild) && foreignKeysEnabled) db.pragma("foreign_keys = ON");
-  }
-}
+CREATE TRIGGER memories_after_delete_stale_briefing
+    after delete on memories
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = old.project_id and status = 'complete' and stale_at is null;
+    end;
+
+CREATE TRIGGER working_memory_after_insert_stale_briefing
+    after insert on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+CREATE TRIGGER working_memory_after_update_stale_briefing
+    after update on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = new.project_id and status = 'complete' and stale_at is null;
+    end;
+
+CREATE TRIGGER working_memory_after_delete_stale_briefing
+    after delete on working_memory
+    begin
+      update project_briefings
+      set stale_at = coalesce(stale_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      where project_id = old.project_id and status = 'complete' and stale_at is null;
+    end;
+
+insert into schema_version (version,applied_at) values (14,'2026-01-01T00:00:00.000Z');
+insert into projects (id,name,root_path,created_at) values ('project_fixture','Historical fixture','/fixture','2026-01-01T00:00:00.000Z');
+insert into threads (id,project_id,title,source,raw_format,raw_text,created_at,updated_at) values ('thread_fixture','project_fixture','Original source','codex','markdown','Persisted legacy fact.','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
+insert into memories (id,project_id,thread_id,title,kind,content,source,confidence,content_hash,importance,created_at,updated_at,status) values ('memory_fixture','project_fixture','thread_fixture','Legacy fact','fact','Persisted legacy fact.','manual',1,'f152004811bef681cba0eb8d5d2ed6537289e038bef45ea70f5fa70eebd8477f',5,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','active');
+insert into distill_jobs (id,project_id,thread_id,trigger,channel,input_hash,status,attempts,created_at,updated_at) values ('job_fixture','project_fixture','thread_fixture','cli','provider','input-fixture','pending',0,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
+insert into memory_candidates (id,project_id,thread_id,job_id,thread_input_hash,title,kind,content,confidence,importance,source_agent,extraction_method,evidence,content_hash,risk_level,status,created_at) values ('candidate_fixture','project_fixture','thread_fixture','job_fixture','input-fixture','Candidate fixture','fact','Persisted legacy fact.',0.8,0.5,'codex','agent','Persisted legacy fact.','f152004811bef681cba0eb8d5d2ed6537289e038bef45ea70f5fa70eebd8477f','low','pending_review','2026-01-01T00:00:00.000Z');

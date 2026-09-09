@@ -49,7 +49,8 @@ export function createOutboxRunner(options: {
       const claimedAt = now();
       const claimedAtIso = claimedAt.toISOString();
       db.prepare(`update outbox_messages
-        set status = 'pending', lease_expires_at = null, lease_token = null,
+        set status = case when attempts < max_attempts then 'pending' else 'failed' end,
+            last_error = 'Recovered expired lease', lease_expires_at = null, lease_token = null,
             available_at = ?, updated_at = ?
         where project_id = ? and status = 'running' and lease_expires_at <= ?`)
         .run(claimedAtIso, claimedAtIso, projectId, claimedAtIso);

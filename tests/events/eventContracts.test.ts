@@ -14,6 +14,9 @@ test('event and outbox contracts reject bodies, secrets, oversize data and cross
   expect(()=>appendDomainEvent(db,{...event,eventType:'unregistered'})).toThrow(/Unknown/);
   expect(db.prepare('select count(*) as n from domain_events').get()).toEqual({n:0});
   const saved=appendDomainEvent(db,event);
+  for(const metadata of [{id:'x'.repeat(10000)},{createdAt:'invalid'},{availableAt:'never'},{availableAt:'2026-09-01T00:00:00Z'},{createdAt:'2026-02-30T00:00:00.000Z'}]) {
+   expect(()=>enqueueOutboxMessage(db,{projectId:project.id,eventId:saved.id,topic:'projection.refresh.requested',payload:{reason:'refresh'},...metadata})).toThrow(/metadata/);
+  }
   const other=createProject(db,{name:'Other',rootPath:'/other'});
   expect(()=>enqueueOutboxMessage(db,{projectId:other.id,eventId:saved.id,topic:'projection.refresh.requested',payload:{reason:'refresh'}})).toThrow(/same project/);
   expect(db.prepare('select count(*) as n from outbox_messages').get()).toEqual({n:0});

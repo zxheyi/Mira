@@ -1,3 +1,4 @@
+import {createHostAdapterRegistry} from "../lifecycle/hostAdapterRegistry.js";
 import type Database from 'better-sqlite3';
 import {createHash} from 'node:crypto';
 import {MiraError} from '../runtime/errors.js';
@@ -8,6 +9,13 @@ export function getWorkflowProgress(db:Database.Database,projectId:string,turnId
  const turn=db.prepare('select id,session_id,status,after_result from lifecycle_turns where project_id=? and id=?').get(projectId,turnId) as {id:string;session_id:string;status:string;after_result:string|null}|undefined;
  if(!turn) throw new MiraError('TURN_NOT_FOUND','Turn not found in this project','Select a turn returned by before_turn or after_turn');
  const capture=db.prepare('select id,thread_id from capture_records where project_id=? and turn_id=?').get(projectId,turnId) as {id:string;thread_id:string|null}|undefined;
+ const started=db.prepare("select payload from domain_events where project_id=? and aggregate_id=? and event_type='turn_started' order by created_at,rowid limit 1").get(projectId,turnId) as {payload:string}|undefined;
+ const startMetadata=started?JSON.parse(started.payload):undefined;
+ const repaired=Boolean(db.prepare("select 1 from domain_events where project_id=? and event_type='capture_repaired' and json_extract(payload,'$.turnId')=?").get(projectId,turnId));
+ const hostDescriptor=createHostAdapterRegistry().list().find(item=>item.host===startMetadata?.sourceHost);
+ const turnProvenance={identitySource:started?'caller_supplied':'unknown',sourceHost:startMetadata?.sourceHost??'unknown',
+  hostNativeGranularity:hostDescriptor?.nativeGranularity??'unknown',capturePath:repaired?'repaired':startMetadata?.captureOnly?'capture_only':turn.status!=='completed'?'awaiting_capture':started?'normal':'unknown',
+  observation:'recorded_lifecycle_events',hostCrash:'not_inferred'};
  const after=turn.after_result?JSON.parse(turn.after_result):undefined;
  const messages=(after?.outboxMessageIds??[]).map((id:string)=>db.prepare('select id,topic,status,last_error,available_at from outbox_messages where project_id=? and id=?').get(projectId,id)) as Array<{id:string;topic:string;status:string;last_error:string|null;available_at:string}>;
  const jobs:Job[]=[];
@@ -38,7 +46,7 @@ export function getWorkflowProgress(db:Database.Database,projectId:string,turnId
   :stage==='source_changed'?'Use the latest source version and submit fresh candidates'
   :stage==='needs_attention'?'Retry the same after_turn input to repair the capture'
   :stage==='captured'?'Inspect downstream scheduling; no accepted memory is implied':'No action required';
- return {schemaVersion:1,projectId,turnId,sessionId:turn.session_id,stage,observedAt:new Date().toISOString(),
+ return {schemaVersion:1,turnProvenance,projectId,turnId,sessionId:turn.session_id,stage,observedAt:new Date().toISOString(),
   capture:capture?{id:capture.id,threadId:capture.thread_id}:null,
   outbox:messages.filter(Boolean).map(item=>({id:item.id,topic:item.topic,status:item.status,availableAt:item.available_at})),
   jobs:jobs.map(job=>({id:job.id,status:job.status,nextAttemptAt:job.next_attempt_at})),

@@ -54,6 +54,7 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   const research=researchCaseIds.map(caseId=>prepareResearchContext(db,projectId,caseId,{...options,...budget}));
   const selections:ContextSelection[]=[];
   const includedResearch:ResearchContextPacket[]=[];
+  const researchInputs:Array<{caseId:string;inputHash:string}>=[];
   const started = Date.now();
   validateInteger(options.memoryLimit, "memoryLimit", 1, 50);
   validateInteger(options.maxCharacters, "maxCharacters", 1, 1_000_000);
@@ -99,6 +100,7 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   for(const packet of research) {
     const remaining={maxCharacters:Math.max(1,budget.maxCharacters-markdown.length-2),maxTokens:Math.max(1,budget.maxTokens-Buffer.byteLength(markdown,"utf8")-2)};
     const bounded=prepareResearchContext(db,projectId,packet.caseId,{...options,...remaining});
+    researchInputs.push({caseId:bounded.caseId,inputHash:bounded.selectionManifest.inputHash});
     const selected=bounded.markdown.length>0 && append(bounded.markdown);
     if(selected) includedResearch.push(bounded);
     selections.push(...bounded.selections.map(item=>item.selected&&!selected?{...item,selected:false,reasons:["budget"]}:item));
@@ -132,7 +134,7 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
     selectionManifest:createSelectionManifest({projectId,taskId:taskId??null,queryHash:selectionHash(query??null),
       retrieval:{coverage:'bounded_pool',requestedLimit:Math.min(200,(options.memoryLimit??8)*4),candidateCount:pool.length,
         mode:query?'fts_phrase_then_or_terms':'project_priority',ordering:'warnings_first_preserve_retrieval_order',outsidePool:'not_evaluated'},
-      memoryLimit:options.memoryLimit??8,researchCaseIds,briefingVersion:briefing?.version??null},selections,budget,markdown),
+      memoryLimit:options.memoryLimit??8,researchCaseIds,researchInputs,projectNameHash:selectionHash(project.name),briefingVersion:briefing?.version??null},selections,budget,markdown),
     schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:(options.retainForSeconds??0)>0?"retained_payload":"references_only",
     id: `recall_${randomUUID()}`, projectId, ...(taskId ? {taskId} : {}),
     ...(query ? {query: containsSensitiveInformation(query) ? "[REDACTED]" : query} : {}),

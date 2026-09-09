@@ -44,3 +44,11 @@ export function validateEventEnvelope(value:unknown):void {
  const schema=z.object({id,projectId:id,aggregateType:z.string().regex(/^[a-z_]{1,80}$/),aggregateId:id,eventType:z.string().max(100),payload:z.record(z.string(),z.unknown()),createdAt:z.iso.datetime()}).strict();
  if(!schema.safeParse(value).success) throw new MiraError('INVALID_EVENT_ENVELOPE','Invalid event metadata','Use bounded identifiers and an ISO timestamp');
 }
+
+export function validateOutboxEnvelope(value:unknown):void {
+ const timestamp=z.iso.datetime({precision:3});
+ const schema=z.object({id,projectId:id,eventId:id,topic:z.enum(['capture.distill.requested','research.evidence.verify.requested','projection.refresh.requested']),
+  payload:z.record(z.string(),z.unknown()),status:z.literal('pending'),attempts:z.literal(0),maxAttempts:z.number().int().min(1).max(100),
+  availableAt:timestamp,createdAt:timestamp,updatedAt:timestamp}).strict();
+ if(!schema.safeParse(value).success) throw new MiraError('INVALID_OUTBOX_ENVELOPE','Invalid Outbox metadata','Use bounded identifiers and canonical UTC timestamps with milliseconds');
+}
