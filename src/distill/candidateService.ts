@@ -1,3 +1,4 @@
+import {MiraError} from "../runtime/errors.js";
 import {locateCandidateEvidence} from "./candidateProvenance.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
@@ -338,7 +339,7 @@ export function reviewMemoryCandidate(
       const thread = db.prepare("select raw_text from threads where project_id = ? and id = ?")
         .get(projectId, candidate.threadId) as { raw_text: string } | undefined;
       if (!thread || hashCandidateContent(thread.raw_text) !== candidate.threadInputHash) {
-        throw new Error(`Memory candidate source Thread has changed; resubmit the candidate: ${candidateId}`);
+        throw new MiraError("SOURCE_CHANGED",`Memory candidate source Thread has changed; resubmit the candidate: ${candidateId}`,"Extract and submit a new candidate from the current Thread version");
       }
       if (!thread.raw_text.includes(candidate.evidence)) {
         throw new Error(`Memory candidate evidence is no longer present; resubmit the candidate: ${candidateId}`);

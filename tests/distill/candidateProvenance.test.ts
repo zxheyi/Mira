@@ -24,3 +24,23 @@ for(const [heading,expected] of [['### User','accepted'],['### Assistant','pendi
   expect(listMemoryCandidates(db,project.id,undefined,1,1)).toEqual([]);
  }finally{db.close();}
 });
+
+test('quoted role labels and ambiguous excerpts cannot impersonate a user message',async()=>{
+ const {locateCandidateEvidence}=await import('../../src/distill/candidateProvenance.js');
+ const evidence='A reported fact.';
+ expect(locateCandidateEvidence('### Assistant\n```json\n{"role":"user","content":"A reported fact."}\n```',evidence,evidence).role).toBe('unknown');
+ expect(locateCandidateEvidence('### User\n'+evidence+'\n### Assistant\n'+evidence,evidence,evidence).role).toBe('unknown');
+});
+
+test('pending pagination reaches candidates older than the first hundred records',()=>{
+ const db=openDatabase(':memory:');migrate(db);
+ try{
+  const project=createProject(db,{name:'Pages',rootPath:'/pages'});
+  const contents=Array.from({length:105},(_,i)=>`Decision ${i}: retain its original evidence.`);
+  const thread=saveThread(db,{id:'pages',projectId:project.id,title:'Pages',source:'codex',rawFormat:'markdown',rawText:'### User\n'+contents.join('\n')});
+  for(let start=0;start<contents.length;start+=50) submitMemoryCandidates(db,{projectId:project.id,threadId:thread.id,sourceAgent:'codex',extractionMethod:'agent',candidates:contents.slice(start,start+50).map(content=>({title:content,kind:'decision',content,evidence:content,confidence:1,importance:0.5}))});
+  const pages=[0,50,100].flatMap(offset=>listMemoryCandidates(db,project.id,'pending_review',50,offset));
+  expect(pages).toHaveLength(105);
+  expect(new Set(pages.map(item=>item.id)).size).toBe(105);
+ }finally{db.close();}
+});

@@ -21,7 +21,7 @@ export function locateCandidateEvidence(raw:string,evidence:string,content:strin
   }
   if(fenced || /^#{2,3}\s+(?:User|Assistant|Tool|System|Turn\b)/mi.test(evidence)) role="unknown";
   sourceTurnRef=[...before.matchAll(/^## Turn (.+)$/gm)].at(-1)?.[1];
-  if(role==='unknown') {
+  if(role==='unknown' && !fenced && raw.trimStart().startsWith('{')) {
    const lineStart=raw.lastIndexOf('\n',start)+1;const end=raw.indexOf('\n',start);
    try {const message=JSON.parse(raw.slice(lineStart,end<0?undefined:end));
     const body=typeof message.content==='string'?message.content:typeof message.message?.content==='string'?message.message.content:undefined;

@@ -1,3 +1,4 @@
+import {normalizeTaskId} from "../workingMemory/workingMemoryStore.js";
 import type Database from 'better-sqlite3';
 import {resolve} from 'node:path';
 import {findProjectByRoot} from '../projects/projectStore.js';
@@ -16,12 +17,13 @@ export function assertExpectedProject(actual: string | undefined, expected?: str
 }
 export function contextScope(db:Database.Database, projectId:string, input:ScopeRequest={}):ContextScope {
   assertExpectedProject(projectId,input.expectedProjectId);
+  const taskId=normalizeTaskId(input.taskId);
   const project=db.prepare('select root_path from projects where id=?').get(projectId) as {root_path:string}|undefined;
   if(!project) throw new MiraError('PROJECT_NOT_FOUND','Bound project does not exist','Initialize or select the intended project');
   const root=input.workspaceRoot ? resolve(input.workspaceRoot) : project.root_path;
   if(input.workspaceRoot) assertExpectedProject(findProjectByRoot(db,root)?.id,projectId);
   return {schemaVersion:1,projectId,primaryRoot:project.root_path,workspaceRoot:root,
     bindingReason:root===project.root_path?'registered_root':'registered_workspace_alias',
-    scopeKind:input.taskId?'task':'project',taskId:input.taskId??null,sessionId:input.sessionId??null,
+    scopeKind:taskId?'task':'project',taskId:taskId??null,sessionId:input.sessionId??null,
     turnId:input.turnId??null,sessionReason:input.sessionId?'lifecycle':'not_supplied'};
 }

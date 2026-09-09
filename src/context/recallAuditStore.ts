@@ -4,7 +4,7 @@ import type Database from "better-sqlite3";
 import { normalizeTaskId } from "../workingMemory/workingMemoryStore.js";
 
 export type RecallReceipt = {
-  schemaVersion?:2;deliveryState?:"prepared";scope?:ContextScope;selections?:ContextSelection[];budgetPolicy?:string;researchRecallIds?:string[];replay?:"references_only";
+  schemaVersion?:2;deliveryState?:"prepared";scope?:ContextScope;selections?:ContextSelection[];budgetPolicy?:string;researchRecallIds?:string[];replay?:"references_only"|"retained_payload";
   id: string;
   projectId: string;
   taskId?: string;
