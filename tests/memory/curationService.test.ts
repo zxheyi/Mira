@@ -100,12 +100,12 @@ test.each(["constraint", "architecture", "decision"] as const)("%s candidates re
   const project = createProject(db, {name: "Review policy", rootPath: "/review-policy"});
   try {
     const content = "All schema changes require a numbered migration.";
-    const thread = saveThread(db, {id: "policy-source", projectId: project.id, title: "Policy", source: "codex", rawFormat: "markdown", rawText: `### User\n${content}`});
+    const thread = saveThread(db, {id: "policy-source", projectId: project.id, title: "Policy", source: "codex", rawFormat: "jsonl", rawText: JSON.stringify({role:"user",content})});
     const [result] = curateMemory(db, {operation: "propose", input: {
       projectId: project.id, threadId: thread.id, sourceAgent: "provider", extractionMethod: "provider",
       candidates: [{title: "Migration policy", kind, content, evidence: content, confidence: 1, importance: 0.9}]
     }});
-    expect(result).toMatchObject({outcome: "pending_review", reasons: ["high_impact_kind"], candidate: {riskLevel: "high"}});
+    expect(result).toMatchObject({outcome: "pending_review", reasons: ["high_impact_kind", "source_unattributed"], candidate: {riskLevel: "high"}});
     expect(prepareContext(db, project.id).receipt.injectedMemoryIds).toEqual([]);
   } finally { db.close(); }
 });

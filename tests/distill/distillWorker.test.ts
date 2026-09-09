@@ -5,6 +5,7 @@ import { migrate } from "../../src/db/schema.js";
 import { claimNextDistillJob, enqueueDistillJob, listDistillJobs } from "../../src/distill/distillJobStore.js";
 import { drainDistillJobs, runNextDistillJob } from "../../src/distill/distillWorker.js";
 import { RetryableProviderError } from "../../src/distill/openAiCompatibleProvider.js";
+import {listMemoryCandidates} from "../../src/distill/candidateService.js";
 import { listMemoriesForProject } from "../../src/memory/memoryStore.js";
 import { createProject } from "../../src/projects/projectStore.js";
 import { saveThread } from "../../src/threads/threadStore.js";
@@ -18,7 +19,7 @@ function setup() {
   const project = createProject(db, { name: "Mira", rootPath: "/workspace/mira-worker" });
   saveThread(db, {
     id: "thread_worker", projectId: project.id, title: "Worker", source: "codex",
-    rawFormat: "markdown", rawText: "### User\nUse a one-shot worker for trusted distillation."
+    rawFormat: "jsonl", rawText: JSON.stringify({role:"user",content:"Use a one-shot worker for trusted distillation."})
   });
   return { database: db, project };
 }
@@ -79,7 +80,8 @@ describe("one-shot distill worker", () => {
 
     expect(result.status).toBe("completed");
     expect(listDistillJobs(database, project.id, "completed")).toHaveLength(1);
-    expect(listMemoriesForProject(database, project.id)[0]).toMatchObject({ title: "One-shot worker" });
+    expect(listMemoryCandidates(database, project.id)[0]).toMatchObject({title:"One-shot worker",status:"pending_review"});
+    expect(listMemoriesForProject(database, project.id)).toEqual([]);
   });
 
   test("marks provider failures and returns idle when the queue is empty", async () => {
