@@ -49,3 +49,10 @@ A temporary local Viewer was inspected in the Codex browser. The overview showed
 7. Final verification PR — this report, cross-entrypoint/migration acceptance and integration refinements.
 
 All PRs target main. Later PRs include unmerged prerequisite commits until those prerequisites are reviewed and merged. Compatibility-only fixture/timestamp fixes were backported to stages 2–6 so their CI can validate them independently.
+
+## Pre-merge validation (2026-09-09)
+
+- Combined the seven implementation branches with the pending qs 6.16.0, Vitest 5.0.0 and contribution-policy changes in an isolated worktree. Node 24.20.0: 86 test files / 333 tests passed; all four verification scripts passed.
+- Two-axis review identified a role-spoofing path through unfenced Markdown headings and agent-supplied JSONL role fields. Candidate policy v3 now uses persisted lifecycle body spans only, after exact full-transcript matching. Ordinary imported/saved Threads without these boundaries remain pending review regardless of their declared role or confidence. Explicit review remains available.
+- Regression coverage includes importer-to-candidate submission, MCP save_thread-to-candidate submission with fabricated role metadata, and real lifecycle user/assistant attribution with forged Turn headings inside assistant content. Both review axes cleared the blocker after the fix.
+- This is engineering and synthetic interaction validation. Production host delivery trials and longitudinal review/backlog/latency measurements remain outstanding. Selection audit currently includes IDs/reasons and complete output hashes; per-selection section, version/hash and budget-cost detail is not yet complete.
