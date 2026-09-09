@@ -51,7 +51,7 @@ const proposed = curateMemory(db, {operation:"propose",input:{
     evidence:"Research claims require verified source snapshots.",confidence:0.6,importance:0.8}]
 }});
 assert.equal(proposed[0].candidate.status, "pending_review");
-const curationAuthority = authorizeCuration(db, project.id, {actor:"runtime:reviewer",reason:"Explicit acceptance test review"});
+const curationAuthority = authorizeCuration(db, project.id, {scopes:["memory.review","memory.mutate","research.review","research.mutate","recall.feedback","context.delivery"],actor:"runtime:reviewer",reason:"Explicit acceptance test review"});
 const accepted = curateMemory(db, {operation:"review",projectId:project.id,
   candidateId:proposed[0].candidate.id,decision:"accept",reason:"Matches the captured turn."}, curationAuthority);
 assert.equal(accepted.outcome, "accepted");
@@ -71,7 +71,7 @@ let research = submitResearchPacket(db, project.id, {
 assert.equal((await drainOutbox(runner, project.id, handlers)).failed, 0);
 research = getResearchCaseSnapshot(db, project.id, research.researchCase.id);
 assert.equal(research.verifications[0].status, "verified");
-const researchAuthority = authorizeResearch(db, project.id, {actor:"runtime:reviewer",reason:"Verified Source Snapshot"});
+const researchAuthority = authorizeResearch(db, project.id, {scopes:["memory.review","memory.mutate","research.review","research.mutate","recall.feedback","context.delivery"],actor:"runtime:reviewer",reason:"Verified Source Snapshot"});
 research = reviewResearchClaim(db, project.id, research.claims[0].id, "approve", "Source and inference reviewed.", researchAuthority);
 assert.equal(research.researchCase.status, "completed");
 

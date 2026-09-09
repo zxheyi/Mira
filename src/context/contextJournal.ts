@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import {createHash} from 'node:crypto';
 import {recordRecallEvent,type RecallReceipt} from './recallAuditStore.js';
 import {appendDomainEvent} from '../events/domainOutboxStore.js';
-import {requireCapability,type CapabilityPolicy,scopesSchema} from '../runtime/capabilities.js';
+import {requireCapability,type CapabilityPolicy,scopesSchema,legacyDelegationSchema} from '../runtime/capabilities.js';
 import {MiraError} from '../runtime/errors.js';
 
 export function persistContextPacket(db:Database.Database,receipt:RecallReceipt,markdown:string,retainForSeconds:number):void {
@@ -34,7 +34,7 @@ export function authorizeContextDelivery(db:Database.Database,projectId:string,p
  if(!policy.actor.trim()||policy.actor.length>200||!policy.reason.trim()||policy.reason.length>1000) throw new Error('Delivery authority requires bounded actor and reason');
  assertNoSensitiveInformation(policy.actor+'\n'+policy.reason,'Delivery authority');
  const grant=Object.freeze({}) as DeliveryAuthority;
- grants.set(grant,{...policy,scopes:scopesSchema.parse(policy.scopes),db,projectId});return grant;
+ grants.set(grant,{...policy,scopes:scopesSchema.parse(policy.scopes),developmentLegacyBroad:legacyDelegationSchema.parse(policy.developmentLegacyBroad),db,projectId});return grant;
 }
 export function recordContextDelivery(db:Database.Database,projectId:string,recallId:string,outputHash:string,authority?:DeliveryAuthority) {
  const policy=authority&&grants.get(authority);

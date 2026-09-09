@@ -15,7 +15,7 @@ import { saveThread } from "../../src/threads/threadStore.js";
 import { authorizeCuration } from "../../src/memory/curationService.js";
 
 function confirmation(database: Database.Database, projectId: string) {
-  return authorizeCuration(database, projectId, {actor: "test:user", reason: "Reviewed file contents"});
+  return authorizeCuration(database, projectId, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "test:user", reason: "Reviewed file contents"});
 }
 
 let db: Database.Database | undefined;

@@ -12,7 +12,7 @@ function labelRecalls(db: Database.Database, root: string, missRecords: number, 
   const input = {projectId:project.id,kind:"fact" as const,source:"manual",confidence:1,importance:5};
   const relevant = addMemory(db, {...input,title:"Relevant",content:`Relevant ${root}`});
   const missing = addMemory(db, {...input,title:"Missing",content:`Semantic target ${root}`});
-  const authority = authorizeRecallFeedback(db, project.id, {actor:"reviewer",reason:"Retrieval benchmark labeling"});
+  const authority = authorizeRecallFeedback(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"reviewer",reason:"Retrieval benchmark labeling"});
   for (let index = 0; index < count; index += 1) {
     const receipt: RecallReceipt = {id:`recall_${root}_${index}`,projectId:project.id,
       candidateMemoryIds:[relevant.id],injectedMemoryIds:[relevant.id],dropped:[],characterCount:1,

@@ -1,5 +1,5 @@
 import {MiraError} from "../runtime/errors.js";
-import {requireCapability, scopesSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
+import {requireCapability, scopesSchema, legacyDelegationSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
 import {evaluateResearchClaim} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
@@ -113,7 +113,7 @@ export function authorizeResearch(
   projectId: string,
   policy: ResearchConfirmationPolicy
 ): ResearchAuthority {
-  const parsed = z.object({ actor: text(200), reason: text(1000), scopes:scopesSchema }).strict().parse(policy);
+  const parsed = z.object({ actor: text(200), reason: text(1000), scopes:scopesSchema, developmentLegacyBroad:legacyDelegationSchema }).strict().parse(policy);
   assertNoSensitiveInformation(parsed.actor + "\n" + parsed.reason, "Research authority");
   const authority = Object.freeze({}) as ResearchAuthority;
   authorities.set(authority, { db, projectId, ...parsed });

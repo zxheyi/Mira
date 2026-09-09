@@ -10,7 +10,7 @@ import { getRecallQualityReport } from "../../src/context/recallFeedbackStore.js
 test("a confirmed correction links immutable Memory events to the Recall Receipt that exposed it", () => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name:"Correction",rootPath:"/recall-correction"});
-  const authority = authorizeCuration(db, project.id, {actor:"user:reviewer",reason:"User corrected recalled memory"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"user:reviewer",reason:"User corrected recalled memory"});
   try {
     const predecessor = curateMemory(db, {operation:"add",input:{
       projectId:project.id,title:"Storage",kind:"decision",content:"Use Postgres.",

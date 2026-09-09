@@ -10,7 +10,7 @@ import { distillMemoriesFromText, distillThreadMemories } from "../../src/distil
 import { authorizeCuration } from "../../src/memory/curationService.js";
 
 function confirmation(database: Database.Database, projectId: string) {
-  return authorizeCuration(database, projectId, {actor: "test:user", reason: "Reviewed deterministic extraction"});
+  return authorizeCuration(database, projectId, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "test:user", reason: "Reviewed deterministic extraction"});
 }
 
 let db: Database.Database | undefined;

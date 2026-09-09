@@ -141,20 +141,20 @@ type ProjectSession = {
 const program = new Command();
 
 function cliAuthority(session: ProjectSession) {
-  return authorizeCuration(session.db, session.project.id, {actor: "cli", reason: "Explicit local CLI memory operation"});
+  return authorizeCuration(session.db, session.project.id, {actor: "cli", scopes:["memory.mutate","memory.review"], reason: "Explicit local CLI memory operation"});
 }
 
 function cliResearchAuthority(session: ProjectSession) {
   return authorizeResearch(session.db, session.project.id, {
     actor: "cli",
-    reason: "Explicit local CLI research operation"
+    scopes:["research.mutate","research.review"], reason: "Explicit local CLI research operation"
   });
 }
 
 function cliRecallFeedbackAuthority(session: ProjectSession) {
   return authorizeRecallFeedback(session.db, session.project.id, {
     actor:"cli",
-    reason:"Explicit local CLI recall feedback"
+    scopes:["recall.feedback"], reason:"Explicit local CLI recall feedback"
   });
 }
 
@@ -1362,19 +1362,21 @@ mcp
   .command("serve")
   .description("Start the Mira MCP stdio server")
   .option("--profile <profile>","MCP tool surface: core, research, admin, full","full")
+  .option("--development-legacy-broad", "Explicit development-only broad delegation; requires confirmation-policy and cannot combine with allow-scopes")
   .option("--allow-scopes <scopes>", "Comma-separated governed operation scopes; requires confirmation-policy")
   .option("--confirmation-policy <reason>", "Explicitly delegate governed memory and research writes to this trusted protocol (disabled by default)")
   .option("--db <path>", "SQLite database path")
   .option("--project-root <path>", "Project root path")
-  .action(async (options: GlobalOptions & {confirmationPolicy?: string;allowScopes?:string;profile:ToolProfile}) => {
+  .action(async (options: GlobalOptions & {confirmationPolicy?: string;allowScopes?:string;developmentLegacyBroad?:boolean;profile:ToolProfile}) => {
     const mergedOptions = { ...program.opts<GlobalOptions>(), ...options };
     const projectRoot = await resolveProjectRoot(mergedOptions);
     const dbPath = resolveDbPath(projectRoot, mergedOptions);
     if (options.allowScopes !== undefined && !options.confirmationPolicy) throw new Error("--allow-scopes requires --confirmation-policy");
+    if(options.developmentLegacyBroad && (!options.confirmationPolicy || options.allowScopes!==undefined)) throw new Error("--development-legacy-broad requires confirmation-policy and no allow-scopes");
     const scopes = options.allowScopes === undefined ? undefined : scopesSchema.parse(options.allowScopes.split(",").filter(Boolean));
     selectToolProfile([],options.profile);
     await serveMiraMcpStdio({ projectRoot, dbPath, taskId: mergedOptions.task, profile:options.profile,
-      confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy, scopes} });
+      confirmationPolicy: options.confirmationPolicy === undefined ? undefined : {actor: "mcp:protocol", reason: options.confirmationPolicy, scopes,developmentLegacyBroad:options.developmentLegacyBroad} });
   });
 
 const integration = program.command("integration").description("Manage automatic coding-agent integration");

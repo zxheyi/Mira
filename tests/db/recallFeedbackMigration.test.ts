@@ -28,7 +28,7 @@ test("v13 to v14 preserves Recall Receipts and Memories while adding feedback st
     expect(listRecallEvents(db, project.id)).toEqual([receipt]);
     expect(db.prepare("select content from memories where id = ?").pluck().get(memory.id)).toBe("Keep this Memory.");
     expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
-    const authority = authorizeRecallFeedback(db, project.id, {actor:"reviewer",reason:"Migration acceptance"});
+    const authority = authorizeRecallFeedback(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"reviewer",reason:"Migration acceptance"});
     expect(recordRecallFeedback(db, project.id, {recallId:receipt.id,outcome:"useful",
       relevantMemoryIds:[memory.id],reason:"Expected Memory was returned."}, authority))
       .toMatchObject({recallId:receipt.id,outcome:"useful"});

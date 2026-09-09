@@ -9,7 +9,7 @@ test("CLI records the same Recall Feedback and quality report exposed by MCP", (
   const root = mkdtempSync(join(tmpdir(), "mira-recall-feedback-cli-"));
   const dbPath = join(root, ".mira", "mira.sqlite");
   const options = {projectRoot:root,dbPath,
-    confirmationPolicy:{actor:"test",reason:"Seed confirmed Memory"}};
+    confirmationPolicy:{scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"test",reason:"Seed confirmed Memory"}};
   const run = (...args:string[]) => JSON.parse(execFileSync(process.execPath,
     ["--import","tsx","src/index.ts","--project-root",root,"--db",dbPath,...args],
     {encoding:"utf8"}));

@@ -16,7 +16,7 @@ async function setupMcpOptions() {
   const projectRoot = await mkdtemp(join(tmpdir(), "mira-mcp-project-"));
   return {
     projectRoot,
-    confirmationPolicy: {actor: "mcp:test-protocol", reason: "Test host delegates confirmed memory operations"},
+    confirmationPolicy: {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "mcp:test-protocol", reason: "Test host delegates confirmed memory operations"},
     dbPath: join(projectRoot, ".mira", "mira.sqlite")
   };
 }
@@ -632,7 +632,7 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer({
       projectRoot: "/workspace/mira",
       dbPath: ":memory:",
-      confirmationPolicy: {actor: "test:host", reason: "Trusted protocol test"},
+      confirmationPolicy: {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "test:host", reason: "Trusted protocol test"},
       db
     });
     const tools = (created.server as unknown as {
@@ -695,7 +695,7 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer({
       projectRoot: "/workspace/mira",
       dbPath: ":memory:",
-      confirmationPolicy: {actor: "test:host", reason: "Trusted protocol test"},
+      confirmationPolicy: {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "test:host", reason: "Trusted protocol test"},
       db
     });
     const tools = (created.server as unknown as {

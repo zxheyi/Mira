@@ -106,8 +106,8 @@ describe("research governance", () => {
       case: { ...packet().case, asOfDate: "2026-10-01" }
     });
     const claimId = snapshot.claims[0].id;
-    const authority = authorizeResearch(db, project.id, { actor: "reviewer", reason: "Checked sources" });
-    const otherAuthority = authorizeResearch(db, other.id, { actor: "other", reason: "Wrong project" });
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const], actor: "reviewer", reason: "Checked sources" });
+    const otherAuthority = authorizeResearch(db, other.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const], actor: "other", reason: "Wrong project" });
 
     expect(() => reviewResearchClaim(db!, project.id, claimId, "approve", "Reviewed")).toThrow(/authority/i);
     expect(() => reviewResearchClaim(db!, project.id, claimId, "approve", "Reviewed", {} as never)).toThrow(/authority/i);
@@ -130,7 +130,7 @@ describe("research governance", () => {
     db = openDatabase(":memory:");
     migrate(db);
     const project = createProject(db, { name: "Lifecycle", rootPath: "/research-lifecycle" });
-    const authority = authorizeResearch(db, project.id, { actor: "reviewer", reason: "Source review" });
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const], actor: "reviewer", reason: "Source review" });
     let snapshot = submitResearchPacket(db, project.id, packet());
     const predecessor = snapshot.claims[0];
     const filingEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
@@ -186,7 +186,7 @@ describe("research governance", () => {
     db = openDatabase(":memory:");
     migrate(db);
     const project = createProject(db, { name: "Audit", rootPath: "/research-audit" });
-    const authority = authorizeResearch(db, project.id, { actor: "reviewer", reason: "Explicit review" });
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const], actor: "reviewer", reason: "Explicit review" });
     const snapshot = submitResearchPacket(db, project.id, packet());
     const claimId = snapshot.claims[0].id;
     const filingEvidence = snapshot.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
@@ -208,7 +208,7 @@ describe("research governance", () => {
     db = openDatabase(":memory:");
     migrate(db);
     const project = createProject(db, {name:"Snapshot lifecycle",rootPath:"/snapshot-lifecycle"});
-    const authority = authorizeResearch(db, project.id, {actor:"reviewer",reason:"Source governance"});
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"reviewer",reason:"Source governance"});
     const submitted = submitResearchPacket(db, project.id, {
       ...packet(),
       claims:[{...packet().claims[0],links:[packet().claims[0].links[0]]}]

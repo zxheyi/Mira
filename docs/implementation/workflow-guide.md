@@ -2,7 +2,7 @@
 
 Start with `mira status`. This reads configuration and diagnostics; only a request on an existing MCP transport can establish that connection is currently observed. Host approval is unknown unless the host supplies it. Inspect `get_runtime_status` inside the connected session to see project/workspace scope and server permissions.
 
-For a smaller tool surface, start `mira mcp serve --profile core --project-root /absolute/project --db /absolute/database`. Use `research` for explicit Research Cases, `admin` for review/curation, and `full` for the compatibility surface. Selecting a profile does not authorize writes. Trusted hosts may use `--confirmation-policy REASON --allow-scopes memory.review,research.review`; omit scopes only when intentionally retaining legacy broad delegation.
+For a smaller tool surface, start `mira mcp serve --profile core --project-root /absolute/project --db /absolute/database`. Use `research` for explicit Research Cases, `admin` for review/curation, and `full` for the compatibility surface. Selecting a profile does not authorize writes. Trusted hosts may use `--confirmation-policy REASON --allow-scopes memory.review,research.review`; omitted or empty scopes grant no governed permissions. Legacy broad delegation requires the explicit development-only `--development-legacy-broad` flag.
 
 A common turn has four steps:
 

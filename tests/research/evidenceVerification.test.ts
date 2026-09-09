@@ -71,7 +71,7 @@ describe("Evidence Verification", () => {
       expect.objectContaining({evidenceId: packet.evidence[0].id, snapshotId: first.id, status: "pending"})
     ]);
 
-    const authority = authorizeResearch(db, project.id, {actor: "reviewer", reason: "Checked source snapshot"});
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "reviewer", reason: "Checked source snapshot"});
     expect(() => reviewResearchClaim(
       db!, project.id, packet.claims[0].id, "approve", "Reviewed", authority
     )).toThrow(/verified/i);

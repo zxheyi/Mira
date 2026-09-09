@@ -17,7 +17,7 @@ for (const validThrough of ['2026-08-15','2026-09-01']) test(`approval and recal
       claims:[{key:'C',statement:'Conclusion.',evidenceStatus:'supported',confidence:0.9,thesisImpact:'none',invalidationConditions:'New observation.',links:[0,1].map(i=>({evidenceKey:`E${i}`,relation:'supports' as const,rationale:'Support.'}))}]
     });
     for(const item of packet.evidence) verifyEvidence(db,project.id,packet.researchCase.id,item.id);
-    const approve=()=>reviewResearchClaim(db,project.id,packet.claims[0].id,'approve','Reviewed',authorizeResearch(db,project.id,{actor:'test',reason:'Reviewed'}));
+    const approve=()=>reviewResearchClaim(db,project.id,packet.claims[0].id,'approve','Reviewed',authorizeResearch(db,project.id,{scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:'test',reason:'Reviewed'}));
     if(validThrough < '2026-09-01') {
       expect(approve).toThrow(/evidence_expired/);
       // Legacy approved records must be filtered on read without rewriting audit history.
@@ -42,7 +42,7 @@ test('research rendering never truncates a Claim or its invalidation conditions'
    claims:[{key:'C',statement:'A bounded conclusion.',evidenceStatus:'supported',confidence:0.9,thesisImpact:'none',invalidationConditions:'限'.repeat(500),links:[{evidenceKey:'E',relation:'supports',rationale:'Support'}]}]
   });
   verifyEvidence(db,project.id,packet.researchCase.id,packet.evidence[0].id);
-  reviewResearchClaim(db,project.id,packet.claims[0].id,'approve','Reviewed',authorizeResearch(db,project.id,{actor:'test',reason:'Reviewed'}));
+  reviewResearchClaim(db,project.id,packet.claims[0].id,'approve','Reviewed',authorizeResearch(db,project.id,{scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:'test',reason:'Reviewed'}));
   const result=prepareResearchContext(db,project.id,packet.researchCase.id,{maxTokens:800});
   expect(result.tokenUpperBound).toBeLessThanOrEqual(800);
   expect(result.claimIds).toEqual([]);

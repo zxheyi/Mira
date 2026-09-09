@@ -1,5 +1,5 @@
 import {MiraError} from "../runtime/errors.js";
-import {requireCapability, scopesSchema} from "../runtime/capabilities.js";
+import {requireCapability, scopesSchema,legacyDelegationSchema} from "../runtime/capabilities.js";
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -98,7 +98,7 @@ export function authorizeRecallFeedback(
 ): RecallFeedbackAuthority {
   const parsed = z.object({
     actor:z.string().trim().min(1).max(200),
-    scopes:scopesSchema,
+    scopes:scopesSchema, developmentLegacyBroad:legacyDelegationSchema,
     reason:z.string().trim().min(1).max(1000)
   }).strict().parse(policy);
   assertNoSensitiveInformation(`${parsed.actor}\n${parsed.reason}`, "Recall feedback authority");

@@ -91,7 +91,7 @@ async function json<T>(url: string): Promise<T> {
 describe("viewer server", () => {
   test("authenticated same-origin corrections use immutable history; previews create no recalls", async () => {
     const {url, project} = await setupServer();
-    const memory = curateMemory(db!, {operation: "add", input: {projectId: project.id, title: "Old", content: "Original", kind: "fact", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db!, project.id, {actor: "test", reason: "Fixture setup"}));
+    const memory = curateMemory(db!, {operation: "add", input: {projectId: project.id, title: "Old", content: "Original", kind: "fact", source: "manual", confidence: 1, importance: 5}}, authorizeCuration(db!, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "test", reason: "Fixture setup"}));
     const session = await json<{csrfToken: string}>(`${url}/api/session`);
     const path = `${url}/api/memory/${memory.id}`;
     const body = JSON.stringify({action: "correct", content: "Approved replacement", reason: "User corrected"});
