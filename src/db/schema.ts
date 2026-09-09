@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -821,6 +821,12 @@ export function migrate(db: Database.Database): void {
     if(!columns.has("provenance")) db.exec("alter table memory_candidates add column provenance text");
     if(!columns.has("acceptance_mode")) db.exec("alter table memory_candidates add column acceptance_mode text");
   }
+
+  db.exec(`create table if not exists research_context_recalls (
+    id text primary key,project_id text not null,case_id text not null,receipt text not null check(json_valid(receipt)),created_at text not null,
+    foreign key(project_id) references projects(id) on delete cascade
+  );
+  create index if not exists idx_research_context_recalls_project on research_context_recalls(project_id,created_at desc);`);
 
   db.prepare("insert into schema_version (version, applied_at) values (?, ?)").run(
       CURRENT_SCHEMA_VERSION,

@@ -240,15 +240,18 @@ export function recordPreparedResearchContext(db:Database.Database,packet:Resear
     recorded: true,
     createdAt: new Date().toISOString()
   };
+  db.transaction(()=>{
+  db.prepare('insert into research_context_recalls(id,project_id,case_id,receipt,created_at) values(?,?,?,?,?)').run(receipt.id,projectId,caseId,JSON.stringify(receipt),receipt.createdAt);
   appendDomainEvent(db, {
     id: receipt.id,
     projectId,
     aggregateType: "research_case",
     aggregateId: caseId,
     eventType: "research_context_prepared",
-    payload: receipt,
+    payload: {recallId:receipt.id,caseId,outputHash:receipt.outputHash,manifestHash:selectionHash(receipt.selectionManifest)},
     createdAt: receipt.createdAt
   });
+  })();
   return {...packet, receipt};
 }
 
@@ -261,20 +264,13 @@ export function listResearchContextRecalls(
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     throw new Error("Research Context recall limit must be between 1 and 100");
   }
-  const rows = options.caseId
-    ? db.prepare(`select payload from domain_events
-        where project_id = ? and aggregate_type = 'research_case'
-          and event_type = 'research_context_prepared' and aggregate_id = ?
-        order by created_at desc, rowid desc limit ?`)
-      .all(projectId, options.caseId, limit)
-    : db.prepare(`select payload from domain_events
-        where project_id = ? and aggregate_type = 'research_case'
-          and event_type = 'research_context_prepared'
-        order by created_at desc, rowid desc limit ?`)
-      .all(projectId, limit);
-  return rows.map((row) =>
-    JSON.parse((row as {payload: string}).payload) as ResearchContextRecallReceipt
-  );
+  const rows=db.prepare(`select payload from (
+    select receipt as payload,created_at,id,case_id from research_context_recalls where project_id=?
+    union all
+    select payload,created_at,id,aggregate_id as case_id from domain_events where project_id=? and event_type='research_context_prepared' and json_type(payload,'$.claimIds')='array'
+      and not exists(select 1 from research_context_recalls r where r.id=domain_events.id and r.project_id=domain_events.project_id)
+  ) where (? is null or case_id=?) order by created_at desc,id desc limit ?`).all(projectId,projectId,options.caseId??null,options.caseId??null,limit);
+  return rows.map(row=>JSON.parse((row as {payload:string}).payload) as ResearchContextRecallReceipt);
 }
 
 export function listResearchBriefingSummaries(

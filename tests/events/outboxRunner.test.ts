@@ -19,7 +19,7 @@ function fixture(maxAttempts = 3) {
   const project = createProject(db, {name: "Outbox", rootPath: "/outbox"});
   const event = appendDomainEvent(db, {
     projectId: project.id, aggregateType: "turn", aggregateId: "turn-1",
-    eventType: "turn_completed", payload: {captureRecordId: "capture-1"},
+    eventType: "turn_completed", payload: {sourceHost:"cli",transport:"cli",sessionId:"session-1",captureRecordId: "capture-1",outcomeStatus:"succeeded"},
     createdAt: "2026-09-01T00:00:00.000Z"
   });
   const message = enqueueOutboxMessage(db, {
