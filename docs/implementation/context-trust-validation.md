@@ -1,5 +1,7 @@
 # Context trust release validation
 
+> Historical release snapshot. For the current five-PR validation results, see [Trust hardening validation](trust-validation.md).
+
 Validated on 2026-09-09 with Node v24.20.0 and a matching better-sqlite3 native build. All data used for acceptance checks was synthetic or from the repository's committed public-source fixtures.
 
 ## Coverage

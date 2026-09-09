@@ -37,7 +37,7 @@ jobs:
         run: npm run build
 
       - name: Test
-        run: npm test
+        run: npm run verify:trust -- --tests-only
 
   research:
     name: Research invariants
@@ -58,14 +58,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify target architecture
-        run: npm run verify:target-architecture
-
-      - name: Verify research pilot
-        run: npm run verify:research-pilot
-
-      - name: Verify multi-case research
-        run: npm run verify:multi-case-research
-
-      - name: Verify recall baseline
-        run: npm run benchmark:recall
+      - name: Verify research and architecture contracts
+        run: npm run verify:trust -- --checks-only

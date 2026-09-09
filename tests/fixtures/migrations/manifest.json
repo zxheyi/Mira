@@ -1,0 +1,138 @@
+[
+  {
+    "version": 1,
+    "file": "v1.sql",
+    "sourceCommit": "2acc4178e7214761958f3396b9f2828ca35d9270",
+    "sourceHash": "6016f159ee1dcd27eb56a08fe854229568fccf9a1509697d7f68a5012daf0eef",
+    "fixtureHash": "96075b286b6506589bf3c9ab16bf8fa5da146293af9181c3eda1362fd98e43b3",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 2,
+    "file": "v2.sql",
+    "sourceCommit": "dd8d8d08f840f5edc7241b4c51c879a1441e492d",
+    "sourceHash": "bca8690d3bd99a58c4e9687f021036df601bdbeb8d73db9b8077686ba2ceb8b6",
+    "fixtureHash": "ea2b9785ff6a73e7a0fd5846c21f5f03c17c547c127c0ab230867140ac6f664c",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 3,
+    "file": "v3.sql",
+    "sourceCommit": "a7c9db27c8545464c591d531adfeb10f5648aee6",
+    "sourceHash": "da0dd59a4fe7938408a0f9572c283bc773b5dc09ffdc5a3af8e8e9f923a68a98",
+    "fixtureHash": "9ddcc5123d51cafd67a9bbd563d7b7a17e53d3a7e544ef12d0ec5a3c7276983c",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 4,
+    "file": "v4.sql",
+    "sourceCommit": "5a4b78c83107343677167ea677af48eef3d2d38f",
+    "sourceHash": "7d7ff5ffdfb8958d89ecb7cb4954ea05bc8c92700a820360d55963d8aebbd3f1",
+    "fixtureHash": "934c379c1830c78ed1f7fca7259a1de48042691bf00984ebea4cc4fc9d97759c",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 5,
+    "file": "v5.sql",
+    "sourceCommit": "ff4b0c83b1ccf7b32fb0d7111d0d13c59812d6fe",
+    "sourceHash": "0aab69741bd8ca65bc387a95af7ffe668bc55b46011653cb61ceb5b2d3afa361",
+    "fixtureHash": "5a8a7adb2246df3aef30ba6e1993b96fbbd92c66faa7db695501e3a91895f0d3",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 6,
+    "file": "v6.sql",
+    "sourceCommit": "e7faace26513f3b9a34842a992631dad7bd9faf6",
+    "sourceHash": "d3f0b2e0890e30bcba31bb9ef18af894cd39b389ab16ef894f501c8247ce4bbf",
+    "fixtureHash": "ac86fd28d2ebb46967742ff79222417cce4410186e11fe75a3ae9aaf66c1e66e",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 7,
+    "file": "v7.sql",
+    "sourceCommit": "a1157ee258438ba4120b4394aff127d8579dfb49",
+    "sourceHash": "0271d07e0e821a341ea9f97182cbeaf14fc18720e7d305248f269f267cb11f4f",
+    "fixtureHash": "508d9d4d6788335fa4af3eaab4dfeb429a2e70a4a39325dbefea31eb4f3fa8db",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 8,
+    "file": "v8.sql",
+    "sourceCommit": "80dafa4e5a175fe7cfb9d073eb972efa3df02f9b",
+    "sourceHash": "fdebd3d077e07f8b0f6e62ce59efe65a83388b8021d4dbfe0a859209ac16b049",
+    "fixtureHash": "02c35813c15f012c7556ca1e656dadfdfcb7e236c59493a8256e32bab4960347",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 9,
+    "file": "v9.sql",
+    "sourceCommit": "e6074ff924b0d02df94a96d1cff0e448679f78f2",
+    "sourceHash": "a450603828cc1510baf96be858afa8e66134f300ca99c4733c3160a5ffb180b2",
+    "fixtureHash": "abf0f36582827465abca36fae3738b10782b0403cd33525c11cbc239fa99729e",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 10,
+    "file": "v10.sql",
+    "sourceCommit": "0ce434e75838ae53176ad6dc075e38c038869057",
+    "sourceHash": "4ecf97c2f43082da20e3eca40916f60f09d940dd626d76c0dca0ac765d596db7",
+    "fixtureHash": "1e50079ad19c2d999c933d501d3e73292306cbdd27e7dd66cfab9b708a09a17b",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 11,
+    "file": "v11.sql",
+    "sourceCommit": "8057b3fd94c0ff1cb7a8626dd8f225508a8a0b53",
+    "sourceHash": "d3d0ba496b1aa70ad34f16b02003364f7735b358560656af0b2225c6ffdeee9e",
+    "fixtureHash": "3b1e58a60f954aacc21df8034ff04800d80a5455b1a3f21f286ea5bfcdb6f76a",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 12,
+    "file": "v12.sql",
+    "sourceCommit": "2f75ca66bb41a4cb2b0ad1c9c0808e720b98f822",
+    "sourceHash": "867864eaa48d9b13957777b784f511d7ec78ebdfe7c03524bc850baf481af980",
+    "fixtureHash": "a5bae3426e1339df464a5006a7161972de8afd80e19ddaa6a69c09d99b288213",
+    "provenance": "reconstructed_boundary"
+  },
+  {
+    "version": 13,
+    "file": "v13.sql",
+    "sourceCommit": "2f75ca66bb41a4cb2b0ad1c9c0808e720b98f822",
+    "sourceHash": "867864eaa48d9b13957777b784f511d7ec78ebdfe7c03524bc850baf481af980",
+    "fixtureHash": "9e06c31a98a32a6a1f160aec7e0eecea129063bfd9d359cee7dcc13e688bf559",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 14,
+    "file": "v14.sql",
+    "sourceCommit": "1c5a61bcb3713df69e04e3ea61769369075298ee",
+    "sourceHash": "846ecfd7531ee83b83a8b71ca59ec7fa979b08c1e1657f0220f4a562982b5ba6",
+    "fixtureHash": "3bfdfea1b44f02f5fca8184070565d77d4d97b411c5a76814f2b421cb7d9e9c7",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 15,
+    "file": "v15.sql",
+    "sourceCommit": "40f44988e297706e7b120505e92678b789c30d7f",
+    "sourceHash": "620ca8c215b5a04f20cdd5d41632d3f2700d15dff9cd21be4d341cdceb676989",
+    "fixtureHash": "bbfe6114e47cebacaa6990e8dbb4ee3e53e4ce3d451f68e8f7e56bca187f6864",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 16,
+    "file": "v16.sql",
+    "sourceCommit": "0cc20b3de50b5ffd3e0e63af98f748bbc96083f4",
+    "sourceHash": "421ea7ee37ff044a8f0e45c1c928bfad3b6c21b66c701c3b3fab96988a611af2",
+    "fixtureHash": "81b1d39a719148f6502c3c190dc00f2f2515f26f3a04b4c60e3ab47056f64bc5",
+    "provenance": "historical_committed_schema"
+  },
+  {
+    "version": 17,
+    "file": "v17.sql",
+    "sourceCommit": "129f14782c58eb1377dcbcc57590ba80f401ada0",
+    "sourceHash": "2be70bbabb76bd9b0c17fd5a8582aecbae25fe1ab455e0b9dec33bda16ca55c8",
+    "fixtureHash": "63a36e702209d70dd4c41af83ba766229155d774da44584b3aa6aa8f13025451",
+    "provenance": "historical_committed_schema"
+  }
+]
