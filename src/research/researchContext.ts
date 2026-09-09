@@ -1,3 +1,4 @@
+import {evaluateResearchClaim, evaluateResearchEvidence} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { appendDomainEvent } from "../events/domainOutboxStore.js";
@@ -48,6 +49,7 @@ export type ResearchBriefingSummary = {
   status: string;
   asOfDate: string;
   approvedClaimCount: number;
+  eligibleClaimCount: number;
   pendingReviewClaimCount: number;
   verifiedEvidenceCount: number;
   evidenceCount: number;
@@ -57,23 +59,8 @@ function oneLine(value: string): string {
   return value.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function verifiedEvidenceIds(snapshot: ResearchCaseSnapshot): Set<string> {
-  return new Set(snapshot.verifications
-    .filter((item) => item.current && item.status === "verified")
-    .map((item) => item.evidenceId));
-}
-
 function eligibleClaims(snapshot: ResearchCaseSnapshot): ResearchClaimSnapshot[] {
-  const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
-  const verified = verifiedEvidenceIds(snapshot);
-  return snapshot.claims.filter((claim) => {
-    if (claim.status !== "active" || claim.reviewStatus !== "approved") return false;
-    const supports = claim.links.filter((link) => link.relation === "supports");
-    return supports.length > 0 && supports.every((link) => {
-      const evidence = evidenceById.get(link.evidenceId);
-      return evidence?.state === "current" && verified.has(link.evidenceId);
-    });
-  });
+  return snapshot.claims.filter(claim => evaluateResearchClaim(snapshot, claim).eligible);
 }
 
 function verificationFor(
@@ -130,7 +117,7 @@ export function prepareResearchContext(
         const evidence = evidenceById.get(link.evidenceId);
         if (!evidence || evidence.state !== "current") continue;
         const verification = verificationFor(snapshot.verifications, evidence.id);
-        if (!verification || verification.status !== "verified") {
+        if (!evaluateResearchEvidence(snapshot, evidence.id).eligible) {
           lines.push(`  - ${link.relation}: [evidence:${evidence.id}] omitted from evidence context; verification is ${verification?.status ?? "missing"}`);
           continue;
         }
@@ -261,6 +248,7 @@ export function listResearchBriefingSummaries(
     return {
       id:item.id,title:item.title,status:item.status,asOfDate:item.as_of_date,
       approvedClaimCount:Number(claims.approved ?? 0),
+      eligibleClaimCount:eligibleClaims(getResearchCaseSnapshot(db, projectId, item.id)).length,
       pendingReviewClaimCount:Number(claims.pending ?? 0),
       verifiedEvidenceCount:Number(evidence.verified ?? 0),
       evidenceCount:Number(evidence.total)

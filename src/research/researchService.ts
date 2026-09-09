@@ -1,3 +1,4 @@
+import {evaluateResearchClaim} from "./researchEligibility.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -293,19 +294,6 @@ function recomputeCaseStatus(db: Database.Database, projectId: string, caseId: s
   ).run(completed ? "completed" : "in_review", now, projectId, caseId);
 }
 
-function currentSupportingEvidence(snapshot: ResearchCaseSnapshot, claimId: string): ResearchEvidence[] {
-  const claim = snapshot.claims.find((item) => item.id === claimId);
-  if (!claim) return [];
-  const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
-  return claim.links.filter((link) => link.relation === "supports")
-    .map((link) => evidenceById.get(link.evidenceId))
-    .filter((item): item is ResearchEvidence => Boolean(
-      item
-      && item.state === "current"
-      && (!item.validThrough || item.validThrough >= snapshot.researchCase.asOfDate)
-    ));
-}
-
 export function reviewResearchClaim(
   db: Database.Database,
   projectId: string,
@@ -333,14 +321,9 @@ export function reviewResearchClaim(
       if (claim.evidenceStatus !== "observed" && claim.evidenceStatus !== "supported") {
         throw new Error("Approval requires observed or supported Evidence Status");
       }
-      if (currentSupportingEvidence(snapshot, claimId).length === 0) {
-        throw new Error("Approval requires at least one current support Evidence Item");
-      }
-      const verifiedEvidenceIds = new Set(snapshot.verifications
-        .filter((item) => item.current && item.status === "verified")
-        .map((item) => item.evidenceId));
-      if (currentSupportingEvidence(snapshot, claimId).some((item) => !verifiedEvidenceIds.has(item.id))) {
-        throw new Error("Approval requires every current support Evidence Item to be verified against its Source Snapshot");
+      const eligibility = evaluateResearchClaim(snapshot, claim, false);
+      if (!eligibility.eligible) {
+        throw new Error("Approval requires every current support Evidence Item to be eligible and verified: " + eligibility.reasons.join(", "));
       }
       const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
       const currentContradictions = claim.links.filter((link) => link.relation === "contradicts")
