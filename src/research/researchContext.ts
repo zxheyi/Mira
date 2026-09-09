@@ -1,3 +1,4 @@
+import {createSelectionManifest,selectionHash,textCost,type SelectionManifest} from "../context/selectionManifest.js";
 import {normalizeBudget, withinBudget, type ContextBudget, type ContextSelection} from "../context/contextBudget.js";
 import {contextScope, type ScopeRequest, type ContextScope} from "../context/contextScope.js";
 import {evaluateResearchClaim, evaluateResearchEvidence} from "./researchEligibility.js";
@@ -14,6 +15,7 @@ import type {
 } from "./researchTypes.js";
 
 export type ResearchContextPacket = {
+  selectionManifest:SelectionManifest;
   schemaVersion:1; scope:ContextScope; generatedAt:string;
   selections:ContextSelection[]; budget:Required<ContextBudget>; tokenUpperBound:number; deliveryState:"prepared";
   projectId: string;
@@ -28,6 +30,7 @@ export type ResearchContextPacket = {
 };
 
 export type ResearchContextRecallReceipt = {
+  selectionManifest?:SelectionManifest;
   schemaVersion?:2;scope?:ContextScope;selections?:ContextSelection[];deliveryState?:"prepared";budget?:Required<ContextBudget>;
   id: string;
   projectId: string;
@@ -101,6 +104,7 @@ function prepareResearchContextInTransaction(db:Database.Database,projectId:stri
   const snapshot = getResearchCaseSnapshot(db, projectId, caseId);
   const claims = eligibleClaims(snapshot);
   const selectedClaims:string[]=[];
+  const costs=new Map<string,ReturnType<typeof textCost>>();
   const selections:ContextSelection[]=snapshot.claims.filter(claim=>!evaluateResearchClaim(snapshot,claim).eligible).map(claim=>({type:"claim",id:claim.id,caseId,selected:false,reasons:evaluateResearchClaim(snapshot,claim).reasons}));
   const evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
   const snapshotsById = new Map(snapshot.snapshots.map((item) => [item.id, item]));
@@ -158,6 +162,7 @@ function prepareResearchContextInTransaction(db:Database.Database,projectId:stri
           }
         }
       }
+      costs.set(claim.id,textCost(lines.slice(start).join("\n")+"\n"));
       if (withinBudget(lines.join("\n") + "\n",budget)) {
         selectedClaims.push(claim.id);
         selections.push({type:"claim",id:claim.id,caseId,selected:true,reasons:["approved_current_verified_support"]});
@@ -173,7 +178,23 @@ function prepareResearchContextInTransaction(db:Database.Database,projectId:stri
 
   const rendered = lines.join("\n");
   const markdown = withinBudget(rendered,budget) ? rendered : "";
+  for(const selection of selections) {
+    const claim=snapshot.claims.find(item=>item.id===selection.id)!;
+    selection.section='research.claims';selection.version=claim.id;selection.contentHash=selectionHash(claim);
+    selection.rank=claims.includes(claim)?claims.indexOf(claim)+1:null;selection.cost=costs.get(claim.id)??null;
+    selection.sources=claim.links.flatMap(link=>{
+      const evidence=evidenceById.get(link.evidenceId);
+      if(!evidence) return [];
+      const verification=verificationFor(snapshot.verifications,evidence.id);
+      const source=evidence.snapshotId?snapshotsById.get(evidence.snapshotId):undefined;
+      return [{type:'evidence',id:evidence.id,version:evidence.id,contentHash:selectionHash(evidence)},
+        ...(verification?[{type:'verification',id:verification.id,version:verification.id,contentHash:selectionHash(verification)}]:[]),
+        ...(source?[{type:'snapshot',id:source.id,version:source.id,contentHash:source.contentHash}]:[])];
+    });
+  }
+  const selectionManifest=createSelectionManifest({projectId,caseId,asOfDate:snapshot.researchCase.asOfDate,caseHash:selectionHash(snapshot.researchCase),ordering:'stored_claim_order',coverage:'all_case_claims'},selections,budget,markdown);
   return {
+    selectionManifest,
     schemaVersion:1, scope, generatedAt:new Date().toISOString(),
     selections,budget,tokenUpperBound:Buffer.byteLength(markdown,"utf8"),deliveryState:"prepared",
     projectId,
@@ -203,6 +224,7 @@ export function recallResearchContext(
 export function recordPreparedResearchContext(db:Database.Database,packet:ResearchContextPacket,options:{taskId?:string;transport:"mcp"|"cli"|"ui"|"internal"}):AuditedResearchContextPacket {
   const {projectId,caseId}=packet;
   const receipt: ResearchContextRecallReceipt = {
+    selectionManifest:packet.selectionManifest,
     schemaVersion:2,scope:packet.scope,selections:packet.selections,deliveryState:"prepared",budget:packet.budget,
     id: `research_context_recall_${randomUUID()}`,
     projectId,
