@@ -49,7 +49,7 @@ function toSnapshot(row: SnapshotRow): SourceSnapshot {
 }
 
 function toVerification(row: VerificationRow): EvidenceVerification {
-  return {id:row.id,projectId:row.project_id,caseId:row.case_id,evidenceId:row.evidence_id,
+  return {verificationScope:"snapshot_binding_and_excerpt_integrity",semanticEntailment:"not_evaluated",id:row.id,projectId:row.project_id,caseId:row.case_id,evidenceId:row.evidence_id,
     snapshotId:row.snapshot_id,status:row.status,checks:JSON.parse(row.checks) as EvidenceVerificationChecks,
     receipt:JSON.parse(row.receipt) as EvidenceVerificationReceipt,current:row.is_current === 1,
     supersedesVerificationId:row.supersedes_verification_id ?? undefined,

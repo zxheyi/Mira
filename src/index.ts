@@ -1318,9 +1318,11 @@ research
   .requiredOption("--claim <id>", "Research Claim id")
   .requiredOption("--decision <decision>", "approve, reject, or request_changes")
   .requiredOption("--reason <text>", "Review reason")
+  .option("--semantic-assessment <path>", "JSON semantic assessment bound to the current Claim and Evidence versions")
   .option("--contradictions <path>", "JSON array of structured Contradiction Dispositions")
-  .action(async (options: { claim: string; decision: string; reason: string; contradictions?: string }) => {
+  .action(async (options: { claim: string; decision: string; reason: string; contradictions?: string; semanticAssessment?:string }) => {
     const decision = requireResearchReviewDecision(options.decision);
+    const semanticAssessment=options.semanticAssessment?JSON.parse(await readFile(resolve(options.semanticAssessment),"utf8")):undefined;
     const contradictionDispositions = options.contradictions
       ? JSON.parse(await readFile(resolve(options.contradictions), "utf8")) as ContradictionDisposition[]
       : [];
@@ -1332,7 +1334,7 @@ research
         decision,
         options.reason,
         cliResearchAuthority(session),
-        contradictionDispositions
+        contradictionDispositions,semanticAssessment
       ));
     });
   });

@@ -1,3 +1,4 @@
+import {semanticReviewStatus} from "./semanticReview.js";
 import type Database from "better-sqlite3";
 import type {
   ClaimEvidenceRelation,
@@ -91,7 +92,7 @@ function toSnapshotSummary(row: SourceSnapshotRow): SourceSnapshotSummary {
 }
 
 function toVerification(row: EvidenceVerificationRow): EvidenceVerification {
-  return {id:row.id,projectId:row.project_id,caseId:row.case_id,evidenceId:row.evidence_id,
+  return {verificationScope:"snapshot_binding_and_excerpt_integrity",semanticEntailment:"not_evaluated",id:row.id,projectId:row.project_id,caseId:row.case_id,evidenceId:row.evidence_id,
     snapshotId:row.snapshot_id,status:row.status,checks:JSON.parse(row.checks) as EvidenceVerificationChecks,
     receipt:JSON.parse(row.receipt) as EvidenceVerificationReceipt,current:row.is_current === 1,
     supersedesVerificationId:row.supersedes_verification_id ?? undefined,
@@ -249,5 +250,6 @@ export function getResearchCaseSnapshot(
     from research_events where project_id = ? and case_id = ? order by created_at asc, rowid asc
   `).all(projectId, caseId).map((row) => toEvent(row as ResearchEventRow));
 
-  return { researchCase: toResearchCase(caseRow), snapshots, evidence, verifications, claims, events };
+  const snapshot={ researchCase: toResearchCase(caseRow), snapshots, evidence, verifications, claims, events };
+  return {...snapshot,claims:claims.map(claim=>({...claim,semanticReview:semanticReviewStatus(snapshot,claim)}))};
 }

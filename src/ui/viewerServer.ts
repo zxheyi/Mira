@@ -189,6 +189,14 @@ function dashboardHtml(): string {
       <div id="edit-preview" class="markdown"></div>
       <label id="content-field">更正内容<textarea id="edit-content"></textarea></label>
       <label id="replacement-field">替换的 active 记忆 ID（可选）<input id="edit-replacement" maxlength="500"></label>
+      <fieldset id="semantic-fields" hidden><legend>语义审查（可选）</legend>
+        <label><input type="checkbox" id="semantic-enabled">记录本次语义审查</label>
+        <label>审查方式<select id="semantic-method"><option value="human">人工审查</option><option value="model_assisted">模型辅助审查</option></select></label>
+        <label>证据能否支持结论<select id="semantic-entailment"><option value="uncertain">尚不确定</option><option value="supported">支持</option><option value="unsupported">不支持</option></select></label>
+        <label>结论范围<select id="semantic-scope"><option value="uncertain">尚不确定</option><option value="matched">与证据一致</option><option value="mismatched">不一致</option></select></label>
+        <label>时间范围<select id="semantic-timeRange"><option value="uncertain">尚不确定</option><option value="matched">与证据一致</option><option value="mismatched">不一致</option></select></label>
+        <label>数字与单位<select id="semantic-units"><option value="uncertain">尚不确定</option><option value="matched">与证据一致</option><option value="not_applicable">不涉及</option><option value="mismatched">不一致</option></select></label>
+      </fieldset>
       <label id="contradictions-field">结构化反证处置（JSON）<textarea id="edit-contradictions"></textarea></label>
       <label id="reason-field">操作原因（可选）<input id="edit-reason" maxlength="1000"></label>
       <p id="edit-error" class="error" role="alert"></p>
@@ -381,7 +389,8 @@ function dashboardHtml(): string {
         + '<p><a href="' + escapeHtml(item.sourceUri) + '" target="_blank" rel="noreferrer">打开来源</a> · ' + escapeHtml(item.locator) + '</p>'
         + '<div class="markdown">' + escapeHtml(item.excerpt) + '</div>'
         + '<div class="muted">Snapshot: ' + escapeHtml(source?.id || item.snapshotId || 'missing')
-        + ' · verification: ' + escapeHtml(verification?.status || 'missing')
+        + ' · 结构校验: ' + escapeHtml(verification?.status || 'missing')
+        + '<br>分项校验：' + escapeHtml(JSON.stringify(verification?.checks || {}))
         + (verification?.receipt?.checkCodes?.length ? ' · ' + escapeHtml(verification.receipt.checkCodes.join(', ')) : '') + '</div>'
         + (item.state === 'current' ? '<div class="actions">'
           + (verification?.status !== 'verified' ? actionButton('research-evidence', item.id, 'verify', '校验证据') : '')
@@ -403,6 +412,7 @@ function dashboardHtml(): string {
           : '';
         return '<article class="panel memory-card"><h3>' + escapeHtml(claim.statement) + '</h3>'
           + '<div class="muted">' + escapeHtml(claim.id + ' · ' + claim.status + ' · evidence:' + claim.evidenceStatus + ' · review:' + claim.reviewStatus) + '</div>'
+          + '<p>语义审查：' + escapeHtml(claim.semanticReview?.state || 'not_recorded') + ' · ' + escapeHtml(claim.semanticReview?.assessment?.entailment || '未记录') + '</p>'
           + '<p>置信度 ' + escapeHtml(claim.confidence) + ' · Thesis impact proposal: <b>' + escapeHtml(claim.thesisImpact) + '</b></p>'
           + '<p><b>失效条件：</b>' + escapeHtml(claim.invalidationConditions) + '</p>'
           + '<ul>' + links + '</ul>' + actions + '</article>';
@@ -531,6 +541,9 @@ function dashboardHtml(): string {
         ? (item?.links || []).filter(link => link.relation === 'contradicts')
           .filter(link => state.researchSnapshot?.evidence.find(evidence => evidence.id === link.evidenceId)?.state === 'current')
         : [];
+      document.getElementById('semantic-fields').hidden = resource !== 'research-claims';
+      document.getElementById('semantic-enabled').checked = false;
+      for(const field of ['entailment','scope','timeRange','units']) document.getElementById('semantic-'+field).value='uncertain';
       document.getElementById('contradictions-field').hidden = contradictions.length === 0;
       document.getElementById('edit-contradictions').value = contradictions.length
         ? JSON.stringify(contradictions.map(link => ({evidenceId:link.evidenceId,disposition:'requires_followup',rationale:''})), null, 2)
@@ -643,6 +656,10 @@ function dashboardHtml(): string {
         const contradictions = document.getElementById('edit-contradictions').value.trim();
         if (resource === 'research-claims' && action === 'approve' && contradictions) {
           body.contradictionDispositions = JSON.parse(contradictions);
+        }
+        if(resource==='research-claims' && document.getElementById('semantic-enabled').checked) {
+          body.semanticAssessment={reportedMethod:document.getElementById('semantic-method').value};
+          for(const field of ['entailment','scope','timeRange','units']) body.semanticAssessment[field]=document.getElementById('semantic-'+field).value;
         }
         await api('/api/' + resource + '/' + encodeURIComponent(id), body);
         document.getElementById('editor').close();

@@ -1,3 +1,4 @@
+import type {SemanticReviewStatus} from "./semanticReview.js";
 export const RESEARCH_CASE_STATUSES = ["draft", "in_review", "completed", "archived"] as const;
 export const RESEARCH_SOURCE_TYPES = [
   "regulatory_filing",
@@ -107,6 +108,8 @@ export type EvidenceVerificationReceipt = {
 };
 
 export type EvidenceVerification = {
+  verificationScope?:"snapshot_binding_and_excerpt_integrity";
+  semanticEntailment?:"not_evaluated";
   id: string;
   projectId: string;
   caseId: string;
@@ -175,6 +178,7 @@ export type ResearchEvent = {
 };
 
 export type ResearchClaimSnapshot = ResearchClaim & {
+  semanticReview?:SemanticReviewStatus;
   links: ResearchClaimEvidenceLink[];
 };
 

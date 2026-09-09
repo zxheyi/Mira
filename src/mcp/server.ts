@@ -1,3 +1,4 @@
+import {semanticAssessmentSchema} from "../research/semanticReview.js";
 import {selectToolProfile,type ToolProfile} from "../workflow/toolProfiles.js";
 import {getWorkflowProgress,listWorkflowProgress} from "../workflow/workflowProgress.js";
 import {authorizeContextDelivery,recordContextDelivery,replayContext,getContextDelivery} from "../context/contextJournal.js";
@@ -389,6 +390,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     reason: z.string().trim().min(1).max(2000)
   },
   review_research_claim: {
+    semanticAssessment:semanticAssessmentSchema.optional(),
     claimId: z.string().trim().min(1).max(200),
     decision: z.enum(["approve", "reject", "request_changes"]),
     reason: z.string().trim().min(1).max(2000),
@@ -719,7 +721,8 @@ function executeMiraTool(
           stringArg(args, "decision") as "approve" | "reject" | "request_changes",
           stringArg(args, "reason"),
           session.researchAuthority,
-          (args.contradictionDispositions as never[] | undefined) ?? []
+          (args.contradictionDispositions as never[] | undefined) ?? [],
+          args.semanticAssessment as never
         );
       case "export_research_case":
         return renderResearchCaseMarkdown(
