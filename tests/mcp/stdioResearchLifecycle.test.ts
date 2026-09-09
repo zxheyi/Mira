@@ -36,6 +36,7 @@ describe("Mira MCP stdio research lifecycle", () => {
         projectRoot,
         "--db",
         dbPath,
+        "--allow-scopes", "research.review,research.mutate",
         "--confirmation-policy",
         "Real stdio research lifecycle acceptance"
       ],

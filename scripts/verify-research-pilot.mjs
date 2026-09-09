@@ -31,7 +31,7 @@ const dbPath = join(root, ".mira", "mira.sqlite");
 const db = openDatabase(dbPath);
 migrate(db);
 const project = ensureProjectForRoot(db, root);
-const authority = authorizeResearch(db, project.id, {
+const authority = authorizeResearch(db, project.id, {scopes:["memory.review","memory.mutate","research.review","research.mutate","recall.feedback","context.delivery"],
   actor: "pilot:reviewer",
   reason: "Reproducible public-source pilot review"
 });

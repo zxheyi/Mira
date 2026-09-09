@@ -57,12 +57,12 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
   if (resource === "recall-feedback") {
     const input = recallFeedbackAction.parse(body);
     return recordRecallFeedback(db, projectId, {recallId:id,...input}, authorizeRecallFeedback(
-      db, projectId, {actor:"ui:user",reason:"Explicit local Recall Feedback UI action"}
+      db, projectId, {actor:"ui:user",scopes:["recall.feedback"],reason:"Explicit local Recall Feedback UI action"}
     ));
   }
   if (resource === "memory") {
     const input = memoryAction.parse(body);
-    const authority = authorizeCuration(db, projectId, {actor: "ui:user", reason: "Explicit local management UI action"});
+    const authority = authorizeCuration(db, projectId, {actor: "ui:user", scopes:["memory.mutate"],reason: "Explicit local management UI action"});
     if (input.action === "correct") return curateMemory(db, {operation: "correct", input: {
       projectId,memoryId:id,content:input.content,title:input.title,actor:"ui:user",
       reason:input.reason,recallId:input.recallId
@@ -72,7 +72,7 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
   if (resource === "candidates") {
     const input = reviewAction.parse(body);
     return curateMemory(db, {operation: "review", projectId, candidateId: id, actor: "ui:user", ...input},
-      authorizeCuration(db, projectId, {actor: "ui:user", reason: "Explicit local management UI review"}));
+      authorizeCuration(db, projectId, {actor: "ui:user", scopes:["memory.review"],reason: "Explicit local management UI review"}));
   }
   if (resource === "jobs") {
     z.object({action: z.literal("retry")}).strict().parse(body);
@@ -86,7 +86,7 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
       id,
       input.decision,
       input.reason,
-      authorizeResearch(db, projectId, {actor: "ui:user", reason: "Explicit local Research Claim review"}),
+      authorizeResearch(db, projectId, {actor: "ui:user", scopes:["research.review"],reason: "Explicit local Research Claim review"}),
       input.contradictionDispositions ?? []
     );
   }
@@ -98,14 +98,14 @@ export function applyViewerAction(db: Database.Database, projectId: string, reso
       projectId,
       id,
       input.reason,
-      authorizeResearch(db, projectId, {actor: "ui:user", reason: "Explicit local Evidence lifecycle action"})
+      authorizeResearch(db, projectId, {actor: "ui:user", scopes:["research.mutate"],reason: "Explicit local Evidence lifecycle action"})
     );
   }
   if (resource === "research-snapshots") {
     const input = researchSnapshotAction.parse(body);
     return markResearchSourceSnapshotStale(
       db,projectId,id,input.reason,
-      authorizeResearch(db, projectId, {actor:"ui:user",reason:"Explicit local Source Snapshot lifecycle action"})
+      authorizeResearch(db, projectId, {actor:"ui:user",scopes:["research.mutate"],reason:"Explicit local Source Snapshot lifecycle action"})
     );
   }
   throw new Error("Unsupported viewer action");

@@ -69,7 +69,7 @@ export function runRecallBaseline(input: RecallBaselineCase[]): RecallBaselineRe
   try {
     migrate(db);
     const project = createProject(db, {name: "Mira recall baseline", rootPath: "/mira-recall-baseline"});
-    const authority = authorizeCuration(db, project.id, {actor: "benchmark", reason: "Synthetic recall baseline fixture"});
+    const authority = authorizeCuration(db, project.id, {actor: "benchmark", scopes:["memory.mutate"], reason: "Synthetic recall baseline fixture"});
     const keyByMemoryId = new Map<string, string>();
     for (const item of cases) {
       const memory = curateMemory(db, {operation: "add", input: {

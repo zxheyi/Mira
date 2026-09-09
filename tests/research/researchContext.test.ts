@@ -31,7 +31,7 @@ describe("Research Context", () => {
         {evidenceKey:"E2",relation:"contradicts",rationale:"Forward outlook is weaker."}
       ]}]
     });
-    const authority = authorizeResearch(db, project.id, {actor:"reviewer",reason:"Verified public filing"});
+    const authority = authorizeResearch(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"reviewer",reason:"Verified public filing"});
     const supporting = snapshot.evidence.find((item) => item.sourceUri.endsWith("/q3"))!;
     const contradicting = snapshot.evidence.find((item) => item.sourceUri.endsWith("/outlook"))!;
 

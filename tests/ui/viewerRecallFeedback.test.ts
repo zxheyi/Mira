@@ -26,7 +26,7 @@ test("Viewer records explicit feedback against a generic Recall Receipt", async 
   const dbPath = join(root, ".mira", "mira.sqlite");
   db = openDatabase(dbPath); migrate(db);
   const project = createProject(db, {name:"Recall feedback UI",rootPath:root});
-  const authority = authorizeCuration(db, project.id, {actor:"test",reason:"Viewer feedback fixture"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"test",reason:"Viewer feedback fixture"});
   const relevant = curateMemory(db, {operation:"add",input:{
     projectId:project.id,title:"SQLite fact source",content:"SQLite is Mira's fact source.",
     kind:"decision",source:"manual",confidence:1,importance:8

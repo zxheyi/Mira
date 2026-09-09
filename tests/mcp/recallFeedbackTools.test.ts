@@ -7,7 +7,7 @@ import { callMiraTool, MIRA_MCP_TOOL_NAMES } from "../../src/mcp/server.js";
 test("MCP records confirmed Recall Feedback and exposes a read-only quality report", async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), "mira-recall-feedback-mcp-"));
   const trusted = {projectRoot,dbPath:join(projectRoot,".mira","mira.sqlite"),
-    confirmationPolicy:{actor:"mcp:user",reason:"User explicitly evaluated recalled Memory"}};
+    confirmationPolicy:{scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"mcp:user",reason:"User explicitly evaluated recalled Memory"}};
   const untrusted = {...trusted,confirmationPolicy:undefined};
   const memory = callMiraTool(trusted, "add_memory", {
     title:"Storage",kind:"decision",content:"Use SQLite.",source:"manual"

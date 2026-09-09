@@ -1,5 +1,5 @@
 import {MiraError} from "../runtime/errors.js";
-import {requireCapability, scopesSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
+import {requireCapability, scopesSchema, legacyDelegationSchema, type CapabilityPolicy} from "../runtime/capabilities.js";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { addMemory, listMemoriesForProject, MEMORY_KINDS, type AddMemoryInput, type Memory, type UpdateMemoryInput } from "./memoryStore.js";
@@ -38,7 +38,7 @@ export function authorizeCuration(db: Database.Database, projectId: string, poli
   if (!actor || actor.length > 200 || !reason || reason.length > 1000) throw new Error("Curation authority requires an actor and reason within audit limits");
   assertNoSensitiveInformation(`${actor}\n${reason}`, "Curation authority");
   const authority = Object.freeze({}) as CurationAuthority;
-  authorities.set(authority, {db, projectId, actor, reason, scopes:scopesSchema.parse(policy.scopes)});
+  authorities.set(authority, {db, projectId, actor, reason, scopes:scopesSchema.parse(policy.scopes),developmentLegacyBroad:legacyDelegationSchema.parse(policy.developmentLegacyBroad)});
   return authority;
 }
 

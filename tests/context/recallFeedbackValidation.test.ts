@@ -20,8 +20,8 @@ test("feedback authority and Memory labels cannot cross projects or contradict a
       tokenUpperBound:1,outputHash:"c".repeat(64),latencyMs:1,recorded:true,
       createdAt:"2026-09-01T00:00:00.000Z"};
     recordRecallEvent(db, receipt);
-    const authority = authorizeRecallFeedback(db, project.id, {actor:"reviewer",reason:"Explicit feedback"});
-    const otherAuthority = authorizeRecallFeedback(db, other.id, {actor:"other",reason:"Other project"});
+    const authority = authorizeRecallFeedback(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"reviewer",reason:"Explicit feedback"});
+    const otherAuthority = authorizeRecallFeedback(db, other.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"other",reason:"Other project"});
     const base = {recallId:receipt.id,outcome:"partial" as const,reason:"Explicit evaluation"};
 
     expect(() => recordRecallFeedback(db, project.id, {...base,relevantMemoryIds:[memory.id]}, {} as never)).toThrow(/authority/i);

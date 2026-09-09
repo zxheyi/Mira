@@ -13,7 +13,7 @@ import {
 test("feedback attributes missing memories to retrieval, ranking and budget causes", () => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name: "Quality", rootPath: "/recall-quality"});
-  const authority = authorizeRecallFeedback(db, project.id, {
+  const authority = authorizeRecallFeedback(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],
     actor: "user:reviewer",
     reason: "Explicit recall evaluation"
   });

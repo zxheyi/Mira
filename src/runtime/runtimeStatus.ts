@@ -15,7 +15,7 @@ export function runtimeStatus(input:{scope?:ContextScope;policy?:CapabilityPolic
     configuration:input.doctor ? {state:'observed',source:'project_configuration',observedAt,hosts:input.doctor.integrations}
       : {state:'unknown',source:'not_inspected',observedAt},
     connection:{state:input.connectionObserved?'connected':'unknown',source:input.connectionObserved?'current_mcp_request':'not_observed',observedAt},
-    delegation:input.policy ? {mode:input.policy.scopes===undefined?'legacy_broad_delegation':'scoped',actor:input.policy.actor,scopes:input.policy.scopes??Object.values(GOVERNED_TOOLS).filter((x,i,a)=>a.indexOf(x)===i)} : {mode:input.tools?'none':'unknown',scopes:[]},
+    delegation:input.policy ? {mode:input.policy.scopes===undefined&&input.policy.developmentLegacyBroad?'development_legacy_broad':'scoped',actor:input.policy.actor,scopes:input.policy.scopes??(input.policy.developmentLegacyBroad?Object.values(GOVERNED_TOOLS).filter((x,i,a)=>a.indexOf(x)===i):[])} : {mode:input.tools?'none':'unknown',scopes:[]},
     tools:(input.tools??Object.keys(GOVERNED_TOOLS)).map(name=>({name,registered:input.tools?input.tools.includes(name):'unknown',
       serverPermission:input.tools ? (!GOVERNED_TOOLS[name] || allows(input.policy,GOVERNED_TOOLS[name])?'allowed':'denied') : 'unknown',
       hostApproval:'unknown',scope:GOVERNED_TOOLS[name]??null,

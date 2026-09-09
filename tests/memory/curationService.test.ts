@@ -10,7 +10,7 @@ import { prepareContext } from "../../src/context/contextPreparation.js";
 test("confirmed batch replacement keeps an immutable successor and leaves unrelated memory active", () => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name: "Batch", rootPath: "/batch"});
-  const authority = authorizeCuration(db, project.id, {actor: "reviewer", reason: "Reviewed batch"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "reviewer", reason: "Reviewed batch"});
   try {
     saveThread(db, {id: "batch-source", projectId: project.id, title: "Batch", source: "codex", rawFormat: "markdown", rawText: "Reviewed session"});
     const manual = curateMemory(db, {operation: "add", input: {projectId: project.id, threadId: "batch-source", title: "Manual", content: "Preserve a manually confirmed constraint.", kind: "constraint", source: "manual", confidence: 1, importance: 9}}, authority);
@@ -27,7 +27,7 @@ test("confirmed batch replacement keeps an immutable successor and leaves unrela
 test.each(["deterministic", "reviewed-file"] as const)("%s batch validates atomically, deduplicates and preserves empty-batch state", (method) => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name: "Atomic batch", rootPath: "/atomic-batch"});
-  const authority = authorizeCuration(db, project.id, {actor: "reviewer", reason: "Reviewed batch"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "reviewer", reason: "Reviewed batch"});
   try {
     saveThread(db, {id: "batch", projectId: project.id, title: "Batch", source: "codex", rawFormat: "markdown", rawText: "Approved source"});
     const input = {title: "Storage", kind: "decision" as const, content: "SQLite", confidence: 1, importance: 8};
@@ -64,7 +64,7 @@ test("confirmed curation audits the host policy and rejects forged or cross-proj
   const project = createProject(db, {name: "Audit", rootPath: "/audit"});
   const other = createProject(db, {name: "Other", rootPath: "/other"});
   try {
-    const authority = authorizeCuration(db, project.id, {actor: "host:reviewer", reason: "Local review approved"});
+    const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "host:reviewer", reason: "Local review approved"});
     const command = {operation: "add" as const, input: {projectId: project.id, title: "Policy", content: "Keep SQLite.", kind: "decision" as const, source: "manual", actor: "forged-user", confidence: 1, importance: 8}};
     expect(() => curateMemory(db, command, {} as never)).toThrow(/authority/i);
     expect(() => curateMemory(db, {...command, input: {...command.input, projectId: other.id}}, authority)).toThrow(/authority/i);
@@ -81,7 +81,7 @@ test("confirmed curation audits the host policy and rejects forged or cross-proj
 test("v9 migration preserves memory and failed audit persistence rolls back a correction", () => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name: "Migration", rootPath: "/migration"});
-  const authority = authorizeCuration(db, project.id, {actor: "host", reason: "Explicit review"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "host", reason: "Explicit review"});
   try {
     const first = curateMemory(db, {operation: "add", input: {projectId: project.id, title: "Original", content: "Keep this decision.", kind: "decision", source: "manual", confidence: 1, importance: 8}}, authority);
     db.exec("drop table curation_events; delete from schema_version where version >= 10; insert or ignore into schema_version values (9, '2026-08-01');");
@@ -113,7 +113,7 @@ test.each(["constraint", "architecture", "decision"] as const)("%s candidates re
 test("explicit review approves a paraphrase as a successor with reviewer attribution", () => {
   const db = openDatabase(":memory:"); migrate(db);
   const project = createProject(db, {name: "Curation", rootPath: "/curation"});
-  const authority = authorizeCuration(db, project.id, {actor: "user:reviewer", reason: "Checked original source"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor: "user:reviewer", reason: "Checked original source"});
   try {
     const first = curateMemory(db, {operation: "add", input: {projectId: project.id, title: "Storage", content: "Use SQLite.", kind: "decision", source: "manual", confidence: 1, importance: 5, actor: "user"}}, authority);
     const thread = saveThread(db, {id: "source", projectId: project.id, title: "Review", source: "user", rawFormat: "markdown", rawText: "I confirm local SQLite storage is the chosen design."});

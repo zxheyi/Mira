@@ -24,7 +24,7 @@ test("Viewer correction from a Recall Receipt preserves recallId in immutable Me
   const dbPath = join(root, ".mira", "mira.sqlite");
   db = openDatabase(dbPath); migrate(db);
   const project = createProject(db, {name:"Recall correction UI",rootPath:root});
-  const authority = authorizeCuration(db, project.id, {actor:"test",reason:"Viewer correction fixture"});
+  const authority = authorizeCuration(db, project.id, {scopes:["memory.review" as const,"memory.mutate" as const,"research.review" as const,"research.mutate" as const,"recall.feedback" as const,"context.delivery" as const],actor:"test",reason:"Viewer correction fixture"});
   const predecessor = curateMemory(db, {operation:"add",input:{
     projectId:project.id,title:"Storage decision",content:"Use Postgres.",kind:"decision",
     source:"manual",confidence:1,importance:9

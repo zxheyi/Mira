@@ -31,3 +31,18 @@ test('scoped review authority cannot mutate memories and cannot be widened after
   expect(status.tools.find(t=>t.name==='add_memory')?.serverPermission).toBe('denied');
  }finally{db.close();}
 });
+
+test('missing and empty scopes deny writes even with an actor and confirmation reason',()=>{
+ const db=openDatabase(':memory:');migrate(db);
+ try {
+  const project=createProject(db,{name:'Deny',rootPath:'/deny'});
+  const command={operation:'add' as const,input:{projectId:project.id,title:'X',content:'X',kind:'fact' as const,source:'manual',confidence:1,importance:5}};
+  for(const policy of [{actor:'host',reason:'Confirmed'}, {actor:'host',reason:'Confirmed',scopes:[]}, {actor:'host',reason:'Confirmed',scopes:[],developmentLegacyBroad:true}]) {
+   expect(()=>curateMemory(db,command,authorizeCuration(db,project.id,policy))).toThrow(/memory.mutate/);
+  }
+  expect(db.prepare('select count(*) as n from memories').get()).toEqual({n:0});
+  const policy={actor:'developer',reason:'Explicit compatibility test',developmentLegacyBroad:true};
+  expect(curateMemory(db,command,authorizeCuration(db,project.id,policy))).toMatchObject({title:'X'});
+  expect(runtimeStatus({policy,tools:['add_memory']}).delegation.mode).toBe('development_legacy_broad');
+ }finally{db.close();}
+});
