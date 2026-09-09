@@ -30,3 +30,23 @@ for (const validThrough of ['2026-08-15','2026-09-01']) test(`approval and recal
     }
   } finally {db.close();}
 });
+
+test('research rendering never truncates a Claim or its invalidation conditions',()=>{
+ const db=openDatabase(':memory:');migrate(db);
+ try {
+  const project=createProject(db,{name:'Budget',rootPath:'/budget'});
+  const packet=submitResearchPacket(db,project.id,{
+   case:{title:'Budget',question:'A bounded answer?',asOfDate:'2026-09-01'},
+   snapshots:[{key:'S',canonicalUri:'https://example.test/s',sourceTitle:'S',accessedAt:'2026-09-01',mediaType:'text/plain',content:'Page 1\nObservation.'}],
+   evidence:[{key:'E',snapshotKey:'S',sourceType:'other',sourceUri:'https://example.test/s',sourceTitle:'S',locator:'Page 1',excerpt:'Observation.',accessedAt:'2026-09-01'}],
+   claims:[{key:'C',statement:'A bounded conclusion.',evidenceStatus:'supported',confidence:0.9,thesisImpact:'none',invalidationConditions:'限'.repeat(500),links:[{evidenceKey:'E',relation:'supports',rationale:'Support'}]}]
+  });
+  verifyEvidence(db,project.id,packet.researchCase.id,packet.evidence[0].id);
+  reviewResearchClaim(db,project.id,packet.claims[0].id,'approve','Reviewed',authorizeResearch(db,project.id,{actor:'test',reason:'Reviewed'}));
+  const result=prepareResearchContext(db,project.id,packet.researchCase.id,{maxTokens:800});
+  expect(result.tokenUpperBound).toBeLessThanOrEqual(800);
+  expect(result.claimIds).toEqual([]);
+  expect(result.markdown).not.toContain('A bounded conclusion.');
+  expect(result.selections).toContainEqual(expect.objectContaining({id:packet.claims[0].id,selected:false,reasons:['budget']}));
+ }finally{db.close();}
+});

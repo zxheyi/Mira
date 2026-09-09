@@ -1,3 +1,4 @@
+import {CURRENT_SCHEMA_VERSION} from "../../src/db/schema.js";
 import { afterEach, describe, expect, test } from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/client.js";
@@ -117,7 +118,7 @@ describe("database schema", () => {
       ])
     );
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(14);
+    expect(db.prepare("select version from schema_version order by version desc limit 1").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("v10 migration preserves memory data and scopes research links to one case", () => {
@@ -161,7 +162,7 @@ describe("database schema", () => {
         "research_events"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
 
     const now = new Date().toISOString();
     db.prepare(
@@ -218,7 +219,7 @@ describe("database schema", () => {
       .toBe("changes_requested");
     expect(db.prepare("select status from research_cases where id = 'legacy-case'").pluck().get())
       .toBe("in_review");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("keeps memory FTS synchronized for direct inserts and updates", () => {
@@ -283,7 +284,7 @@ describe("database schema", () => {
     migrate(db);
 
     expect(tableNames(db)).toContain("integration_cursors");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("upgrades version 2 without losing existing data and adds trusted distill contracts", () => {
@@ -332,7 +333,7 @@ describe("database schema", () => {
         "accepted_memory_id"
       ])
     );
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("upgrades version 3 memories to active lifecycle records", () => {
@@ -387,7 +388,7 @@ describe("database schema", () => {
     expect(() => db?.prepare("update memories set status = 'invalid' where id = 'memory_v3'").run()).toThrow(/CHECK/);
     expect(() => db?.prepare("update memories set updated_at = null where id = 'memory_v3'").run()).toThrow(/NOT NULL/);
     expect(db.prepare("select count(*) from memory_fts where memory_fts match ?").pluck().get("Existing")).toBe(1);
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("rolls back a v3 migration before version update when foreign keys are invalid", () => {
@@ -468,7 +469,7 @@ describe("database schema", () => {
       .toBe("Preserve this V4 fact.");
     expect(db.prepare("select count(*) from memory_fts where id = 'memory_v4'").pluck().get()).toBe(1);
     expect(tableNames(db)).toContain("project_briefings");
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("upgrades v5 to v6 without losing data and creates history audit contracts", () => {
@@ -502,7 +503,7 @@ describe("database schema", () => {
       "run_id", "agent", "session_id", "file_path", "recorded_cwd", "fingerprint",
       "outcome", "thread_id", "distill_status", "error_stage", "error_reason"
     ]));
-    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(14);
+    expect(db.prepare("select max(version) from schema_version").pluck().get()).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   test("marks complete project briefings stale after Memory or Working Memory changes", () => {

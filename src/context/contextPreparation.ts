@@ -1,3 +1,6 @@
+import {persistContextPacket} from "./contextJournal.js";
+import {normalizeBudget, withinBudget, type ContextSelection} from "./contextBudget.js";
+import {prepareResearchContext,recordPreparedResearchContext,type ResearchContextPacket} from "../research/researchContext.js";
 import {contextScope, type ScopeRequest, type ContextScope} from "./contextScope.js";
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
@@ -9,7 +12,7 @@ import { recordRecallEvent, type RecallReceipt } from "./recallAuditStore.js";
 
 export type PrepareContextOptions = ScopeRequest & {
   taskId?: string; query?: string; memoryLimit?: number; maxCharacters?: number; maxTokens?: number;
-  recordAudit?: boolean;
+  recordAudit?: boolean; transport?:"mcp"|"cli"|"ui"|"internal"; researchCaseIds?:string[]; retainForSeconds?:number;
 };
 export type ContextPacket = { schemaVersion: 1; scope: ContextScope; generatedAt: string; markdown: string; receipt: RecallReceipt };
 const warningKinds = new Set(["failed_attempt", "lesson", "constraint"]);
@@ -37,7 +40,15 @@ function renderMemory(memory: Memory): string {
 
 /** One public interface owns selection, rendering and the evidence of what was injected. */
 export function prepareContext(db: Database.Database, projectId: string, options: PrepareContextOptions = {}): ContextPacket {
+  if(options.retainForSeconds!==undefined && (!Number.isInteger(options.retainForSeconds)||options.retainForSeconds<0||options.retainForSeconds>86400)) throw new Error("retainForSeconds must be between 0 and 86400");
   const scope = contextScope(db, projectId, options);
+  const budget=normalizeBudget(options);
+  const researchCaseIds=[...new Set(options.researchCaseIds??[])];
+  if(researchCaseIds.length>10) throw new Error("At most 10 Research Cases may be selected");
+  // Validate selected cases before projection or audit writes.
+  const research=researchCaseIds.map(caseId=>prepareResearchContext(db,projectId,caseId,{...options,...budget}));
+  const selections:ContextSelection[]=[];
+  const includedResearch:ResearchContextPacket[]=[];
   const started = Date.now();
   validateInteger(options.memoryLimit, "memoryLimit", 1, 50);
   validateInteger(options.maxCharacters, "maxCharacters", 1, 1_000_000);
@@ -49,6 +60,7 @@ export function prepareContext(db: Database.Database, projectId: string, options
   if (!project) throw new Error(`Project not found: ${projectId}`);
   const shared = listWorkingMemory(db, projectId);
   const task = taskId ? listWorkingMemory(db, projectId, taskId) : [];
+  for(const item of shared) if(task.some(override=>override.kind===item.kind)) selections.push({type:"working_memory",id:item.id,selected:false,reasons:["task_override"]});
   const working = [...new Map([...shared, ...task].map(item => [item.kind, item])).values()]
     .sort((a,b) => workingPriority.indexOf(a.kind) - workingPriority.indexOf(b.kind));
   const briefing = options.recordAudit === false || taskId
@@ -58,8 +70,7 @@ export function prepareContext(db: Database.Database, projectId: string, options
   const injected: string[] = [];
   const dropped: RecallReceipt["dropped"] = [];
   let markdown = "";
-  const fits = (text: string) => (options.maxCharacters === undefined || text.length <= options.maxCharacters)
-    && (options.maxTokens === undefined || Buffer.byteLength(text, "utf8") <= options.maxTokens);
+  const fits = (text: string) => withinBudget(text,budget);
   const append = (text: string): boolean => {
     const next = markdown + text + "\n\n";
     if (!fits(next)) return false;
@@ -72,10 +83,21 @@ export function prepareContext(db: Database.Database, projectId: string, options
   }
   if (taskId) append(`Task ID: ${JSON.stringify(taskId)}`);
   append("## Working Memory");
-  for (const item of working) append(`### ${item.kind}\n- updatedAt: ${item.updatedAt}\n${item.content}`);
+  for (const item of working) {
+    const selected=append(`### ${item.kind}\n- updatedAt: ${item.updatedAt}\n${item.content}`);
+    selections.push({type:"working_memory",id:item.id,selected,reasons:[selected?"task_priority":"budget"],contentHash:createHash("sha256").update(item.content).digest("hex")});
+  }
   if (!working.length) append("No working memory recorded.");
   // The complete Briefing remains available separately; avoid reinjecting its duplicate, unfiltered memories.
-  append(`## Project Briefing\nProject: ${project.name}${briefing ? ` · v${briefing.version}${briefing.staleAt ? " (stale)" : ""}` : ""}`);
+  const briefingSelected=append(`## Project Briefing\nProject: ${project.name}${briefing ? ` · v${briefing.version}${briefing.staleAt ? " (stale)" : ""}` : ""}`);
+  if(briefing) selections.push({type:"briefing",id:briefing.id,selected:briefingSelected,reasons:[briefingSelected?"metadata_only":"budget",...(briefing.staleAt?["stale_projection"]:[])]});
+  for(const packet of research) {
+    const remaining={maxCharacters:Math.max(1,budget.maxCharacters-markdown.length-2),maxTokens:Math.max(1,budget.maxTokens-Buffer.byteLength(markdown,"utf8")-2)};
+    const bounded=prepareResearchContext(db,projectId,packet.caseId,{...options,...remaining});
+    const selected=bounded.markdown.length>0 && append(bounded.markdown);
+    if(selected) includedResearch.push(bounded);
+    selections.push(...bounded.selections.map(item=>item.selected&&!selected?{...item,selected:false,reasons:["budget"]}:item));
+  }
   let currentSection = "";
   for (const memory of ordered) {
     if (injected.length >= (options.memoryLimit ?? 8)) {
@@ -86,18 +108,23 @@ export function prepareContext(db: Database.Database, projectId: string, options
     if (append(text)) { injected.push(memory.id); currentSection = section; }
     else dropped.push({memoryId: memory.id, reason: "budget"});
   }
+  for(const memory of ordered) selections.push({type:"memory",id:memory.id,selected:injected.includes(memory.id),reasons:[injected.includes(memory.id)?(query?"query_match":"project_priority"):dropped.find(item=>item.memoryId===memory.id)?.reason??"not_selected"],contentHash:createHash("sha256").update(memory.content).digest("hex")});
   if (!pool.some(memory => !warningKinds.has(memory.kind))) append("## Long-Term Memory\nNo matching long-term memory.");
   if (dropped.length) append(`Some memories omitted; inspect the recall receipt. (${dropped.length} omitted)`);
   const receipt: RecallReceipt = {
+    schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:"references_only",
     id: `recall_${randomUUID()}`, projectId, ...(taskId ? {taskId} : {}),
     ...(query ? {query: containsSensitiveInformation(query) ? "[REDACTED]" : query} : {}),
     candidateMemoryIds: pool.map(memory => memory.id), injectedMemoryIds: injected, dropped,
     characterCount: markdown.length, tokenUpperBound: Buffer.byteLength(markdown, "utf8"),
-    ...(options.maxCharacters !== undefined ? {maxCharacters: options.maxCharacters} : {}),
-    ...(options.maxTokens !== undefined ? {maxTokens: options.maxTokens} : {}),
+    maxCharacters:budget.maxCharacters,
+    maxTokens:budget.maxTokens,
     outputHash: createHash("sha256").update(markdown).digest("hex"), latencyMs: Date.now() - started,
     recorded: options.recordAudit !== false, createdAt: new Date().toISOString()
   };
-  if (receipt.recorded) recordRecallEvent(db, receipt);
+  if (receipt.recorded) db.transaction(()=>{
+    receipt.researchRecallIds=includedResearch.map(packet=>recordPreparedResearchContext(db,packet,{taskId,transport:options.transport??"internal"}).receipt.id);
+    persistContextPacket(db,receipt,markdown,options.retainForSeconds??0);
+  })();
   return {schemaVersion:1, scope, generatedAt:receipt.createdAt, markdown, receipt};
 }

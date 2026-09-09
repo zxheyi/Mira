@@ -51,6 +51,8 @@ describe("Mira MCP tools", () => {
     const created = createMiraMcpServer(options);
 
     expect(created.toolNames).toEqual([
+      "get_context_replay",
+      "record_context_delivery",
       "get_runtime_status",
       "list_host_adapters",
       "before_turn",
@@ -91,6 +93,8 @@ describe("Mira MCP tools", () => {
 
   test("defines precise agent-facing descriptions for every MCP tool", () => {
     expect(Object.keys(MIRA_MCP_TOOL_DESCRIPTIONS)).toEqual([
+      "get_context_replay",
+      "record_context_delivery",
       "get_runtime_status",
       "list_host_adapters",
       "before_turn",
