@@ -32,6 +32,8 @@ function columnNames(database: Database.Database, table: string): string[] {
 
 // Older focused migration fixtures need the pre-v9 queue table now that v9 alters it.
 function addLegacyQueueFixture(database: Database.Database): void {
+  // These abbreviated legacy fixtures also need the pre-v16 candidate table altered by provenance migration.
+  database.exec("create table if not exists memory_candidates (id text primary key, project_id text)");
   database.exec(`create table distill_jobs (
     id text primary key, project_id text not null, thread_id text not null, trigger text not null,
     channel text not null, input_hash text not null, status text not null, attempts integer not null default 0,

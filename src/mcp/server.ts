@@ -274,6 +274,7 @@ export const MIRA_MCP_TOOL_SCHEMAS = {
     }).strict()).min(1).max(50)
   },
   list_memory_candidates: {
+    offset:z.number().int().min(0).max(1_000_000).optional(),
     status: z.enum(CANDIDATE_STATUSES).optional(),
     limit: z.number().int().min(1).max(100).optional()
   },
@@ -630,7 +631,7 @@ function executeMiraTool(
             db,
             projectId,
             optionalStringArg(args, "status") as (typeof CANDIDATE_STATUSES)[number] | undefined,
-            numberArg(args, "limit", 50)
+            numberArg(args, "limit", 50), numberArg(args,"offset",0)
           )
         };
       case "review_memory_candidate":

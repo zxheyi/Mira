@@ -24,7 +24,7 @@ function setup() {
   migrate(db);
   const project = createProject(db, { name: "Mira", rootPath: "/workspace/mira-candidates" });
   const rawText = [
-    "## Summary",
+    "### User",
     "Mira stores durable project memory in local SQLite.",
     "We decided that architecture changes require human review.",
     "Use numbered migrations for every schema change.",

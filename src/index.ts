@@ -807,14 +807,15 @@ memoryCandidate
   .command("list")
   .description("List memory candidates")
   .option("--status <status>", "pending_review, accepted, or rejected")
+  .option("--offset <number>","Candidate pagination offset","0")
   .option("--limit <number>", "Maximum candidates", "50")
-  .action(async (options: { status?: string; limit: string }) => {
+  .action(async (options: { status?: string; limit: string;offset:string }) => {
     await withProject(program.opts<GlobalOptions>(), (session) => {
       printJson(listMemoryCandidates(
         session.db,
         session.project.id,
         options.status ? requireCandidateStatus(options.status) : undefined,
-        numberInRange(options.limit, 1, 100, "limit")
+        numberInRange(options.limit, 1, 100, "limit"),integerInRange(options.offset,0,1_000_000,"offset")
       ));
     });
   });

@@ -18,7 +18,7 @@ function setup() {
   const project = createProject(db, { name: "Mira", rootPath: "/workspace/mira-worker" });
   saveThread(db, {
     id: "thread_worker", projectId: project.id, title: "Worker", source: "codex",
-    rawFormat: "markdown", rawText: "Use a one-shot worker for trusted distillation."
+    rawFormat: "markdown", rawText: "### User\nUse a one-shot worker for trusted distillation."
   });
   return { database: db, project };
 }

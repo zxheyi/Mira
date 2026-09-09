@@ -269,7 +269,7 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="optional-api-key"
 ```
 
-只有 `confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson` 或 `failed_attempt` 的候选会自动接受。`decision`、`architecture`、`constraint`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
+只有证据能在已保存会话中唯一定位为用户发言、`confidence >= 0.9`、证据可定位、未命中敏感信息、无重复/冲突且 kind 为 `fact`、`convention`、`lesson` 或 `failed_attempt` 的候选会自动接受。`decision`、`architecture`、`constraint`、`preference` 等高影响类型默认待审。候选绑定提取时的 Thread 版本，正文变化后必须重新提交；项目内跨 Thread 的相同 Memory 只建立追溯关系，不重复写入。
 
 Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模式，但无法识别所有敏感内容；未命中的完整 Thread 会发送到你配置的 Provider，请只在确认其隐私与数据保留策略后启用。未配置 Provider 时自动捕获保持原行为，Agent MCP 候选通道仍可用。
 
@@ -277,7 +277,7 @@ Provider 是显式 opt-in。Mira 会在请求前拦截常见私钥和 Token 模�
 
 Memory 内容不原地覆盖。更新会创建 active successor，并在同一事务中把 predecessor 标记为 superseded；历史内容和事件账本始终可审计。归档会让 Memory 退出默认搜索和 Context Bundle，合法恢复后重新进入：
 
-CLI、MCP 与管理 UI 的写入统一经过记忆治理服务。`add/update/archive/restore` 是用户或协议已确认的操作；自动归纳只能提交 candidate。除来源片段必须存在、低风险、高置信度、无冲突外，自动接受还要求内容在 evidence 中逐字出现（忽略空白差异）。改写或推论标记 `non_verbatim_claim`，留待显式审核。这个保守规则不是语义真实性证明；Mira 记忆层不因此获得修改投资 thesis 的权限。写入内容、来源、审核/归档理由含可识别密钥时，整次操作拒绝且不改变旧记忆。已审核的 `apply-candidates` 和手动 `memory distill` 仍为显式批量写入，也经过相同检查。
+CLI、MCP 与管理 UI 的写入统一经过记忆治理服务。`add/update/archive/restore` 是用户或协议已确认的操作；自动归纳只能提交 candidate。除来源片段必须存在、低风险、高置信度、无冲突外，自动接受还要求来源为可定位的用户发言且内容在 evidence 中逐字出现（忽略空白差异）。改写或推论标记 `non_verbatim_claim`，留待显式审核。这个保守规则不是语义真实性证明；Mira 记忆层不因此获得修改投资 thesis 的权限。写入内容、来源、审核/归档理由含可识别密钥时，整次操作拒绝且不改变旧记忆。已审核的 `apply-candidates` 和手动 `memory distill` 仍为显式批量写入，也经过相同检查。
 
 ```bash
 mira memory get --id memory_123
@@ -420,3 +420,5 @@ MVP 中 `save_thread` 的输入是 Agent 生成的会话摘要或关键摘录，
 - [Nowledge Mem 多角度分析](docs/research/nowledge-mem-analysis.md)
 - [Nowledge Mem 逆向分析报告](docs/research/nowledge-mem-reverse-engineering.md)
 - [Rowboat 项目文档总结](docs/research/rowboat-summary.md)
+
+候选策略 v2 保留来源角色、原文/推断、片段位置、Thread 哈希、策略原因与接受方式。助手或工具发言以及无法归属的摘要待审；confidence 是提炼器自报分值，不是真实性概率。旧候选不回填猜测的来源。`memory candidate list --status pending_review --offset 0 --limit 50` 支持分页；Viewer 默认待审，可跳转到对应 Memory 纠正或归档。
