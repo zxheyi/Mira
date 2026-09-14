@@ -139,6 +139,10 @@ mira --project-root /absolute/path/to/your-project integration uninstall --agent
 | `mira thread delete --id thread_123 --confirm-hard-delete` | 永久删除指定 Thread 及其关联记忆。 |
 | `mira project delete --id project_123 --confirm-hard-delete` | 永久删除指定项目的本地 Mira 数据。 |
 
+### 查询与预算
+
+带查询的上下文先保留阻塞项与当前任务，再为能够完整放入预算的一条匹配记忆预留空间。检索支持中文分词和有限的中英开发术语匹配，并过滤常见词及无关的项目名命中；仍可使用字面短语检索。无查询及显式选择 Research Case 时保留原有分配顺序。边界与保留行为见[查询召回规格](specs/030-query-recall-optimization/spec.md)。
+
 ### 评价召回效果
 
 通过 `mira context recalls` 查看召回记录，使用 `mira context feedback --help` 了解如何记录用户的明确评价，再用 `mira context quality` 查看汇总报告。对应的 MCP 工具为 `record_recall_feedback` 和 `get_recall_quality_report`；写入反馈需要相应权限。
