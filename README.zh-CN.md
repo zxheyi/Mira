@@ -112,7 +112,7 @@ mira --project-root /absolute/path/to/your-project integration uninstall --agent
 
 ## 日常工作流
 
-在目标项目中执行命令，或在子命令前添加 `--project-root /absolute/path/to/project`。完整选项可通过 `mira <command> --help` 查看。
+在目标项目中执行命令，或添加 `--project-root /absolute/path/to/project`。全局选项需要放在子命令前。完整选项可通过 `mira <command> --help` 查看。
 
 | 任务 | 命令 |
 | --- | --- |
@@ -130,6 +130,21 @@ mira --project-root /absolute/path/to/your-project integration uninstall --agent
 
 请将示例 ID 换成 Mira 返回的实际 ID。纠正 Memory 会创建后继版本，保留历史。归档使记忆退出默认检索；永久删除使用独立命令，必须显式传入 `--confirm-hard-delete`。
 
+需要清理数据时，按目标范围选择命令：
+
+| 命令 | 效果 |
+| --- | --- |
+| `mira working clear --kind next_step` | 清除当前作用域保存的下一步；省略 `--kind` 则清除该作用域的全部工作状态。 |
+| `mira memory clear --thread thread_123 --confirm-hard-delete` | 永久删除指定 Thread 关联的记忆。 |
+| `mira thread delete --id thread_123 --confirm-hard-delete` | 永久删除指定 Thread 及其关联记忆。 |
+| `mira project delete --id project_123 --confirm-hard-delete` | 永久删除指定项目的本地 Mira 数据。 |
+
+### 评价召回效果
+
+通过 `mira context recalls` 查看召回记录，使用 `mira context feedback --help` 了解如何记录用户的明确评价，再用 `mira context quality` 查看汇总报告。对应的 MCP 工具为 `record_recall_feedback` 和 `get_recall_quality_report`；写入反馈需要相应权限。
+
+只有用户实际评价后才能标注，不能根据工具调用成功推断召回有用。报告至少需要 20 条已标注召回；仅当其中至少 5 条反馈确认存在检索漏召回时，才建议评估混合检索。排序、预算和记忆内容质量问题分别统计。详见[召回反馈规格](specs/029-recall-feedback/spec.md)。
+
 ### 导入已有会话
 
 先预览一个受限批次，再正式导入：
@@ -146,6 +161,8 @@ mira history failures --limit 20
 ```bash
 mira import --source codex --format jsonl --path /path/to/session.jsonl
 ```
+
+手动保存摘要使用 `mira thread save`，其中 `--raw-format` 是 `--format` 的别名。
 
 导入会保存 Thread，不会直接把每段对话变成长期 Memory。可选的 `--distill` 为新增或更新的 Thread 入队模型提炼任务。部分文件导入失败时，命令返回退出码 `2`，并保留审计汇总。
 

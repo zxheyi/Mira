@@ -130,6 +130,21 @@ Run commands in the target project, or put `--project-root /absolute/path/to/pro
 
 Replace example IDs with IDs returned by Mira. Memory corrections create successors rather than overwriting history. Archive removes a memory from default retrieval; permanent deletion uses separate commands with `--confirm-hard-delete`.
 
+For deliberate cleanup, use the command matching the data you intend to remove:
+
+| Command | Effect |
+| --- | --- |
+| `mira working clear --kind next_step` | Clear the current scope's saved next step; omit `--kind` to clear all working state in that scope. |
+| `mira memory clear --thread thread_123 --confirm-hard-delete` | Permanently erase memories linked to the specified Thread. |
+| `mira thread delete --id thread_123 --confirm-hard-delete` | Permanently erase the Thread and its linked memories. |
+| `mira project delete --id project_123 --confirm-hard-delete` | Permanently erase the project's local Mira data. |
+
+### Evaluate recalled memory
+
+Use `mira context recalls` to inspect recorded context, `mira context feedback --help` to record an explicit user evaluation, and `mira context quality` to inspect the aggregate report. The MCP equivalents are `record_recall_feedback` and `get_recall_quality_report`; feedback writes require the corresponding authority.
+
+Label recalls only when the user evaluates them. A successful tool call does not prove useful recall. The report needs at least 20 labeled recalls; it recommends evaluating hybrid retrieval only when at least five feedback records identify a retrieval miss. Ranking, budget, and memory-quality problems are tracked separately. See the [recall feedback specification](specs/029-recall-feedback/spec.md).
+
 ### Import existing sessions
 
 Start with a bounded preview, then import:
@@ -146,6 +161,8 @@ Bulk import scans local Codex and Claude Code history for the current project. U
 ```bash
 mira import --source codex --format jsonl --path /path/to/session.jsonl
 ```
+
+For manually saved summaries, `mira thread save` accepts `--raw-format` as an alias for `--format`.
 
 Importing saves Threads; it does not by itself make every conversation a durable Memory. Optional `--distill` queues provider extraction for new or updated Threads. A partial import failure returns exit code `2` and an audit summary.
 
