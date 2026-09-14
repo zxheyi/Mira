@@ -42,8 +42,38 @@ Both receipts were recorded as `prepared`; these two calls were observed in Code
 
 Working-Memory-only handoff receipts are kept as adoption evidence. They are not used here to fill the long-term retrieval feedback threshold. The current feedback implementation accepts empty Memory ID sets and counts all stored labels, so operators must preserve that distinction when gathering evidence.
 
+## Follow-up Agent evaluation
+
+The user subsequently delegated evaluation to Codex. The following judgments are Agent assessments, stored separately from user-authored recall feedback.
+
+| Existing sample | Agent judgment | Reason |
+| --- | --- | --- |
+| Native Claude Code handoff | Accurate and complete for the requested handoff | The answer recovered the completed work, decisions, and next step without unsupported additions, and correctly deferred any claim about Stop capture until it was checked. |
+| Original 1,000-token contribution query | `missed` | Exact replay contains the historical PR outcome but neither the four contribution rules nor the `recent_decision` entry that summarized them. It cannot fully answer the question. |
+| Original 2,000-token contribution query | `useful` | Exact replay contains all four source rules and the corresponding working-state decision. |
+
+Codex then fixed eight queries before execution and ran each at 1,000 and 2,000 tokens against the existing one-Memory project. All 16 calls used `preview: true`; live Memory, Recall Receipt, and user-feedback counts remained unchanged at 1, 8, and 0. This follow-up used the shorter working state saved after the first experiment, so its token costs differ from the original receipts.
+
+| Query group | Queries | Candidate found | Selected at 1,000 tokens | Selected at 2,000 tokens |
+| --- | --- | --- | --- | --- |
+| Related queries preserving title or English terms | 3 | 3/3 | 0/3 | 3/3 |
+| Related paraphrases: two Chinese, one English | 3 | 1/3 | 0/3 | 1/3 |
+| Unrelated queries: port and database engine | 2 | 1/2 unwanted matches | 0/2 | 1/2 unwanted selections |
+
+The evidence exposes three distinct limitations:
+
+- **Budget competition:** matching packets had a token upper bound of 798 after omitting the Memory. At 2,000 tokens they included it, with a total upper bound of 1,195. A lower budget masked the unrelated match as well as blocking useful matches.
+- **Chinese paraphrase misses:** “修完缺陷后，可以直接把改动放到主干吗？” and “开发新功能时，应该在哪条分支上工作？” returned no candidate at either budget, even though the Memory answers both. More budget cannot recover an absent candidate.
+- **Common-word matches:** “Mira 默认监听端口是多少？” selected the contribution Memory because of the project name. The English paraphrase “Can I bypass peer approval when integrating a fix?” matched only the word `a` in a term-by-term probe. Its apparent success therefore does not demonstrate semantic retrieval.
+
+The existing independent 20-question in-memory baseline also passed its current regression threshold: the 15 queries retaining key terms all ranked their target first, while all five semantic paraphrases returned no results. Recall@1, Recall@5, and MRR were each 0.75. That baseline directly tests `searchMemories`, not context budgeting or host behavior.
+
+The practical priority is to reduce competition from working state, preserve room for query-relevant rules, and evaluate Chinese query handling and common-term filtering. Neither a universal 2,000-token default nor a vector-search migration is established by these small samples. This evaluation did not change retrieval behavior or the user-feedback threshold.
+
 ## Evidence and remaining work
 
 Local evidence is retained under the ignored `artifacts/trust-validation/adoption-20260914/` directory: native event streams, the neutral handoff prompt, a read-only database evidence summary, candidate review output, and both recall receipts. Raw host streams are not committed because they also contain unrelated host initialization context.
 
-The next step is to record only explicit user evaluations against the corresponding receipts and gather further independent examples during normal work. The [recall feedback rule](../../specs/029-recall-feedback/spec.md) requires at least 20 labeled recalls; at least five distinct true retrieval-miss records are needed before it suggests evaluating hybrid retrieval. This single-project run does not meet that evidence threshold.
+The follow-up adds the predefined query set, frozen working state, all 16 preview results, term-attribution probes, and the 20-question baseline in `agent-evaluation-*.json`, `agent-term-attribution.json`, and `agent-baseline.json`. It completes the delegated assessment of the two original results; no further user rating is required to complete that Agent assessment.
+
+Further independent examples from normal work would be needed to measure general retrieval quality. The [user-feedback rule](../../specs/029-recall-feedback/spec.md) still requires at least 20 labeled recalls; at least five distinct true retrieval-miss records are needed before it suggests evaluating hybrid retrieval. These Agent evaluations do not fill that user-feedback threshold.
