@@ -139,6 +139,10 @@ For deliberate cleanup, use the command matching the data you intend to remove:
 | `mira thread delete --id thread_123 --confirm-hard-delete` | Permanently erase the Thread and its linked memories. |
 | `mira project delete --id project_123 --confirm-hard-delete` | Permanently erase the project's local Mira data. |
 
+### Query and budget behavior
+
+Explicit-query context keeps blockers and the current task first, then reserves room for one complete matching Memory when it fits. Search handles segmented Chinese terms and a bounded set of English/Chinese development terms, while filtering common words and unrelated project-name matches. Literal phrase search remains available. No-query context and explicitly selected Research Cases keep their existing allocation order. See the [query recall specification](specs/030-query-recall-optimization/spec.md) for limits and preserved behavior.
+
 ### Evaluate recalled memory
 
 Use `mira context recalls` to inspect recorded context, `mira context feedback --help` to record an explicit user evaluation, and `mira context quality` to inspect the aggregate report. The MCP equivalents are `record_recall_feedback` and `get_recall_quality_report`; feedback writes require the corresponding authority.
