@@ -8,16 +8,24 @@ async function readProjectFile(path: string): Promise<string> {
 
 describe("documentation readiness", () => {
   test("README includes first-run setup, destructive commands, and global option placement", async () => {
-    const readme = await readProjectFile("README.md");
+    const [english, chinese] = await Promise.all([
+      readProjectFile("README.md"),
+      readProjectFile("README.zh-CN.md")
+    ]);
 
-    expect(readme).toContain("npm install");
-    expect(readme).toContain("npm run build");
-    expect(readme).toContain("mira thread delete");
-    expect(readme).toContain("mira project delete");
-    expect(readme).toContain("mira memory clear");
-    expect(readme).toContain("mira working clear");
-    expect(readme).toContain("全局选项需要放在子命令前");
-    expect(readme).toContain("`--raw-format` 是 `--format` 的别名");
+    for (const readme of [english, chinese]) {
+      expect(readme).toContain("npm install");
+      expect(readme).toContain("npm run build");
+      expect(readme).toContain("mira thread delete");
+      expect(readme).toContain("mira project delete");
+      expect(readme).toContain("mira memory clear");
+      expect(readme).toContain("mira working clear");
+      expect(readme).toContain("--confirm-hard-delete");
+    }
+    expect(english).toContain("before the subcommand");
+    expect(english).toContain("`--raw-format` as an alias for `--format`");
+    expect(chinese).toContain("全局选项需要放在子命令前");
+    expect(chinese).toContain("`--raw-format` 是 `--format` 的别名");
   });
 
   test("agent templates describe required MCP arguments and failed attempt kind guidance", async () => {
