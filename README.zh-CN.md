@@ -180,7 +180,7 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="your-provider-key"
 ```
 
-以上均为占位值。模型提炼会把已保存的 Thread 内容发送到配置的服务，敏感模式过滤不能保证识别所有隐私内容。不配置 Provider 时，本地捕获、搜索、上下文生成和 Agent 候选提交仍可使用。
+以上均为占位值。模型提炼会把已保存的 Thread 内容发送到配置的服务，敏感模式过滤不能保证识别所有隐私内容。不配置 Provider 时，本地捕获、搜索、上下文生成和 Agent 候选提交仍可使用。原生 Hook 仍会处理本地 Outbox 并刷新简报；提炼任务保留为 `pending`，等待配置模型服务。
 
 自动接受采用保守规则：低风险候选还需满足高置信度、可归属的用户证据、逐字支持，且未检测到密钥、重复或冲突。高影响内容或推论需要审核。置信度由提炼器自报，不是真实性证明。详见[记忆治理说明](docs/implementation/trust-hardening.md)。
 

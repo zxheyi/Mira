@@ -69,7 +69,9 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="optional-api-key"
 ```
 
-Provider 使用 OpenAI-compatible `/chat/completions`。成功捕获变化后的 Thread 后，Hook 只执行本地幂等入队并 detached 启动一次性 Worker，不等待网络请求。未配置 `MIRA_LLM_BASE_URL` 或 `MIRA_LLM_MODEL` 时不会入队，也不会产生失败任务。
+Provider 使用 OpenAI-compatible `/chat/completions`。成功捕获 Thread 后，Hook 消费本地 Outbox、幂等创建提炼任务并刷新简报；SessionStart 和正文未变化的结束回调也会恢复未完成的本地工作。未配置 `MIRA_LLM_BASE_URL` 或 `MIRA_LLM_MODEL` 时，提炼任务保留为 `pending`，不会启动 Worker 或发出模型请求。配置完整时才 detached 启动一次性 Worker，Hook 不等待网络请求。
+
+整份标准化会话最多保存 5,000,000 字符，单条 Turn 的 query/response 摘取仍限制为 50,000 字符；不会为满足单条消息限制而截断已保存的会话正文。同一正文的 Stop/SessionEnd 重放可以更新文件检查点，不重复创建捕获或后台事件，也不会覆盖较新的会话版本。
 
 候选必须携带可在 Thread 正文中定位的原文证据，并绑定提取时的 Thread 版本。正文变化后旧待审候选不能接受，需要重新提交。高置信低风险候选可自动接受；高影响、低置信或冲突候选留在审核队列：
 
@@ -129,7 +131,8 @@ tail -n 50 /absolute/project/.mira/integrations.log
 - `transcript-path-not-allowed`：文件不在 Agent 官方会话目录。
 - `transcript-unchanged`：检查点确认 transcript 没有变化。
 - `hook-processing-failed`：导入或数据库操作失败；修复后下一次 Hook 会重试。
-- `distill-enqueue-failed`：Thread 已保存，但提炼入队或 Worker 启动失败；不会阻塞 Agent，可用 CLI 手动 enqueue。
+- `distill-enqueue-failed`：Thread 已保存，但可选的变化通知回调失败；不会阻塞 Agent。
+- `capture-followup-failed` / `worker-resume-failed`：捕获或上下文已保存，但后续本地处理或 Worker 启动失败；下次有效 Hook 会尝试恢复。通过 `mira outbox list` 和 `mira distill jobs list` 查看任务，`mira outbox run --drain` 可手动消费本地 Outbox。
 
 ## 卸载
 

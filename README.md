@@ -180,7 +180,7 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="your-provider-key"
 ```
 
-These are placeholders. Provider extraction sends saved Thread content to the configured service. Sensitive-pattern filtering is not a complete privacy guarantee. Without a provider, local capture, search, context, and agent-submitted candidates remain available.
+These are placeholders. Provider extraction sends saved Thread content to the configured service. Sensitive-pattern filtering is not a complete privacy guarantee. Without a provider, local capture, search, context, and agent-submitted candidates remain available. Native hooks still process local Outbox work and refresh Briefings; extraction jobs wait in `pending` until a provider is configured.
 
 Automatic acceptance is conservative: eligible low-risk candidates need high confidence, attributable user evidence, verbatim support, and no detected secret, duplicate, or conflict. High-impact or inferred content requires review. Confidence is extractor-reported, not proof of truth. See [memory governance](docs/implementation/trust-hardening.md).
 

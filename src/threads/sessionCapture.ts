@@ -14,8 +14,9 @@ export type CaptureResult = CapturePreview & {thread: Thread};
  * Capturing evidence never extracts or approves formal memory.
  */
 export function captureSession(db: Database.Database, input: SessionCaptureInput): CaptureResult;
+export function captureSession(db: Database.Database, input: SessionCaptureInput, options: {replay: true}): CaptureResult;
 export function captureSession(db: Database.Database, input: SessionCaptureInput, options: {preview: boolean}): CapturePreview;
-export function captureSession(db: Database.Database, input: SessionCaptureInput, options: {preview?: boolean} = {}): CapturePreview {
+export function captureSession(db: Database.Database, input: SessionCaptureInput, options: {preview?: boolean; replay?: boolean} = {}): CapturePreview {
   for (const field of ["id", "projectId", "title", "source", "rawText"] as const) {
     if (typeof input[field] !== "string" || !input[field].trim()) throw new Error(`Session ${field} is required`);
   }
@@ -35,11 +36,23 @@ export function captureSession(db: Database.Database, input: SessionCaptureInput
     if (owner && owner.project_id !== input.projectId) throw new Error(`Thread belongs to a different project: ${input.id}`);
     const existing = getThread(db, input.projectId, input.id);
     const previous = checkpoint && getCaptureCursor(db, input.projectId, checkpoint.agent, checkpoint.sessionId);
-    if (checkpoint && previous?.transcriptPath === checkpoint.transcriptPath && previous.mtimeMs > checkpoint.mtimeMs) {
-      throw new Error("Stale capture checkpoint; read the transcript again before retrying");
-    }
+    const stale = checkpoint && previous?.transcriptPath === checkpoint.transcriptPath &&
+      (previous.mtimeMs > checkpoint.mtimeMs || (previous.mtimeMs === checkpoint.mtimeMs && previous.size > checkpoint.size));
     const unchanged = existing && existing.title === input.title && existing.source === input.source &&
       existing.rawFormat === input.rawFormat && existing.rawText === input.rawText;
+    // A completed lifecycle input has already passed its immutable replay check.
+    // Observe matching evidence, but never replace a later snapshot or rewind its cursor.
+    if (options.replay && existing) {
+      if (!options.preview && unchanged && checkpoint && !stale &&
+        (!previous || previous.transcriptPath === checkpoint.transcriptPath) &&
+        (!previous || previous.size !== checkpoint.size || previous.mtimeMs !== checkpoint.mtimeMs)) {
+        saveCaptureCursor(db, {...checkpoint, projectId: input.projectId});
+      }
+      return {outcome: "unchanged", thread: existing};
+    }
+    if (stale || (options.replay && previous && previous.transcriptPath !== checkpoint?.transcriptPath)) {
+      throw new Error("Stale capture checkpoint; read the transcript again before retrying");
+    }
     const outcome = !existing ? "imported" : unchanged ? "unchanged" : "updated";
     if (options.preview) return {outcome, thread: existing};
     const {checkpoint: _checkpoint, ...threadInput} = input;
