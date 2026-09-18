@@ -165,7 +165,7 @@ describe("context bundle", () => {
       importance: 4
     });
 
-    const bundle = buildContextBundle(database, project.id, { query: "Mira unsafe" });
+    const bundle = buildContextBundle(database, project.id, { query: "local unsafe" });
 
     expect(bundle.indexOf("## Warnings")).toBeLessThan(bundle.indexOf("## Long-Term Memory"));
     expect(bundle.indexOf("## Project Briefing")).toBeLessThan(bundle.indexOf("## Warnings"));

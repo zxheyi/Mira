@@ -13,7 +13,7 @@ A common turn has four steps:
 
 ## Recovery and audit
 
-- Queued: inspect Outbox and distillation workers; do not repeat the same turn under a new ID.
+- Queued: native capture callbacks (including unchanged replays) and successful SessionStart hooks drain local Outbox work independently of model configuration. Use `mira outbox run --drain` to recover local work explicitly. Distillation jobs remain pending until a Provider is configured; only then do native hooks launch a detached model worker. Inspect both Outbox and distillation jobs, and do not repeat the same turn under a new ID.
 - Pending review: inspect original evidence, role, policy reasons and corresponding Memory before accepting.
 - Failed: inspect the job/message error and use the existing explicit retry operation; workflow queries do not execute work.
 - Source changed: submit fresh candidates against the latest Thread; do not approve an old extraction.

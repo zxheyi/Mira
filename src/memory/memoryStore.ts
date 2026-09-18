@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { recordMemoryEvent, type MemoryEventType } from "./memoryEventStore.js";
+import { prepareMemoryQuery } from "./queryPlan.js";
+export { MEMORY_QUERY_POLICY_VERSION } from "./queryPlan.js";
 
 export const MEMORY_KINDS = [
   "decision",
@@ -107,22 +109,6 @@ function toMemory(row: MemoryRow): Memory {
 
 function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
-}
-
-function quoteFtsTerm(term: string): string {
-  return `"${term.replace(/"/g, '""')}"`;
-}
-
-function toFtsQuery(query: string, mode: SearchMemoriesOptions["queryMode"] = "orTerms"): string {
-  if (mode === "orTerms") {
-    const terms = query.split(/\s+/).map((term) => term.trim()).filter(Boolean);
-    if (terms.length === 0) {
-      return quoteFtsTerm(query);
-    }
-    return terms.map(quoteFtsTerm).join(" OR ");
-  }
-
-  return quoteFtsTerm(query);
 }
 
 function findDuplicateMemory(
@@ -434,9 +420,17 @@ export function searchMemories(
 
   const kindClause = options.kind ? "and memories.kind = ?" : "";
   const limit = options.limit ?? 50;
-  const params = options.kind
-    ? [toFtsQuery(trimmedQuery, options.queryMode), projectId, options.kind, limit]
-    : [toFtsQuery(trimmedQuery, options.queryMode), projectId, limit];
+  const project = db.prepare("select name from projects where id = ?").get(projectId) as {name: string} | undefined;
+  const plan = prepareMemoryQuery(trimmedQuery, options.queryMode ?? "orTerms", project?.name ?? "");
+  if (!plan) return [];
+  const substringPredicate = (terms: readonly string[]) => terms.map(() =>
+    "(instr(lower(memories.title), lower(?)) > 0 or instr(lower(memories.content), lower(?)) > 0)").join(" or ");
+  const conceptClauses = plan.requiredConcepts.map(concept =>
+    `(memories.id in (select id from memory_fts where memory_fts match ?)${concept.substringTerms.length ? ` or ${substringPredicate(concept.substringTerms)}` : ""})`);
+  const conceptGuard = conceptClauses.length ? `and ${conceptClauses.join(" and ")}` : "";
+  const conceptParams = plan.requiredConcepts.flatMap(concept =>
+    [concept.ftsQuery, ...concept.substringTerms.flatMap(term => [term, term])]);
+  const params = [plan.ftsQuery, projectId, ...(options.kind ? [options.kind] : []), ...conceptParams, limit];
 
   const results = db
     .prepare(
@@ -460,19 +454,24 @@ export function searchMemories(
        join memories on memories.id = memory_fts.id
        where memory_fts match ? and memories.project_id = ? and memories.status = 'active'
        ${kindClause}
-       order by memories.importance desc, memories.confidence desc, score desc, memories.created_at desc
+       ${conceptGuard}
+       order by memories.importance desc, memories.confidence desc, score desc, memories.created_at desc, memories.id asc
        limit ?`
     )
     .all(...params)
     .map((row) => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));
-  if (!/\p{Script=Han}/u.test(trimmedQuery) || results.length >= limit) return results;
-  const terms = options.queryMode === "phrase" ? [trimmedQuery] : trimmedQuery.split(/\s+/).slice(0, 20);
-  const predicates = terms.map(() => "(instr(lower(title), lower(?)) > 0 or instr(lower(content), lower(?)) > 0)").join(" or ");
-  const fallback = db.prepare(`select * from memories where project_id = ? and status = 'active'
-    ${options.kind ? "and kind = ?" : ""} and (${predicates})
-    order by importance desc, confidence desc, created_at desc, id asc limit ?`)
-    .all(projectId, ...(options.kind ? [options.kind] : []), ...terms.flatMap(term => [term, term]), limit)
-    .map(row => ({ memory: toMemory(row as MemoryRow), score: 0 }));
+  if (plan.substringTerms.length === 0 || results.length >= limit) return results;
+  const terms = plan.substringTerms;
+  const predicates = substringPredicate(terms);
+  const termParams = terms.flatMap(term => [term, term]);
+  const phrase = options.queryMode === "phrase";
+  const coverageScore = phrase ? "0" : terms.map(term => `case when ${substringPredicate([term])} then 1 else 0 end`).join(" + ");
+  const fallbackOrder = phrase ? "created_at desc, id asc" : "score desc, title asc, content_hash asc, created_at desc, id asc";
+  const fallback = db.prepare(`select memories.*, (${coverageScore}) as score from memories where project_id = ? and status = 'active'
+    ${options.kind ? "and kind = ?" : ""} and (${predicates}) ${conceptGuard}
+    order by importance desc, confidence desc, ${fallbackOrder} limit ?`)
+    .all(...(phrase ? [] : termParams), projectId, ...(options.kind ? [options.kind] : []), ...termParams, ...conceptParams, limit)
+    .map(row => ({ memory: toMemory(row as SearchRow), score: (row as SearchRow).score }));
   const seen = new Set(results.map(item => item.memory.id));
   return [...results, ...fallback.filter(item => !seen.has(item.memory.id))].slice(0, limit);
 }

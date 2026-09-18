@@ -44,4 +44,37 @@ describe("Host Adapter Registry", () => {
       sessionId: "s", turnId: "t", query: "q", confirmationPolicy: {actor: "forged"}
     })).toThrow(/Invalid Host input/);
   });
+
+  test.each(["camel", "snake"] as const)("%s input accepts a complete transcript up to five million characters", style => {
+    const registry = createHostAdapterRegistry();
+    const rawText = "x".repeat(5_000_000);
+    const identity = style === "camel"
+      ? {sessionId: "long-session", turnId: "long-turn", query: "Capture the session."}
+      : {session_id: "long-session", turn_id: "long-turn", prompt: "Capture the session."};
+    const input = {...identity, response: "Captured.", status: "succeeded",
+      transcript: {threadId: "long-thread", title: "Long session", rawFormat: "jsonl", rawText}};
+
+    const command = registry.normalizeAfterTurn("claude-code", input);
+    expect(command.transcript?.rawText.length).toBe(5_000_000);
+    expect(command.transcript?.rawText).toBe(rawText);
+    expect(() => registry.normalizeAfterTurn("claude-code", {
+      ...input, transcript: {...input.transcript, rawText: rawText + "x"}
+    })).toThrow(/transcript.rawText.*5000000/);
+  });
+
+  test.each(["camel", "snake"] as const)("%s input still bounds individual queries and responses at fifty thousand characters", style => {
+    const registry = createHostAdapterRegistry();
+    const body = "x".repeat(50_000);
+    const beforeInput = (query: string) => style === "camel"
+      ? {sessionId: "s", turnId: "t", query}
+      : {session_id: "s", turn_id: "t", prompt: query};
+    expect(registry.normalizeBeforeTurn("codex", beforeInput(body)).query).toBe(body);
+    expect(() => registry.normalizeBeforeTurn("codex", beforeInput(body + "x"))).toThrow(/50000/);
+    expect(registry.normalizeAfterTurn("claude-code", {...beforeInput(body), response: body, status: "succeeded"}))
+      .toMatchObject({query: body, response: body});
+    expect(() => registry.normalizeAfterTurn("claude-code", {...beforeInput(body + "x"), response: "Short.", status: "succeeded"}))
+      .toThrow(/50000/);
+    expect(() => registry.normalizeAfterTurn("claude-code", {...beforeInput("Short."), response: body + "x", status: "succeeded"}))
+      .toThrow(/50000/);
+  });
 });

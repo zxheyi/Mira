@@ -7,7 +7,7 @@ import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
 import { ensureFreshProjectBriefing, getLatestCompleteProjectBriefing } from "../briefing/projectBriefingStore.js";
 import { containsSensitiveInformation } from "../distill/candidatePolicy.js";
-import { listTopMemoriesForProject, searchMemories, type Memory } from "../memory/memoryStore.js";
+import { MEMORY_QUERY_POLICY_VERSION, listTopMemoriesForProject, searchMemories, type Memory } from "../memory/memoryStore.js";
 import { listWorkingMemory, normalizeTaskId } from "../workingMemory/workingMemoryStore.js";
 import { recordRecallEvent, type RecallReceipt } from "./recallAuditStore.js";
 
@@ -77,11 +77,13 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   const dropped: RecallReceipt["dropped"] = [];
   let markdown = "";
   const fits = (text: string) => withinBudget(text,budget);
-  const append = (text: string): boolean => {
+  const append = (text: string, reservation = ""): boolean => {
     const next = markdown + text + "\n\n";
-    if (!fits(next)) return false;
+    if (!fits(next + reservation)) return false;
     markdown = next; return true;
   };
+  const budgetReasons = (text: string, reservation: string): string[] =>
+    reservation && fits(markdown + text + "\n\n") ? ["budget", "query_memory_reservation"] : ["budget"];
   // Only the static heading may be shortened for tiny budgets; entries are atomic.
   for (const character of "# Mira Context Bundle\n\n") {
     if (!fits(markdown + character)) break;
@@ -89,14 +91,25 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   }
   if (taskId) append(`Task ID: ${JSON.stringify(taskId)}`);
   append("## Working Memory");
-  for (const item of working) {
-    const selected=append(`### ${item.kind}\n- updatedAt: ${item.updatedAt}\n${item.content}`);
-    selections.push({type:"working_memory",id:item.id,selected,reasons:[selected?"task_priority":"budget"],contentHash:createHash("sha256").update(item.content).digest("hex")});
-  }
-  if (!working.length) append("No working memory recorded.");
+  const appendWorking = (item: typeof working[number], reservation = "") => {
+    const text = `### ${item.kind}\n- updatedAt: ${item.updatedAt}\n${item.content}`;
+    const selected = append(text, reservation);
+    selections.push({type:"working_memory",id:item.id,selected,reasons:selected?["task_priority"]:budgetReasons(text,reservation),contentHash:createHash("sha256").update(item.content).digest("hex")});
+  };
+  const isCriticalWorking = (item: typeof working[number]) => item.kind === "blocker" || item.kind === "current_task";
+  for (const item of working.filter(isCriticalWorking)) appendWorking(item);
+  // Keep safety/current-task state first, then protect one complete query match from
+  // lower-priority state and briefing overhead. Explicit research keeps its existing allocation.
+  const reserveQueryMemory = Boolean(query && ordered.length && !researchCaseIds.length);
+  const memoryWithHeading = (memory: Memory) => `${warningKinds.has(memory.kind) ? "## Warnings" : "## Long-Term Memory"}\n\n${renderMemory(memory)}\n\n`;
+  const reservedMemory = reserveQueryMemory ? ordered.find(memory => fits(markdown + memoryWithHeading(memory))) : undefined;
+  const reservation = reservedMemory ? memoryWithHeading(reservedMemory) : "";
+  for (const item of working.filter(item => !isCriticalWorking(item))) appendWorking(item, reservation);
+  if (!working.length) append("No working memory recorded.", reservation);
   // The complete Briefing remains available separately; avoid reinjecting its duplicate, unfiltered memories.
-  const briefingSelected=append(`## Project Briefing\nProject: ${project.name}${briefing ? ` · v${briefing.version}${briefing.staleAt ? " (stale)" : ""}` : ""}`);
-  if(briefing) selections.push({type:"briefing",id:briefing.id,selected:briefingSelected,reasons:[briefingSelected?"metadata_only":"budget",...(briefing.staleAt?["stale_projection"]:[])]});
+  const briefingText = `## Project Briefing\nProject: ${project.name}${briefing ? ` · v${briefing.version}${briefing.staleAt ? " (stale)" : ""}` : ""}`;
+  const briefingSelected=append(briefingText,reservation);
+  if(briefing) selections.push({type:"briefing",id:briefing.id,selected:briefingSelected,reasons:[...(briefingSelected?["metadata_only"]:budgetReasons(briefingText,reservation)),...(briefing.staleAt?["stale_projection"]:[])]});
   for(const packet of research) {
     const remaining={maxCharacters:Math.max(1,budget.maxCharacters-markdown.length-2),maxTokens:Math.max(1,budget.maxTokens-Buffer.byteLength(markdown,"utf8")-2)};
     const bounded=prepareResearchContext(db,projectId,packet.caseId,{...options,...remaining});
@@ -133,8 +146,8 @@ function prepareContextInTransaction(db:Database.Database,projectId:string,optio
   const receipt: RecallReceipt = {
     selectionManifest:createSelectionManifest({projectId,taskId:taskId??null,queryHash:selectionHash(query??null),
       retrieval:{coverage:'bounded_pool',requestedLimit:Math.min(200,(options.memoryLimit??8)*4),candidateCount:pool.length,
-        mode:query?'fts_phrase_then_or_terms':'project_priority',ordering:'warnings_first_preserve_retrieval_order',outsidePool:'not_evaluated'},
-      memoryLimit:options.memoryLimit??8,researchCaseIds,researchInputs,projectNameHash:selectionHash(project.name),briefingVersion:briefing?.version??null},selections,budget,markdown),
+        mode:query?'lexical_phrase_then_terms_v2':'project_priority',queryPolicy:query?MEMORY_QUERY_POLICY_VERSION:null,ordering:'warnings_first_preserve_retrieval_order',outsidePool:'not_evaluated'},
+      memoryLimit:options.memoryLimit??8,researchCaseIds,researchInputs,budgetAllocation:reserveQueryMemory?"query-memory-reservation-v1":"working-first-v1",reservedMemoryId:reservedMemory?.id??null,projectNameHash:selectionHash(project.name),briefingVersion:briefing?.version??null},selections,budget,markdown),
     schemaVersion:2,deliveryState:"prepared",scope,selections,budgetPolicy:"context-v2-utf8-upper-bound",replay:(options.retainForSeconds??0)>0?"retained_payload":"references_only",
     id: `recall_${randomUUID()}`, projectId, ...(taskId ? {taskId} : {}),
     ...(query ? {query: containsSensitiveInformation(query) ? "[REDACTED]" : query} : {}),
