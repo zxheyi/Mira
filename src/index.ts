@@ -35,7 +35,6 @@ import { listOutboxMessages, type OutboxStatus } from "./events/domainOutboxStor
 import { createOutboxRunner } from "./events/outboxRunner.js";
 import { createDefaultOutboxHandlers, drainOutbox } from "./events/defaultOutboxHandlers.js";
 import { distillThreadMemories } from "./distill/distillThread.js";
-import { startDetachedDistillWorker } from "./distill/detachedWorker.js";
 import {
   listMemoryCandidates
 } from "./distill/candidateService.js";
@@ -76,6 +75,7 @@ import {
   type IntegrationRuntime
 } from "./integrations/configInstaller.js";
 import { runIntegrationHook } from "./integrations/hookRuntime.js";
+import { runHookFollowUp } from "./integrations/hookFollowUp.js";
 import { createHostAdapterRegistry } from "./lifecycle/hostAdapterRegistry.js";
 import { createTurnLifecycle } from "./lifecycle/turnLifecycle.js";
 import { clearMemoriesForThread, MEMORY_KINDS, searchMemories, type MemoryKind } from "./memory/memoryStore.js";
@@ -413,29 +413,9 @@ function integrationRuntime(): IntegrationRuntime {
   };
 }
 
-async function enqueueHookDistill(input: {
-  projectId: string;
-  threadId: string;
-  projectRoot: string;
-  dbPath: string;
-}): Promise<void> {
-  const db = openMigratedDatabase(input.dbPath);
-  try {
-    await drainOutbox(
-      createOutboxRunner({db}),
-      input.projectId,
-      createDefaultOutboxHandlers({db})
-    );
-  } finally {
-    db.close();
-  }
-
-  await resumeHookDistill(input);
-}
-
-async function resumeHookDistill(input: {projectRoot: string; dbPath: string}): Promise<void> {
+async function followUpHook(input: {projectRoot: string; dbPath: string}): Promise<void> {
   const runtime = integrationRuntime();
-  await startDetachedDistillWorker({
+  await runHookFollowUp({
     nodePath: runtime.nodePath,
     entryPath: runtime.entryPath,
     dbPath: input.dbPath,
@@ -1445,8 +1425,8 @@ integration
         agent: requireIntegrationAgent(options.agent),
         projectRoot,
         dbPath,
-        onThreadCaptured: providerConfigFromEnv(process.env) ? enqueueHookDistill : undefined,
-        onSessionStarted: providerConfigFromEnv(process.env) ? resumeHookDistill : undefined
+        onCaptureSettled: followUpHook,
+        onSessionStarted: followUpHook
       },
       await readStdinJson()
     );

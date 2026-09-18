@@ -5,7 +5,9 @@ import { z } from "zod";
 import { prepareContext, type ContextPacket } from "../context/contextPreparation.js";
 import { appendDomainEvent, enqueueOutboxMessage } from "../events/domainOutboxStore.js";
 import { captureSession } from "../threads/sessionCapture.js";
+import { getCaptureCursor } from "../integrations/captureCursorStore.js";
 import { INVOCATION_TRANSPORTS, MIRA_HOSTS, type AfterTurnCommand, type BeforeTurnCommand, type InvocationTransport, type MiraHost, type TurnOutcomeStatus } from "./hostAdapterRegistry.js";
+import { SESSION_TRANSCRIPT_MAX_CHARACTERS, TURN_MESSAGE_MAX_CHARACTERS } from "./inputLimits.js";
 
 export type LifecycleSession = {
   id: string; projectId: string; host: MiraHost; hostSessionId: string;
@@ -30,24 +32,51 @@ type CaptureRow = {id:string;project_id:string;turn_id:string;thread_id:string|n
 
 const beforeSchema = z.object({
   host: z.enum(MIRA_HOSTS), transport:z.enum(INVOCATION_TRANSPORTS).optional(),hostSessionId: z.string().trim().min(1).max(500),
-  hostTurnId: z.string().trim().min(1).max(500), query: z.string().trim().min(1).max(50_000),
+  hostTurnId: z.string().trim().min(1).max(500), query: z.string().trim().min(1).max(TURN_MESSAGE_MAX_CHARACTERS),
   taskId: z.string().trim().min(1).max(500).optional(),
   context: z.object({researchCaseIds:z.array(z.string().trim().min(1).max(200)).max(10).optional(),memoryLimit:z.number().int().min(1).max(50).optional(),maxCharacters:z.number().int().min(1).max(1_000_000).optional(),maxTokens:z.number().int().min(25).max(250_000).optional()}).strict().optional()
 }).strict();
 const afterSchema = z.object({
   host: z.enum(MIRA_HOSTS), transport:z.enum(INVOCATION_TRANSPORTS).optional(),hostSessionId: z.string().trim().min(1).max(500),
-  hostTurnId: z.string().trim().min(1).max(500), query: z.string().trim().min(1).max(50_000),
-  response: z.string().trim().min(1).max(50_000), outcomeStatus: z.enum(["succeeded","failed","cancelled"]),
+  hostTurnId: z.string().trim().min(1).max(500), query: z.string().trim().min(1).max(TURN_MESSAGE_MAX_CHARACTERS),
+  response: z.string().trim().min(1).max(TURN_MESSAGE_MAX_CHARACTERS), outcomeStatus: z.enum(["succeeded","failed","cancelled"]),
   taskId: z.string().trim().min(1).max(500).optional(),
   transcript: z.object({
     threadId:z.string().trim().min(1).max(500),title:z.string().trim().min(1).max(500),
-    rawFormat:z.enum(["markdown","jsonl"]),rawText:z.string().trim().min(1).max(5_000_000),
+    rawFormat:z.enum(["markdown","jsonl"]),rawText:z.string().trim().min(1).max(SESSION_TRANSCRIPT_MAX_CHARACTERS),
     checkpoint:z.object({agent:z.enum(["codex","claude-code"]),sessionId:z.string().trim().min(1).max(500),
       transcriptPath:z.string().trim().min(1).max(4000),size:z.number().int().min(0),mtimeMs:z.number().finite().min(0)}).strict().optional()
   }).strict().optional()
 }).strict();
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+type AfterInput = z.infer<typeof afterSchema>;
+
+/** File observations may change without changing the normalized session snapshot.
+ * Keep checkpoint identity and every other command field in the replay fingerprint.
+ */
+function afterContentHash(input: AfterInput): string {
+  const checkpoint = input.transcript?.checkpoint;
+  if (!checkpoint) return `capture-v2:${hash(input)}`;
+  const {size: _size, mtimeMs: _mtimeMs, ...identity} = checkpoint;
+  return `capture-v2:${hash({...input, transcript: {...input.transcript, checkpoint: identity}})}`;
+}
+
+function completedInputMatches(db: Database.Database, projectId: string, storedHash: string | null,
+  input: AfterInput, contentHash: string): boolean {
+  if (storedHash === contentHash) return true;
+  // Older databases stored an unversioned hash including checkpoint size and mtime.
+  // Upgrade only with proof of the complete old input, never a partial body match.
+  if (!storedHash || !/^[a-f0-9]{64}$/.test(storedHash)) return false;
+  if (storedHash === hash(input)) return true;
+  const checkpoint = input.transcript?.checkpoint;
+  if (!checkpoint) return false;
+  const previous = getCaptureCursor(db, projectId, checkpoint.agent, checkpoint.sessionId);
+  if (!previous || previous.transcriptPath !== checkpoint.transcriptPath) return false;
+  return storedHash === hash({...input, transcript: {...input.transcript,
+    checkpoint: {...checkpoint, size: previous.size, mtimeMs: previous.mtimeMs}}});
+}
+
 const threadIdFor = (projectId: string, host: MiraHost, hostSessionId: string) =>
   `thread_lifecycle_${createHash("sha256").update(`${projectId}\0${host}\0${hostSessionId}`).digest("hex").slice(0, 24)}`;
 const toSession = (row: SessionRow): LifecycleSession => ({id:row.id,projectId:row.project_id,host:row.host,hostSessionId:row.host_session_id,status:row.status,openedAt:row.opened_at,lastSeenAt:row.last_seen_at,...(row.closed_at?{closedAt:row.closed_at}:{})});
@@ -124,7 +153,7 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
     },
     afterTurn(command) {
       const input = afterSchema.parse(command);
-      const inputHash = hash(input);
+      const inputHash = afterContentHash(input);
       return db.transaction((): AfterTurnResult => {
         const now = new Date().toISOString();
         let session = ensureSession(db, projectId, input.host, input.hostSessionId, now);
@@ -143,11 +172,16 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
           throw new Error("After Turn input conflicts with the existing Turn");
         }
         if (turn.status === "completed") {
-          if (turn.after_input_hash !== inputHash) throw new Error("After Turn input conflicts with the completed Turn");
+          if (!completedInputMatches(db, projectId, turn.after_input_hash, input, inputHash)) {
+            throw new Error("After Turn input conflicts with the completed Turn");
+          }
+          if (turn.after_input_hash !== inputHash) {
+            db.prepare("update lifecycle_turns set after_input_hash = ? where project_id = ? and id = ?")
+              .run(inputHash, projectId, turn.id);
+          }
           const stored = JSON.parse(turn.after_result!) as AfterTurnResult;
           const existingCapture = findCapture(db, projectId, turn.id);
           if (!existingCapture) throw new Error("Completed Turn is missing its Capture Record");
-          if (existingCapture.thread_id) return {...stored, duplicate:true};
           const transcript = input.transcript ?? {
             threadId:threadIdFor(projectId, input.host, input.hostSessionId),
             title:`${input.host} lifecycle ${input.hostSessionId}`,
@@ -156,7 +190,8 @@ export function createTurnLifecycle(options: {db: Database.Database; projectId: 
           };
           const repaired = captureSession(db, {id:transcript.threadId,projectId,title:transcript.title,
             source:input.host,rawFormat:transcript.rawFormat,rawText:transcript.rawText,
-            ...(transcript.checkpoint ? {checkpoint:transcript.checkpoint} : {})});
+            ...(transcript.checkpoint ? {checkpoint:transcript.checkpoint} : {})}, {replay:true});
+          if (existingCapture.thread_id) return {...stored, duplicate:true};
           db.prepare("update capture_records set thread_id = ?, outcome = ? where project_id = ? and id = ?")
             .run(repaired.thread.id, repaired.outcome, projectId, existingCapture.id);
           const repairedCapture = toCapture(findCapture(db, projectId, turn.id)!);

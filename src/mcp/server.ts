@@ -133,7 +133,7 @@ export const MIRA_MCP_TOOL_DESCRIPTIONS = {
   get_recall_quality_report: "Read project-scoped Recall Feedback attribution and the evidence threshold for keeping FTS or evaluating hybrid retrieval; this never changes retrieval configuration.",
   get_project_briefing: "Read or deterministically refresh the bound project's latest derived Briefing; returns { briefing } with Markdown, version, provenance ids, stale state, and size estimates.",
   rebuild_project_briefing: "Force one deterministic rebuild of the bound project's derived Briefing; returns { briefing } while preserving every earlier complete or failed version for audit.",
-  search_memory: "Use for targeted historical lookups; defaults to keyword OR matching, supports explicit phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
+  search_memory: "Use for targeted historical lookups; defaults to analyzed keyword OR matching with bounded bilingual development terms and question-object filtering, supports literal phrase mode and optional limit, and returns SearchResult[] as { memory: { title, kind, source, confidence, ... }, score }.",
   set_working_memory: "Set or replace one working-memory entry; returns the saved WorkingMemory object for the chosen kind.",
   list_working_memory: "List current working-memory entries with no arguments; returns WorkingMemory[] ordered for resuming active task state.",
   clear_working_memory: "Clear stale working memory for one kind or all kinds; returns { ok: true } after deletion.",
