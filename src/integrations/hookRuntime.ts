@@ -7,6 +7,7 @@ import { openDatabase } from "../db/client.js";
 import { migrate } from "../db/schema.js";
 import { importAgentSessionFromFile } from "../importers/agentSessionImporter.js";
 import { createHostAdapterRegistry } from "../lifecycle/hostAdapterRegistry.js";
+import { TURN_MESSAGE_MAX_CHARACTERS } from "../lifecycle/inputLimits.js";
 import { createTurnLifecycle } from "../lifecycle/turnLifecycle.js";
 import { ensureProjectForRoot } from "../projects/projectStore.js";
 import type { IntegrationAgent } from "./configInstaller.js";
@@ -23,6 +24,13 @@ const hookInputSchema = z.object({
 
 type HookInput = z.infer<typeof hookInputSchema>;
 
+type CaptureFollowUp = (input: {
+  projectId: string;
+  threadId: string;
+  projectRoot: string;
+  dbPath: string;
+}) => void | Promise<void>;
+
 export type HookRuntimeOptions = {
   agent: IntegrationAgent;
   projectRoot: string;
@@ -30,12 +38,9 @@ export type HookRuntimeOptions = {
   allowedTranscriptRoots?: string[];
   contextMaxCharacters?: number;
   onSessionStarted?: (input: {projectRoot: string; dbPath: string}) => void | Promise<void>;
-  onThreadCaptured?: (input: {
-    projectId: string;
-    threadId: string;
-    projectRoot: string;
-    dbPath: string;
-  }) => void | Promise<void>;
+  onThreadCaptured?: CaptureFollowUp;
+  /** Runs after a successful capture, including unchanged replays, to resume durable work. */
+  onCaptureSettled?: CaptureFollowUp;
 };
 
 export type HookRunResult =
@@ -149,7 +154,7 @@ function lastTranscriptRole(rawText: string, role: "user" | "assistant"): string
     const newline = section.indexOf("\n");
     if (newline < 0 || section.slice(0, newline).trim().toLowerCase() !== heading) continue;
     const content = section.slice(newline + 1).replace(/^\s*Time:\s*[^\n]+\n+/i, "").trim();
-    if (content) return content.slice(0, 50_000);
+    if (content) return content.slice(0, TURN_MESSAGE_MAX_CHARACTERS);
   }
   return undefined;
 }
@@ -216,26 +221,28 @@ async function captureTranscript(options: HookRuntimeOptions, input: HookInput):
     capturedThreadId = captured.capture.threadId;
     duplicate = captured.duplicate;
     captureOutcome = captured.capture.outcome;
-    if (duplicate || captureOutcome === "unchanged") {
-      return {status: "ignored", stdout: "", reason: "transcript-unchanged"};
-    }
   } finally {
     db.close();
   }
 
-  if (options.onThreadCaptured) {
+  const unchanged = duplicate || captureOutcome === "unchanged";
+  const followUpInput = {
+    projectId: capturedProjectId,
+    threadId: capturedThreadId,
+    projectRoot: options.projectRoot,
+    dbPath: options.dbPath
+  };
+  if (!unchanged && options.onThreadCaptured) {
     try {
-      await options.onThreadCaptured({
-        projectId: capturedProjectId,
-        threadId: capturedThreadId,
-        projectRoot: options.projectRoot,
-        dbPath: options.dbPath
-      });
+      await options.onThreadCaptured(followUpInput);
     } catch (error) {
       await appendDiagnostic(options, input, "distill-enqueue-failed", error);
     }
   }
+  try { await options.onCaptureSettled?.(followUpInput); }
+  catch (error) { await appendDiagnostic(options, input, "capture-followup-failed", error); }
 
+  if (unchanged) return {status:"ignored",stdout:"",reason:"transcript-unchanged"};
   return { status: "captured", stdout: "", threadId: capturedThreadId };
 }
 

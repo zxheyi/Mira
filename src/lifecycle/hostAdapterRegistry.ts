@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {SESSION_TRANSCRIPT_MAX_CHARACTERS, TURN_MESSAGE_MAX_CHARACTERS} from "./inputLimits.js";
 
 export const MIRA_HOSTS = ["codex", "claude-code", "cursor", "cli", "mcp", "ui"] as const;
 export type MiraHost = (typeof MIRA_HOSTS)[number];
@@ -59,7 +60,7 @@ export type HostAdapterDescriptor = {
 };
 
 const identity = z.string().trim().min(1).max(500);
-const body = z.string().trim().min(1).max(50_000);
+const body = z.string().trim().min(1).max(TURN_MESSAGE_MAX_CHARACTERS);
 const task = z.string().trim().min(1).max(500).optional();
 const contextSchema = z.object({
   researchCaseIds:z.array(identity).max(10).optional(),
@@ -71,7 +72,7 @@ const transcriptSchema = z.object({
   threadId: identity,
   title: z.string().trim().min(1).max(500),
   rawFormat: z.enum(["markdown", "jsonl"]),
-  rawText: body,
+  rawText: z.string().trim().min(1).max(SESSION_TRANSCRIPT_MAX_CHARACTERS),
   checkpoint: z.object({
     agent: z.enum(["codex", "claude-code"]),
     sessionId: identity,

@@ -139,6 +139,10 @@ For deliberate cleanup, use the command matching the data you intend to remove:
 | `mira thread delete --id thread_123 --confirm-hard-delete` | Permanently erase the Thread and its linked memories. |
 | `mira project delete --id project_123 --confirm-hard-delete` | Permanently erase the project's local Mira data. |
 
+### Query and budget behavior
+
+Explicit-query context keeps blockers and the current task first, then reserves room for one complete matching Memory when it fits. Search handles segmented Chinese terms and a bounded set of English/Chinese development terms, while filtering common words and unrelated project-name matches. Literal phrase search remains available. No-query context and explicitly selected Research Cases keep their existing allocation order. See the [query recall specification](specs/030-query-recall-optimization/spec.md) for limits and preserved behavior.
+
 ### Evaluate recalled memory
 
 Use `mira context recalls` to inspect recorded context, `mira context feedback --help` to record an explicit user evaluation, and `mira context quality` to inspect the aggregate report. The MCP equivalents are `record_recall_feedback` and `get_recall_quality_report`; feedback writes require the corresponding authority.
@@ -176,7 +180,7 @@ export MIRA_LLM_MODEL="model-name"
 export MIRA_LLM_API_KEY="your-provider-key"
 ```
 
-These are placeholders. Provider extraction sends saved Thread content to the configured service. Sensitive-pattern filtering is not a complete privacy guarantee. Without a provider, local capture, search, context, and agent-submitted candidates remain available.
+These are placeholders. Provider extraction sends saved Thread content to the configured service. Sensitive-pattern filtering is not a complete privacy guarantee. Without a provider, local capture, search, context, and agent-submitted candidates remain available. Native hooks still process local Outbox work and refresh Briefings; extraction jobs wait in `pending` until a provider is configured.
 
 Automatic acceptance is conservative: eligible low-risk candidates need high confidence, attributable user evidence, verbatim support, and no detected secret, duplicate, or conflict. High-impact or inferred content requires review. Confidence is extractor-reported, not proof of truth. See [memory governance](docs/implementation/trust-hardening.md).
 
